@@ -124,21 +124,22 @@ getInstantiations ::
 	PortNameMap                  -- The arguments that need to be applied to the
 															 -- expression. Should always be the Args
 															 -- constructor.
+	-> PortNameMap               -- The output ports that the expression should generate.
 	-> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
 	-> CoreSyn.CoreExpr          -- The expression to generate an architecture for
 	-> String                    -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
-getInstantiations (Args (a:as)) binds (Lam b expr) =
-	getInstantiations (Args as) ((b, a):binds) expr
+getInstantiations (Args (a:as)) outs binds (Lam b expr) =
+	getInstantiations (Args as) outs ((b, a):binds) expr
 
 -- A case expression that checks a single variable and has a single
 -- alternative, can be used to take tuples apart
-getInstantiations args binds (Case (Var v) b _ [res]) =
+getInstantiations args outs binds (Case (Var v) b _ [res]) =
 	case altcon of
 		DataAlt datacon ->
 			if (DataCon.isTupleCon datacon) then
-				getInstantiations args binds' expr
+				getInstantiations args outs binds' expr
 			else
 				error "Data constructors other than tuples not supported"
 		otherwise ->
@@ -152,21 +153,33 @@ getInstantiations args binds (Case (Var v) b _ [res]) =
 			(lookup v binds)
 
 -- An application is an instantiation of a component
-getInstantiations args binds app@(App expr arg) =
+getInstantiations args outs binds app@(App expr arg) =
 	--indent ++ "F:\n" ++ (getInstantiations (' ':indent) expr) ++ "\n" ++ indent ++ "A:\n" ++ (getInstantiations (' ':indent) arg) ++ "\n"
 	"app : " ++ (getOccString f) ++ "\n"
 	++ "port map (\n"
+	-- Map input ports of f
 	++ concat (zipWith (getPortMapEntry binds) ["portin0", "portin1"] args)
+	-- Map output ports of f
+	++ mapOutputPorts (Port "portout") outs
 	++ ");\n"
 	where
 		((Var f), args) = collectArgs app
 
-getInstantiations args binds expr = showSDoc $ ppr $ expr
+getInstantiations args outs binds expr = showSDoc $ ppr $ expr
+
+-- Map the output port of a component to the output port of the containing
+-- entity.
+mapOutputPorts (Port port) (Port signal) =
+	"\t" ++ port ++ " => " ++ signal ++ "\n"
+
+-- Map matching output ports in the tuple
+mapOutputPorts (Tuple ports) (Tuple signals) =
+	concat (zipWith mapOutputPorts ports signals)
 
 getArchitecture (NonRec var expr) =
 	"architecture structural of " ++ name ++ " is\n"
 	++ "begin\n"
-	++ getInstantiations (Args inportnames) [] expr
+	++ getInstantiations (Args inportnames) outport [] expr
 	++ "end structural\n"
 	where
 		name = (getOccString var)
@@ -177,6 +190,7 @@ getArchitecture (NonRec var expr) =
 		inportnames = case ports of
 			[port] -> [getPortNameMapForTy "portin" port]
 			ps     -> getPortNameMapForTys "portin" 0 ps
+		outport = getPortNameMapForTy "portout" res
 
 data PortNameMap =
 	Args [PortNameMap] -- Each of the submaps represent an argument to the
