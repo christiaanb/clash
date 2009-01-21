@@ -166,14 +166,38 @@ getInstantiations args binds expr = showSDoc $ ppr $ expr
 getArchitecture (NonRec var expr) =
 	"architecture structural of " ++ name ++ " is\n"
 	++ "begin\n"
-	++ getInstantiations (Args [Tuple [Port "portin0", Port "portin1"]]) [] expr
+	++ getInstantiations (Args inportnames) [] expr
 	++ "end structural\n"
 	where
 		name = (getOccString var)
 		ty = CoreUtils.exprType expr
+		(fargs, res) = Type.splitFunTys ty
+		--state = if length fargs == 1 then () else (last fargs)
+		ports = if length fargs == 1 then fargs else (init fargs)
+		inportnames = case ports of
+			[port] -> [getPortNameMapForTy "portin" port]
+			ps     -> getPortNameMapForTys "portin" 0 ps
 
 data PortNameMap =
 	Args [PortNameMap] -- Each of the submaps represent an argument to the
 	                   -- function. Should only occur at top level.
 	| Tuple [PortNameMap]
 	| Port  String
+
+-- Generate a port name map (or multiple for tuple types) in the given direction for
+-- each type given.
+getPortNameMapForTys :: String -> Int -> [Type] -> [PortNameMap]
+getPortNameMapForTys prefix num [] = [] 
+getPortNameMapForTys prefix num (t:ts) =
+	(getPortNameMapForTy (prefix ++ show num) t) : getPortNameMapForTys prefix (num + 1) ts
+
+getPortNameMapForTy	:: String -> Type -> PortNameMap
+getPortNameMapForTy name ty =
+	if (TyCon.isTupleTyCon tycon) then
+		-- Expand tuples we find
+		Tuple (getPortNameMapForTys name 0 args)
+	else -- Assume it's a type constructor application, ie simple data type
+		-- TODO: Add type?
+		Port name
+	where
+		(tycon, args) = Type.splitTyConApp ty 
