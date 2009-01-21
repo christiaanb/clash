@@ -1,4 +1,4 @@
-module Adders (main, no_carry_adder) where
+module Adders where
 import Bits
 import Language.Haskell.Syntax
 
