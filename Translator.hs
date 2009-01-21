@@ -165,7 +165,8 @@ getInstantiations args outs binds app@(App expr arg) =
 	where
 		((Var f), args) = collectArgs app
 
-getInstantiations args outs binds expr = showSDoc $ ppr $ expr
+getInstantiations args outs binds expr = 
+	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
 
 -- Map the output port of a component to the output port of the containing
 -- entity.
