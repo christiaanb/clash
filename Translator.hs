@@ -7,6 +7,7 @@ import qualified Type
 import qualified TyCon
 import qualified DataCon
 import qualified Maybe
+import qualified Module
 import Name
 import Data.Generics
 import NameEnv ( lookupNameEnv )
@@ -31,7 +32,7 @@ main =
 					--core <- GHC.compileToCoreSimplified "Adders.hs"
 					core <- GHC.compileToCoreSimplified "Adders.hs"
 					liftIO $ printBinds (cm_binds core)
-					let bind = findBind "no_carry_adder" (cm_binds core)
+					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
@@ -154,19 +155,50 @@ getInstantiations args outs binds (Case (Var v) b _ [res]) =
 
 -- An application is an instantiation of a component
 getInstantiations args outs binds app@(App expr arg) =
-	--indent ++ "F:\n" ++ (getInstantiations (' ':indent) expr) ++ "\n" ++ indent ++ "A:\n" ++ (getInstantiations (' ':indent) arg) ++ "\n"
-	"app : " ++ (getOccString f) ++ "\n"
-	++ "port map (\n"
-	-- Map input ports of f
-	++ concat (zipWith (getPortMapEntry binds) ["portin0", "portin1"] args)
-	-- Map output ports of f
-	++ mapOutputPorts (Port "portout") outs
-	++ ");\n"
+	if isTupleConstructor f then
+		let
+			Tuple outports = outs
+			(tys, vals) = splitTupleConstructorArgs fargs
+		in
+			concat $ zipWith 
+				(\outs' expr' -> getInstantiations args outs' binds expr')
+				outports vals
+	else
+		--indent ++ "F:\n" ++ (getInstantiations (' ':indent) expr) ++ "\n" ++ indent ++ "A:\n" ++ (getInstantiations (' ':indent) arg) ++ "\n"
+		"app : " ++ (getOccString f) ++ "\n"
+		++ "port map (\n"
+		-- Map input ports of f
+		++ concat (zipWith (getPortMapEntry binds) ["portin0", "portin1"] fargs)
+		-- Map output ports of f
+		++ mapOutputPorts (Port "portout") outs
+		++ ");\n"
 	where
-		((Var f), args) = collectArgs app
+		((Var f), fargs) = collectArgs app
 
 getInstantiations args outs binds expr = 
 	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
+
+-- Is the given name a (binary) tuple constructor
+isTupleConstructor :: Var.Var -> Bool
+isTupleConstructor var =
+	Name.isWiredInName name
+	&& Name.nameModule name == tuple_mod
+	&& (Name.occNameString $ Name.nameOccName name) == "(,)"
+	where
+		name = Var.varName var
+		mod = nameModule name
+		tuple_mod = Module.mkModule (Module.stringToPackageId "ghc-prim") (Module.mkModuleName "GHC.Tuple")
+
+-- Split arguments into type arguments and value arguments This is probably
+-- not really sufficient (not sure if Types can actually occur as value
+-- arguments...)
+splitTupleConstructorArgs :: [CoreExpr] -> ([CoreExpr], [CoreExpr])
+splitTupleConstructorArgs (e:es) =
+	case e of
+		Type t     -> (e:tys, vals)
+		otherwise  -> (tys, e:vals)
+	where
+		(tys, vals) = splitTupleConstructorArgs es
 
 -- Map the output port of a component to the output port of the containing
 -- entity.
