@@ -95,17 +95,16 @@ getPortMapEntry binds _ a = error $ "Unsupported argument: " ++ (showSDoc $ ppr 
 
 getInstantiations ::
 	VHDLSession
-	-> PortNameMap                  -- The arguments that need to be applied to the
-															 -- expression. Should always be the Args
-															 -- constructor.
+	-> [PortNameMap]             -- The arguments that need to be applied to the
+															 -- expression.
 	-> PortNameMap               -- The output ports that the expression should generate.
 	-> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
 	-> CoreSyn.CoreExpr          -- The expression to generate an architecture for
 	-> [AST.ConcSm]              -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
-getInstantiations sess (Args (a:as)) outs binds (Lam b expr) =
-	getInstantiations sess (Args as) outs ((b, a):binds) expr
+getInstantiations sess (a:as) outs binds (Lam b expr) =
+	getInstantiations sess as outs ((b, a):binds) expr
 
 -- A case expression that checks a single variable and has a single
 -- alternative, can be used to take tuples apart
@@ -148,7 +147,7 @@ getInstantiations sess args outs binds app@(App expr arg) =
 		hwfunc = Maybe.fromMaybe
 			(error $ "Function " ++ compname ++ "is unknown")
 			(lookup compname (funcs sess))
-		HWFunction (Args inports) outport = hwfunc
+		HWFunction inports outport = hwfunc
 		ports = 
 			zipWith (getPortMapEntry binds) inports fargs
 		  ++ mapOutputPorts outport outs
@@ -205,18 +204,16 @@ getArchitecture sess (NonRec var expr) =
 		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
 		(AST.NSimple (AST.unsafeVHDLBasicId name))
 		[]
-		(getInstantiations sess (Args inports) outport [] expr)
+		(getInstantiations sess inports outport [] expr)
 	where
 		name = (getOccString var)
 		hwfunc = Maybe.fromMaybe
 			(error $ "Function " ++ name ++ "is unknown? This should not happen!")
 			(lookup name (funcs sess))
-		HWFunction (Args inports) outport = hwfunc
+		HWFunction inports outport = hwfunc
 
 data PortNameMap =
-	Args [PortNameMap] -- Each of the submaps represent an argument to the
-	                   -- function. Should only occur at top level.
-	| Tuple [PortNameMap]
+	Tuple [PortNameMap]
 	| Port  String
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
@@ -238,8 +235,8 @@ getPortNameMapForTy name ty =
 		(tycon, args) = Type.splitTyConApp ty 
 
 data HWFunction = HWFunction { -- A function that is available in hardware
-	inPorts   :: PortNameMap,
-	outPorts  :: PortNameMap
+	inPorts   :: [PortNameMap],
+	outPort   :: PortNameMap
 	--entity    :: AST.EntityDec
 }
 
@@ -251,7 +248,7 @@ mkHWFunction ::
 	-> (VHDLSession, String, HWFunction)       -- The name of the function and its interface
 
 mkHWFunction sess (NonRec var expr) =
-	(sess, name, HWFunction (Args inports) outport)
+	(sess, name, HWFunction inports outport)
 	where
 		name = (getOccString var)
 		ty = CoreUtils.exprType expr
@@ -279,6 +276,6 @@ addFunc sess name f =
 
 builtin_funcs = 
 	[ 
-		("hwxor", HWFunction (Args [Port "a", Port "b"]) (Port "o")),
-		("hwand", HWFunction (Args [Port "a", Port "b"]) (Port "o"))
+		("hwxor", HWFunction [Port "a", Port "b"] (Port "o")),
+		("hwand", HWFunction [Port "a", Port "b"] (Port "o"))
 	]
