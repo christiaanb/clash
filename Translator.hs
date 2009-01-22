@@ -82,7 +82,7 @@ findBind lookfor =
 
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
-getPortMapEntry binds portname (Var id) = 
+getPortMapEntry binds (Port portname) (Var id) = 
 	(Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))
 	where
 		Port signalname = Maybe.fromMaybe
@@ -148,7 +148,7 @@ getInstantiations sess args outs binds app@(App expr arg) =
 			(lookup compname (funcs sess))
 		HWFunction inports outports = hwfunc
 		ports = 
-			zipWith (getPortMapEntry binds) ["portin0", "portin1"] fargs
+			zipWith (getPortMapEntry binds) [Port "portin0", Port "portin1"] fargs
 		  ++ mapOutputPorts outports outs
 
 getInstantiations sess args outs binds expr = 
