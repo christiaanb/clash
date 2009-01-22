@@ -43,6 +43,8 @@ main =
 					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
 					let sess = VHDLSession 0 builtin_funcs
+					let (sess', name, f) = mkHWFunction sess bind
+					let sess = addFunc sess' name f
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
 					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture sess bind
@@ -245,10 +247,39 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 	--entity    :: AST.EntityDec
 }
 
+-- Turns a CoreExpr describing a function into a description of its input and
+-- output ports.
+mkHWFunction ::
+	VHDLSession
+	-> CoreBind                                -- The core binder to generate the interface for
+	-> (VHDLSession, String, HWFunction)       -- The name of the function and its interface
+
+mkHWFunction sess (NonRec var expr) =
+	(sess, name, HWFunction (Args inports) outport)
+	where
+		name = (getOccString var)
+		ty = CoreUtils.exprType expr
+		(fargs, res) = Type.splitFunTys ty
+		args = if length fargs == 1 then fargs else (init fargs)
+		--state = if length fargs == 1 then () else (last fargs)
+		inports = case args of
+			-- Handle a single port specially, to prevent an extra 0 in the name
+			[port] -> [getPortNameMapForTy "portin" port]
+			ps     -> getPortNameMapForTys "portin" 0 ps
+		outport = getPortNameMapForTy "portout" res
+
+mkHWFunction sess (Rec _) =
+	error "Recursive binders not supported"
+
 data VHDLSession = VHDLSession {
 	nameCount :: Int,                      -- A counter that can be used to generate unique names
 	funcs     :: [(String, HWFunction)]    -- All functions available, indexed by name
 }
+
+-- Add the function to the session
+addFunc :: VHDLSession -> String -> HWFunction -> VHDLSession
+addFunc sess name f =
+	sess {funcs = (name, f) : (funcs sess) }
 
 builtin_funcs = 
 	[ 
