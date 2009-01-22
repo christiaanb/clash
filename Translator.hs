@@ -146,10 +146,10 @@ getInstantiations sess args outs binds app@(App expr arg) =
 		hwfunc = Maybe.fromMaybe
 			(error $ "Function " ++ compname ++ "is unknown")
 			(lookup compname (funcs sess))
-		HWFunction inports outports = hwfunc
+		HWFunction (Args inports) outport = hwfunc
 		ports = 
-			zipWith (getPortMapEntry binds) [Port "portin0", Port "portin1"] fargs
-		  ++ mapOutputPorts outports outs
+			zipWith (getPortMapEntry binds) inports fargs
+		  ++ mapOutputPorts outport outs
 
 getInstantiations sess args outs binds expr = 
 	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
