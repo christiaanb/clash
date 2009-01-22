@@ -36,7 +36,6 @@ main =
 					let NonRec var expr = bind
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
-					liftIO $ putStr $ getEntity bind
 					liftIO $ putStr $ getArchitecture bind
 					return expr
 
@@ -71,44 +70,6 @@ findBind lookfor =
 		Rec l -> False
 		NonRec var _ -> lookfor == (occNameString $ nameOccName $ getName var)
 	)
-
--- Generate a port (or multiple for tuple types) in the given direction for
--- each type given.
-getPortsForTys :: String -> String -> Int -> [Type] -> String
-getPortsForTys dir prefix num [] = ""
-getPortsForTys dir prefix num (t:ts) = 
-	(getPortsForTy dir (prefix ++ show num) t) ++ getPortsForTys dir prefix (num + 1) ts
-
-getPortsForFunTy ty =
-		-- All of a function's arguments become IN ports, the result becomes on
-		-- (or more) OUT ports.
-		-- Drop the first ;\n
-		drop 2 (getPortsForTys "in" "portin" 0 args) ++ (getPortsForTy "out" "portout" res) ++ "\n"
-	where
-		(args, res) = Type.splitFunTys ty
-
-getPortsForTy	:: String -> String -> Type -> String
-getPortsForTy dir name ty =
-	if (TyCon.isTupleTyCon tycon) then
-		-- Expand tuples we find
-		getPortsForTys dir name 0 args
-	else -- Assume it's a type constructor application, ie simple data type
-		let 
-			vhdlTy = showSDoc $ ppr $ TyCon.tyConName tycon;
-		in
-			";\n\t" ++ name ++ " : " ++ dir ++ " " ++ vhdlTy
-	where
-		(tycon, args) = Type.splitTyConApp ty 
-
-getEntity (NonRec var expr) =
-		"entity " ++ name ++ " is\n"
-		++ "port (\n"
-		++ getPortsForFunTy ty
-	  ++ ");\n"
-		++ "end " ++ name ++ ";\n\n"
-	where
-		name = (getOccString var)
-		ty = CoreUtils.exprType expr
 
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
