@@ -17,6 +17,14 @@ import Outputable ( showSDoc, ppr )
 import GHC.Paths ( libdir )
 import DynFlags ( defaultDynFlags )
 import List ( find )
+-- The following modules come from the ForSyDe project. They are really
+-- internal modules, so ForSyDe.cabal has to be modified prior to installing
+-- ForSyDe to get access to these modules.
+import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified ForSyDe.Backend.VHDL.Ppr
+import qualified ForSyDe.Backend.Ppr
+-- This is needed for rendering the pretty printed VHDL
+import Text.PrettyPrint.HughesPJ (render)
 
 main = 
 		do
@@ -36,7 +44,7 @@ main =
 					let NonRec var expr = bind
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
-					liftIO $ putStr $ getArchitecture bind
+					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture bind
 					return expr
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
@@ -74,7 +82,7 @@ findBind lookfor =
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
 getPortMapEntry binds portname (Var id) = 
-	"\t" ++ portname ++ " => " ++ signalname ++ "\n"
+	(Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))
 	where
 		Port signalname = Maybe.fromMaybe
 			(error $ "Argument " ++ getOccString id ++ "is unknown")
@@ -89,7 +97,7 @@ getInstantiations ::
 	-> PortNameMap               -- The output ports that the expression should generate.
 	-> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
 	-> CoreSyn.CoreExpr          -- The expression to generate an architecture for
-	-> String                    -- The resulting VHDL code
+	-> [AST.ConcSm]                  -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
 getInstantiations (Args (a:as)) outs binds (Lam b expr) =
@@ -125,16 +133,17 @@ getInstantiations args outs binds app@(App expr arg) =
 				(\outs' expr' -> getInstantiations args outs' binds expr')
 				outports vals
 	else
-		--indent ++ "F:\n" ++ (getInstantiations (' ':indent) expr) ++ "\n" ++ indent ++ "A:\n" ++ (getInstantiations (' ':indent) arg) ++ "\n"
-		"app : " ++ (getOccString f) ++ "\n"
-		++ "port map (\n"
-		-- Map input ports of f
-		++ concat (zipWith (getPortMapEntry binds) ["portin0", "portin1"] fargs)
-		-- Map output ports of f
-		++ mapOutputPorts (Port "portout") outs
-		++ ");\n"
+		[AST.CSISm comp]
 	where
 		((Var f), fargs) = collectArgs app
+		comp = AST.CompInsSm
+			(AST.unsafeVHDLBasicId "app")
+			(AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId compname)))
+			(AST.PMapAspect ports)
+		compname = getOccString f
+		ports = 
+			zipWith (getPortMapEntry binds) ["portin0", "portin1"] fargs
+		  ++ mapOutputPorts (Port "portout") outs
 
 getInstantiations args outs binds expr = 
 	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
@@ -161,20 +170,33 @@ splitTupleConstructorArgs (e:es) =
 	where
 		(tys, vals) = splitTupleConstructorArgs es
 
+mapOutputPorts ::
+	PortNameMap         -- The output portnames of the component
+	-> PortNameMap      -- The output portnames and/or signals to map these to
+	-> [AST.AssocElem]  -- The resulting output ports
+
 -- Map the output port of a component to the output port of the containing
 -- entity.
-mapOutputPorts (Port port) (Port signal) =
-	"\t" ++ port ++ " => " ++ signal ++ "\n"
+mapOutputPorts (Port portname) (Port signalname) =
+	[(Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))]
 
 -- Map matching output ports in the tuple
 mapOutputPorts (Tuple ports) (Tuple signals) =
 	concat (zipWith mapOutputPorts ports signals)
 
+getArchitecture ::
+	CoreBind                  -- The binder to expand into an architecture
+	-> AST.ArchBody           -- The resulting architecture
+	 
+getArchitecture (Rec _) = error "Recursive binders not supported"
+
 getArchitecture (NonRec var expr) =
-	"architecture structural of " ++ name ++ " is\n"
-	++ "begin\n"
-	++ getInstantiations (Args inportnames) outport [] expr
-	++ "end structural\n"
+	AST.ArchBody
+		(AST.unsafeVHDLBasicId "structural")
+		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
+		(AST.NSimple (AST.unsafeVHDLBasicId name))
+		[]
+		(getInstantiations (Args inportnames) outport [] expr)
 	where
 		name = (getOccString var)
 		ty = CoreUtils.exprType expr
