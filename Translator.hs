@@ -205,17 +205,13 @@ getArchitecture sess (NonRec var expr) =
 		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
 		(AST.NSimple (AST.unsafeVHDLBasicId name))
 		[]
-		(getInstantiations sess (Args inportnames) outport [] expr)
+		(getInstantiations sess (Args inports) outport [] expr)
 	where
 		name = (getOccString var)
-		ty = CoreUtils.exprType expr
-		(fargs, res) = Type.splitFunTys ty
-		--state = if length fargs == 1 then () else (last fargs)
-		ports = if length fargs == 1 then fargs else (init fargs)
-		inportnames = case ports of
-			[port] -> [getPortNameMapForTy "portin" port]
-			ps     -> getPortNameMapForTys "portin" 0 ps
-		outport = getPortNameMapForTy "portout" res
+		hwfunc = Maybe.fromMaybe
+			(error $ "Function " ++ name ++ "is unknown? This should not happen!")
+			(lookup name (funcs sess))
+		HWFunction (Args inports) outport = hwfunc
 
 data PortNameMap =
 	Args [PortNameMap] -- Each of the submaps represent an argument to the
