@@ -42,9 +42,10 @@ main =
 					liftIO $ printBinds (cm_binds core)
 					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
+					let sess = VHDLSession 0 builtin_funcs
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
-					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture bind
+					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture sess bind
 					return expr
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
@@ -91,25 +92,26 @@ getPortMapEntry binds portname (Var id) =
 getPortMapEntry binds _ a = error $ "Unsupported argument: " ++ (showSDoc $ ppr a)
 
 getInstantiations ::
-	PortNameMap                  -- The arguments that need to be applied to the
+	VHDLSession
+	-> PortNameMap                  -- The arguments that need to be applied to the
 															 -- expression. Should always be the Args
 															 -- constructor.
 	-> PortNameMap               -- The output ports that the expression should generate.
 	-> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
 	-> CoreSyn.CoreExpr          -- The expression to generate an architecture for
-	-> [AST.ConcSm]                  -- The resulting VHDL code
+	-> [AST.ConcSm]              -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
-getInstantiations (Args (a:as)) outs binds (Lam b expr) =
-	getInstantiations (Args as) outs ((b, a):binds) expr
+getInstantiations sess (Args (a:as)) outs binds (Lam b expr) =
+	getInstantiations sess (Args as) outs ((b, a):binds) expr
 
 -- A case expression that checks a single variable and has a single
 -- alternative, can be used to take tuples apart
-getInstantiations args outs binds (Case (Var v) b _ [res]) =
+getInstantiations sess args outs binds (Case (Var v) b _ [res]) =
 	case altcon of
 		DataAlt datacon ->
 			if (DataCon.isTupleCon datacon) then
-				getInstantiations args outs binds' expr
+				getInstantiations sess args outs binds' expr
 			else
 				error "Data constructors other than tuples not supported"
 		otherwise ->
@@ -123,14 +125,14 @@ getInstantiations args outs binds (Case (Var v) b _ [res]) =
 			(lookup v binds)
 
 -- An application is an instantiation of a component
-getInstantiations args outs binds app@(App expr arg) =
+getInstantiations sess args outs binds app@(App expr arg) =
 	if isTupleConstructor f then
 		let
 			Tuple outports = outs
 			(tys, vals) = splitTupleConstructorArgs fargs
 		in
 			concat $ zipWith 
-				(\outs' expr' -> getInstantiations args outs' binds expr')
+				(\outs' expr' -> getInstantiations sess args outs' binds expr')
 				outports vals
 	else
 		[AST.CSISm comp]
@@ -141,11 +143,15 @@ getInstantiations args outs binds app@(App expr arg) =
 			(AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId compname)))
 			(AST.PMapAspect ports)
 		compname = getOccString f
+		hwfunc = Maybe.fromMaybe
+			(error $ "Function " ++ compname ++ "is unknown")
+			(lookup compname (funcs sess))
+		HWFunction inports outports = hwfunc
 		ports = 
 			zipWith (getPortMapEntry binds) ["portin0", "portin1"] fargs
-		  ++ mapOutputPorts (Port "portout") outs
+		  ++ mapOutputPorts outports outs
 
-getInstantiations args outs binds expr = 
+getInstantiations sess args outs binds expr = 
 	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
 
 -- Is the given name a (binary) tuple constructor
@@ -185,18 +191,19 @@ mapOutputPorts (Tuple ports) (Tuple signals) =
 	concat (zipWith mapOutputPorts ports signals)
 
 getArchitecture ::
-	CoreBind                  -- The binder to expand into an architecture
+	VHDLSession
+	-> CoreBind               -- The binder to expand into an architecture
 	-> AST.ArchBody           -- The resulting architecture
 	 
-getArchitecture (Rec _) = error "Recursive binders not supported"
+getArchitecture sess (Rec _) = error "Recursive binders not supported"
 
-getArchitecture (NonRec var expr) =
+getArchitecture sess (NonRec var expr) =
 	AST.ArchBody
 		(AST.unsafeVHDLBasicId "structural")
 		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
 		(AST.NSimple (AST.unsafeVHDLBasicId name))
 		[]
-		(getInstantiations (Args inportnames) outport [] expr)
+		(getInstantiations sess (Args inportnames) outport [] expr)
 	where
 		name = (getOccString var)
 		ty = CoreUtils.exprType expr
@@ -231,3 +238,20 @@ getPortNameMapForTy name ty =
 		Port name
 	where
 		(tycon, args) = Type.splitTyConApp ty 
+
+data HWFunction = HWFunction { -- A function that is available in hardware
+	inPorts   :: PortNameMap,
+	outPorts  :: PortNameMap
+	--entity    :: AST.EntityDec
+}
+
+data VHDLSession = VHDLSession {
+	nameCount :: Int,                      -- A counter that can be used to generate unique names
+	funcs     :: [(String, HWFunction)]    -- All functions available, indexed by name
+}
+
+builtin_funcs = 
+	[ 
+		("hwxor", HWFunction (Args [Port "a", Port "b"]) (Port "o")),
+		("hwand", HWFunction (Args [Port "a", Port "b"]) (Port "o"))
+	]
