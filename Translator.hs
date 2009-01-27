@@ -8,6 +8,7 @@ import qualified TyCon
 import qualified DataCon
 import qualified Maybe
 import qualified Module
+import qualified Control.Monad.State as State
 import Name
 import Data.Generics
 import NameEnv ( lookupNameEnv )
@@ -42,9 +43,7 @@ main =
 					liftIO $ printBinds (cm_binds core)
 					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
-					let sess = VHDLSession 0 builtin_funcs
-					let (sess', name, f) = mkHWFunction sess bind
-					let sess = addFunc sess' name f
+					let sess = State.execState (do {(name, f) <- mkHWFunction bind; addFunc name f}) (VHDLSession 0 builtin_funcs)
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
 					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture sess bind
@@ -244,12 +243,11 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 -- Turns a CoreExpr describing a function into a description of its input and
 -- output ports.
 mkHWFunction ::
-	VHDLSession
-	-> CoreBind                                -- The core binder to generate the interface for
-	-> (VHDLSession, String, HWFunction)       -- The name of the function and its interface
+	CoreBind                                   -- The core binder to generate the interface for
+	-> VHDLState (String, HWFunction)          -- The name of the function and its interface
 
-mkHWFunction sess (NonRec var expr) =
-	(sess, name, HWFunction inports outport)
+mkHWFunction (NonRec var expr) =
+		return (name, HWFunction inports outport)
 	where
 		name = (getOccString var)
 		ty = CoreUtils.exprType expr
@@ -262,7 +260,7 @@ mkHWFunction sess (NonRec var expr) =
 			ps     -> getPortNameMapForTys "portin" 0 ps
 		outport = getPortNameMapForTy "portout" res
 
-mkHWFunction sess (Rec _) =
+mkHWFunction (Rec _) =
 	error "Recursive binders not supported"
 
 data VHDLSession = VHDLSession {
@@ -270,10 +268,13 @@ data VHDLSession = VHDLSession {
 	funcs     :: [(String, HWFunction)]    -- All functions available, indexed by name
 } deriving (Show)
 
+type VHDLState = State.State VHDLSession
+
 -- Add the function to the session
-addFunc :: VHDLSession -> String -> HWFunction -> VHDLSession
-addFunc sess name f =
-	sess {funcs = (name, f) : (funcs sess) }
+addFunc :: String -> HWFunction -> VHDLState ()
+addFunc name f = do
+	fs <- State.gets funcs -- Get the funcs element form the session
+	State.modify (\x -> x {funcs = (name, f) : fs }) -- Prepend name and f
 
 builtin_funcs = 
 	[ 
