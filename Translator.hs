@@ -215,6 +215,7 @@ getArchitecture sess (NonRec var expr) =
 data PortNameMap =
 	Tuple [PortNameMap]
 	| Port  String
+  deriving (Show)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
@@ -238,7 +239,7 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 	inPorts   :: [PortNameMap],
 	outPort   :: PortNameMap
 	--entity    :: AST.EntityDec
-}
+} deriving (Show)
 
 -- Turns a CoreExpr describing a function into a description of its input and
 -- output ports.
@@ -267,7 +268,7 @@ mkHWFunction sess (Rec _) =
 data VHDLSession = VHDLSession {
 	nameCount :: Int,                      -- A counter that can be used to generate unique names
 	funcs     :: [(String, HWFunction)]    -- All functions available, indexed by name
-}
+} deriving (Show)
 
 -- Add the function to the session
 addFunc :: VHDLSession -> String -> HWFunction -> VHDLSession
