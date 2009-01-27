@@ -103,25 +103,24 @@ getPortMapEntry binds (Port portname) (Var id) =
 getPortMapEntry binds _ a = error $ "Unsupported argument: " ++ (showSDoc $ ppr a)
 
 getInstantiations ::
-	VHDLSession
-	-> [PortNameMap]             -- The arguments that need to be applied to the
+	[PortNameMap]                -- The arguments that need to be applied to the
 															 -- expression.
 	-> PortNameMap               -- The output ports that the expression should generate.
 	-> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
 	-> CoreSyn.CoreExpr          -- The expression to generate an architecture for
-	-> [AST.ConcSm]              -- The resulting VHDL code
+	-> VHDLState [AST.ConcSm]    -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
-getInstantiations sess (a:as) outs binds (Lam b expr) =
-	getInstantiations sess as outs ((b, a):binds) expr
+getInstantiations (a:as) outs binds (Lam b expr) =
+	getInstantiations as outs ((b, a):binds) expr
 
 -- A case expression that checks a single variable and has a single
 -- alternative, can be used to take tuples apart
-getInstantiations sess args outs binds (Case (Var v) b _ [res]) =
+getInstantiations args outs binds (Case (Var v) b _ [res]) =
 	case altcon of
 		DataAlt datacon ->
 			if (DataCon.isTupleCon datacon) then
-				getInstantiations sess args outs binds' expr
+				getInstantiations args outs binds' expr
 			else
 				error "Data constructors other than tuples not supported"
 		otherwise ->
@@ -135,33 +134,29 @@ getInstantiations sess args outs binds (Case (Var v) b _ [res]) =
 			(lookup v binds)
 
 -- An application is an instantiation of a component
-getInstantiations sess args outs binds app@(App expr arg) =
-	if isTupleConstructor f then
-		let
-			Tuple outports = outs
-			(tys, vals) = splitTupleConstructorArgs fargs
-		in
-			concat $ zipWith 
-				(\outs' expr' -> getInstantiations sess args outs' binds expr')
+getInstantiations args outs binds app@(App expr arg) = do
+	let ((Var f), fargs) = collectArgs app
+	    name = getOccString f
+	if isTupleConstructor f 
+		then do
+			let Tuple outports = outs
+			    (tys, vals) = splitTupleConstructorArgs fargs
+			insts <- sequence $ zipWith 
+				(\outs' expr' -> getInstantiations args outs' binds expr')
 				outports vals
-	else
-		[AST.CSISm comp]
-	where
-		((Var f), fargs) = collectArgs app
-		comp = AST.CompInsSm
-			(AST.unsafeVHDLBasicId "app")
-			(AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId compname)))
-			(AST.PMapAspect ports)
-		compname = getOccString f
-		hwfunc = Maybe.fromMaybe
-			(error $ "Function " ++ compname ++ "is unknown")
-			(lookup compname (funcs sess))
-		HWFunction inports outport = hwfunc
-		ports = 
-			zipWith (getPortMapEntry binds) inports fargs
-		  ++ mapOutputPorts outport outs
+			return $ concat insts
+		else do
+			HWFunction inports outport <- getHWFunc name
+			let comp = AST.CompInsSm
+						(AST.unsafeVHDLBasicId "app")
+						(AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
+						(AST.PMapAspect ports)
+			    ports = 
+				    zipWith (getPortMapEntry binds) inports fargs
+				    ++ mapOutputPorts outport outs
+			return [AST.CSISm comp]
 
-getInstantiations sess args outs binds expr = 
+getInstantiations args outs binds expr = 
 	error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
 
 -- Is the given name a (binary) tuple constructor
@@ -207,16 +202,16 @@ getArchitecture ::
 getArchitecture (Rec _) = error "Recursive binders not supported"
 
 getArchitecture (NonRec var expr) = do
+	let name = (getOccString var)
 	HWFunction inports outport <- getHWFunc name
 	sess <- State.get
+	insts <- getInstantiations inports outport [] expr
 	return $ AST.ArchBody
 		(AST.unsafeVHDLBasicId "structural")
 		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
 		(AST.NSimple (AST.unsafeVHDLBasicId name))
 		[]
-		(getInstantiations sess inports outport [] expr)
-	where
-		name = (getOccString var)
+		(insts)
 
 data PortNameMap =
 	Tuple [PortNameMap]
