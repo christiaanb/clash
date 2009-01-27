@@ -43,11 +43,19 @@ main =
 					liftIO $ printBinds (cm_binds core)
 					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
-					let sess = State.execState (do {(name, f) <- mkHWFunction bind; addFunc name f}) (VHDLSession 0 builtin_funcs)
+					-- Add the HWFunction from the bind to the session
+					let sess = State.execState (addF bind) (VHDLSession 0 builtin_funcs)
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
 					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture sess bind
 					return expr
+	where
+		-- Turns the given bind into VHDL
+		addF bind = do
+			-- Get the function signature
+			(name, f) <- mkHWFunction bind
+			-- Add it to the session
+			addFunc name f
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
 	print $ show file
