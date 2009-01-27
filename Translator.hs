@@ -43,19 +43,21 @@ main =
 					liftIO $ printBinds (cm_binds core)
 					let bind = findBind "half_adder" (cm_binds core)
 					let NonRec var expr = bind
-					-- Add the HWFunction from the bind to the session
-					let sess = State.execState (addF bind) (VHDLSession 0 builtin_funcs)
+					-- Turn bind into VHDL
+					let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
 					liftIO $ putStr $ showSDoc $ ppr expr
 					liftIO $ putStr "\n\n"
-					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ getArchitecture sess bind
+					liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ vhdl
 					return expr
 	where
 		-- Turns the given bind into VHDL
-		addF bind = do
+		mkVHDL bind = do
 			-- Get the function signature
 			(name, f) <- mkHWFunction bind
 			-- Add it to the session
 			addFunc name f
+			arch <- getArchitecture bind
+			return arch
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
 	print $ show file
@@ -199,14 +201,15 @@ mapOutputPorts (Tuple ports) (Tuple signals) =
 	concat (zipWith mapOutputPorts ports signals)
 
 getArchitecture ::
-	VHDLSession
-	-> CoreBind               -- The binder to expand into an architecture
-	-> AST.ArchBody           -- The resulting architecture
+	CoreBind                  -- The binder to expand into an architecture
+	-> VHDLState AST.ArchBody -- The resulting architecture
 	 
-getArchitecture sess (Rec _) = error "Recursive binders not supported"
+getArchitecture (Rec _) = error "Recursive binders not supported"
 
-getArchitecture sess (NonRec var expr) =
-	AST.ArchBody
+getArchitecture (NonRec var expr) = do
+	HWFunction inports outport <- getHWFunc name
+	sess <- State.get
+	return $ AST.ArchBody
 		(AST.unsafeVHDLBasicId "structural")
 		-- Use unsafe for now, to prevent pulling in ForSyDe error handling
 		(AST.NSimple (AST.unsafeVHDLBasicId name))
@@ -214,10 +217,6 @@ getArchitecture sess (NonRec var expr) =
 		(getInstantiations sess inports outport [] expr)
 	where
 		name = (getOccString var)
-		hwfunc = Maybe.fromMaybe
-			(error $ "Function " ++ name ++ "is unknown? This should not happen!")
-			(lookup name (funcs sess))
-		HWFunction inports outport = hwfunc
 
 data PortNameMap =
 	Tuple [PortNameMap]
@@ -281,8 +280,17 @@ type VHDLState = State.State VHDLSession
 -- Add the function to the session
 addFunc :: String -> HWFunction -> VHDLState ()
 addFunc name f = do
-	fs <- State.gets funcs -- Get the funcs element form the session
+	fs <- State.gets funcs -- Get the funcs element from the session
 	State.modify (\x -> x {funcs = (name, f) : fs }) -- Prepend name and f
+
+-- Lookup the function with the given name in the current session. Errors if
+-- it was not found.
+getHWFunc :: String -> VHDLState HWFunction
+getHWFunc name = do
+	fs <- State.gets funcs -- Get the funcs element from the session
+	return $ Maybe.fromMaybe
+		(error $ "Function " ++ name ++ "is unknown? This should not happen!")
+		(lookup name fs)
 
 builtin_funcs = 
 	[ 
