@@ -41,7 +41,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "inv" (cm_binds core)
+          let bind = findBind "invinv" (cm_binds core)
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -325,22 +325,15 @@ expandArgs ::
                                          -- expressions passed in.
 expandArgs binds (e:exprs) = do
   -- Expand the first expression
-  arg <- case e of
-    -- A simple variable reference should be in our binds map
-    Var id -> return $ let
-        -- Lookup the id in our binds map
-        Signal signalid = Maybe.fromMaybe
-          (error $ "Argument " ++ getOccString id ++ "is unknown")
-          (lookup id binds)
-      in
-        -- Create a VHDL name from the signal name
-        Signal signalid
-    -- Other expressions are unsupported
-    otherwise -> error ("Unsupported expression used as argument: " ++ (showSDoc $ ppr e))
-  -- Expand the rest
-  (sigs, comps, args) <- expandArgs binds exprs
-  -- Return all results
-  return (sigs, comps, arg:args)
+  (signal_decls, statements, arg_signals, res_signal) <- expandExpr binds e
+  if not (null arg_signals)
+    then error $ "Passing functions as arguments not supported: " ++ (showSDoc $ ppr e)
+    else do
+      (signal_decls', statements', res_signals') <- expandArgs binds exprs
+      return (
+        signal_decls ++ signal_decls',
+        statements ++ statements',
+        res_signal : res_signals')
 
 expandArgs _ [] = return ([], [], [])
 
