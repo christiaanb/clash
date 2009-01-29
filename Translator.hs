@@ -478,6 +478,9 @@ createSignalAssignments (Signal dst) (Signal src) =
 createSignalAssignments (Tuple dsts) (Tuple srcs) =
   concat $ zipWith createSignalAssignments dsts srcs
 
+createSignalAssignments dst src =
+  error $ "Non matching source and destination: " ++ show dst ++ "\nand\n" ++  show src
+
 data SignalNameMap t =
   Tuple [SignalNameMap t]
   | Signal  t
