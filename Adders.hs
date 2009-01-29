@@ -22,6 +22,10 @@ inv a = hwnot a
 invinv :: Bit -> Bit
 invinv a = hwnot (hwnot a)
 
+-- Not really an adder either, but a slightly more complex example
+dup :: Bit -> (Bit, Bit)
+dup a = (a, a)
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
