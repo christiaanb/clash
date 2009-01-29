@@ -44,23 +44,20 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = Maybe.fromJust $ findBind (cm_binds core) "full_adder" 
-          let NonRec var expr = bind
+          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["full_adder", "half_adder"]
           -- Turn bind into VHDL
-          let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
-          liftIO $ putStr $ showSDoc $ ppr expr
-          liftIO $ putStr "\n\n"
-          liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr $ vhdl
-          return expr
+          let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 builtin_funcs)
+          liftIO $ putStr $ concat $ map (render . ForSyDe.Backend.Ppr.ppr) vhdl
+          return ()
   where
     -- Turns the given bind into VHDL
-    mkVHDL bind = do
-      -- Get the function signature
-      (name, f) <- mkHWFunction bind
-      -- Add it to the session
-      addFunc name f
-      arch <- getArchitecture bind
-      return arch
+    mkVHDL binds = do
+      -- Get the function signatures
+      funcs <- mapM mkHWFunction binds
+      -- Add them to the session
+      mapM (uncurry addFunc) funcs
+      -- Create architectures for them
+      mapM getArchitecture binds
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
   print $ show file
