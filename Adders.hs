@@ -10,6 +10,10 @@ show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displ
     b = [Low, Low, Low, High]
     (s, c) = f (a, b)
 
+-- Not really an adder, but this is nice minimal hardware description
+wire :: Bit -> Bit
+wire a = a
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
