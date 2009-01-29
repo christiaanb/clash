@@ -41,7 +41,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "wire" (cm_binds core)
+          let bind = findBind "inv" (cm_binds core)
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -217,7 +217,10 @@ expandExpr binds (Var id) =
     Signal (AST.NSimple signal_id) = Maybe.fromMaybe
       (error $ "Argument " ++ getOccString id ++ "is unknown")
       (lookup id binds)
-  
+
+expandExpr binds expr = 
+  error $ "Unsupported expression: " ++ (showSDoc $ ppr $ expr)
+
 -- Generate a signal declaration for a signal with the given name and the
 -- given type and no value. Also returns the id of the signal.
 mkSignal :: String -> AST.TypeMark -> (AST.VHDLId, AST.SigDec)
