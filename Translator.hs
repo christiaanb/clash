@@ -44,7 +44,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "full_adder" (cm_binds core)
+          let bind = Maybe.fromJust $ findBind (cm_binds core) "full_adder" 
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -84,15 +84,15 @@ printBind' (b, expr) = do
   --putStr $ showSDoc $ ppr expr
   putStr "\n"
 
-findBind :: String -> [CoreBind] -> CoreBind
-findBind lookfor =
+findBind :: [CoreBind] -> String -> Maybe CoreBind
+findBind binds lookfor =
   -- This ignores Recs and compares the name of the bind with lookfor,
   -- disregarding any namespaces in OccName and extra attributes in Name and
   -- Var.
-  Maybe.fromJust . find (\b -> case b of 
+  find (\b -> case b of 
     Rec l -> False
     NonRec var _ -> lookfor == (occNameString $ nameOccName $ getName var)
-  )
+  ) binds
 
 getPortMapEntry ::
   SignalNameMap AST.VHDLId  -- The port name to bind to
