@@ -147,8 +147,9 @@ getInstantiations args outs binds app@(App expr arg) = do
       return $ concat insts
     else do
       HWFunction inports outport <- getHWFunc name
+      appname <- uniqueName "app"
       let comp = AST.CompInsSm
-            (AST.unsafeVHDLBasicId "app")
+            (AST.unsafeVHDLBasicId appname)
             (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
             (AST.PMapAspect ports)
           ports = 
