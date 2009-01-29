@@ -18,6 +18,10 @@ wire a = a
 inv :: Bit -> Bit
 inv a = hwnot a
 
+-- Not really an adder either, but a slightly more complex example
+invinv :: Bit -> Bit
+invinv a = hwnot (hwnot a)
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
