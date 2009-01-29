@@ -14,6 +14,10 @@ show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displ
 wire :: Bit -> Bit
 wire a = a
 
+-- Not really an adder either, but a slightly more complex example
+inv :: Bit -> Bit
+inv a = hwnot a
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
