@@ -93,13 +93,14 @@ findBind lookfor =
 
 getPortMapEntry ::
   SignalNameMap AST.VHDLId  -- The port name to bind to
-  -> AST.VHDLName           -- The signal or port to bind to it
+  -> SignalNameMap AST.VHDLId 
+                            -- The signal or port to bind to it
   -> AST.AssocElem          -- The resulting port map entry
   
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
-getPortMapEntry (Signal portname) signame = 
-  (Just portname) AST.:=>: (AST.ADName signame)
+getPortMapEntry (Signal portname) (Signal signame) = 
+  (Just portname) AST.:=>: (AST.ADName (AST.NSimple signame))
 
 getInstantiations ::
   [SignalNameMap AST.VHDLId]   -- The arguments that need to be applied to the
@@ -185,7 +186,7 @@ getInstantiations args outs binds expr =
   error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
 
 expandExpr ::
-  [(CoreBndr, SignalNameMap AST.VHDLName)] 
+  [(CoreBndr, SignalNameMap AST.VHDLId)] 
                                          -- A list of bindings in effect
   -> CoreExpr                            -- The expression to expand
   -> VHDLState (
@@ -199,9 +200,10 @@ expandExpr ::
 expandExpr binds (Lam b expr) = do
   -- Generate a new signal to which we will expect this argument to be bound.
   signal_name <- uniqueName ("arg-" ++ getOccString b)
+  -- TODO: This uses the bit type hardcoded
   let (signal_id, signal_decl) = mkSignal signal_name vhdl_bit_ty
   -- Add the binder to the list of binds
-  let binds' = (b, Signal (AST.NSimple signal_id)) : binds
+  let binds' = (b, Signal signal_id) : binds
   -- Expand the rest of the expression
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr binds' expr
   -- Properly merge the results
@@ -214,25 +216,109 @@ expandExpr binds (Var id) =
   return ([], [], [], Signal signal_id)
   where
     -- Lookup the id in our binds map
-    Signal (AST.NSimple signal_id) = Maybe.fromMaybe
+    Signal signal_id = Maybe.fromMaybe
       (error $ "Argument " ++ getOccString id ++ "is unknown")
       (lookup id binds)
 
+expandExpr binds app@(App _ _) = do
+  let ((Var f), args) = collectArgs app
+  if isTupleConstructor f 
+    then
+      expandBuildTupleExpr binds args
+    else
+      expandApplicationExpr binds (CoreUtils.exprType app) f args
+
 expandExpr binds expr = 
   error $ "Unsupported expression: " ++ (showSDoc $ ppr $ expr)
+
+-- Expands the construction of a tuple into VHDL
+expandBuildTupleExpr ::
+  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+                                         -- A list of bindings in effect
+  -> [CoreExpr]                          -- A list of expressions to put in the tuple
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+                                         -- See expandExpr
+expandBuildTupleExpr binds args =
+  error $ "Tuple construction not supported"
+
+-- Expands the application of argument to a function into VHDL
+expandApplicationExpr ::
+  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+                                         -- A list of bindings in effect
+  -> Type                                -- The result type of the function call
+  -> Var.Var                             -- The function to call
+  -> [CoreExpr]                          -- A list of argumetns to apply to the function
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+                                         -- See expandExpr
+expandApplicationExpr binds ty f args = do
+  let name = getOccString f
+  -- Generate a unique name for the application
+  appname <- uniqueName ("app-" ++ name)
+  -- Lookup the hwfunction to instantiate
+  HWFunction inports outport <- getHWFunc name
+  -- Expand each of the args, so each of them is reduced to output signals
+  (arg_signal_decls, arg_statements, arg_res_signals) <- expandArgs binds args
+  -- Bind each of the input ports to the expanded arguments
+  let inmaps = concat $ zipWith createAssocElems inports arg_res_signals
+  -- Create signal names for our result
+  let res_signal = getPortNameMapForTy (appname ++ "-out") ty
+  -- Create the corresponding signal declarations
+  let signal_decls = mkSignalsFromMap res_signal
+  -- Bind each of the output ports to our output signals
+  let outmaps = mapOutputPorts outport res_signal
+  -- Instantiate the component
+  let component = AST.CSISm $ AST.CompInsSm
+        (AST.unsafeVHDLBasicId appname)
+        (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
+        (AST.PMapAspect (inmaps ++ outmaps))
+  -- Merge the generated declarations
+  return (
+    signal_decls ++ arg_signal_decls,
+    component : arg_statements,
+    [], -- We don't take any extra arguments; we don't support higher order functions yet
+    res_signal)
+  
+-- Creates a list of AssocElems (port map lines) that maps the given signals
+-- to the given ports.
+createAssocElems ::
+  SignalNameMap AST.VHDLId      -- The port names to bind to
+  -> SignalNameMap AST.VHDLId   -- The signals to bind to it
+  -> [AST.AssocElem]            -- The resulting port map lines
+  
+createAssocElems (Signal port_id) (Signal signal_id) = 
+  [(Just port_id) AST.:=>: (AST.ADName (AST.NSimple signal_id))]
+
+createAssocElems (Tuple ports) (Tuple signals) = 
+  concat $ zipWith createAssocElems ports signals
 
 -- Generate a signal declaration for a signal with the given name and the
 -- given type and no value. Also returns the id of the signal.
 mkSignal :: String -> AST.TypeMark -> (AST.VHDLId, AST.SigDec)
 mkSignal name ty =
-  (id, AST.SigDec id ty Nothing)
+  (id, mkSignalFromId id ty)
   where 
     id = AST.unsafeVHDLBasicId name
+
+mkSignalFromId :: AST.VHDLId -> AST.TypeMark -> AST.SigDec
+mkSignalFromId id ty =
+  AST.SigDec id ty Nothing
+
+-- Generates signal declarations for all the signals in the given map
+mkSignalsFromMap ::
+  SignalNameMap AST.VHDLId 
+  -> [AST.SigDec]
+
+mkSignalsFromMap (Signal id) =
+  -- TODO: This uses the bit type hardcoded
+  [mkSignalFromId id vhdl_bit_ty]
+
+mkSignalsFromMap (Tuple signals) =
+  concat $ map mkSignalsFromMap signals
 
 expandArgs :: 
   [(CoreBndr, SignalNameMap AST.VHDLId)] -- A list of bindings in effect
   -> [CoreExpr]                          -- The arguments to expand
-  -> VHDLState ([AST.SigDec], [AST.ConcSm], [AST.VHDLName])  
+  -> VHDLState ([AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId])  
                                          -- The resulting signal declarations,
                                          -- component instantiations and a
                                          -- VHDLName for each of the
@@ -248,7 +334,7 @@ expandArgs binds (e:exprs) = do
           (lookup id binds)
       in
         -- Create a VHDL name from the signal name
-        AST.NSimple signalid
+        Signal signalid
     -- Other expressions are unsupported
     otherwise -> error ("Unsupported expression used as argument: " ++ (showSDoc $ ppr e))
   -- Expand the rest
@@ -425,7 +511,8 @@ mkVHDLId = AST.unsafeVHDLBasicId
 builtin_funcs = 
   [ 
     ("hwxor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
-    ("hwand", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o"))
+    ("hwand", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwnot", HWFunction [Signal $ mkVHDLId "i"] (Signal $ mkVHDLId "o"))
   ]
 
 vhdl_bit_ty :: AST.TypeMark
