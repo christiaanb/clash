@@ -227,6 +227,16 @@ expandExpr binds (Var id) =
       (error $ "Argument " ++ getOccString id ++ "is unknown")
       (lookup id binds)
 
+expandExpr binds l@(Let (NonRec b bexpr) expr) = do
+  (signal_decls, statements, arg_signals, res_signals) <- expandExpr binds bexpr
+  let binds' = (b, res_signals) : binds
+  (signal_decls', statements', arg_signals', res_signals') <- expandExpr binds' expr
+  return (
+    signal_decls ++ signal_decls',
+    statements ++ statements',
+    arg_signals',
+    res_signals')
+
 expandExpr binds app@(App _ _) = do
   let ((Var f), args) = collectArgs app
   if isTupleConstructor f 
