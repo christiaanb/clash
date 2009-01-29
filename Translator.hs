@@ -117,21 +117,28 @@ getInstantiations (a:as) outs binds (Lam b expr) =
 -- A case expression that checks a single variable and has a single
 -- alternative, can be used to take tuples apart
 getInstantiations args outs binds (Case (Var v) b _ [res]) =
+  -- Split out the type of alternative constructor, the variables it binds
+  -- and the expression to evaluate with the variables bound.
+  let (altcon, bind_vars, expr) = res in
   case altcon of
     DataAlt datacon ->
       if (DataCon.isTupleCon datacon) then
-        getInstantiations args outs binds' expr
+        let 
+          -- Lookup the scrutinee (which must be a variable bound to a tuple) in
+          -- the existing bindings list and get the portname map for each of
+          -- it's elements.
+          Tuple tuple_ports = Maybe.fromMaybe 
+            (error $ "Case expression uses unknown scrutinee " ++ getOccString v)
+            (lookup v binds)
+          -- Merge our existing binds with the new binds.
+          binds' = (zip bind_vars tuple_ports) ++ binds 
+        in
+          -- Evaluate the expression with the new binds list
+          getInstantiations args outs binds' expr
       else
         error "Data constructors other than tuples not supported"
     otherwise ->
       error "Case binders other than tuples not supported"
-  where
-    binds' = (zip bind_vars tuple_ports) ++ binds
-    (altcon, bind_vars, expr) = res
-    -- Find the portnamemaps for each of the tuple's elements
-    Tuple tuple_ports = Maybe.fromMaybe 
-      (error $ "Case expression uses unknown scrutinee " ++ getOccString v)
-      (lookup v binds)
 
 -- An application is an instantiation of a component
 getInstantiations args outs binds app@(App expr arg) = do
@@ -139,22 +146,32 @@ getInstantiations args outs binds app@(App expr arg) = do
       name = getOccString f
   if isTupleConstructor f 
     then do
+      -- Get the signals we should bind our results to
       let Tuple outports = outs
-          (tys, vals) = splitTupleConstructorArgs fargs
+      -- Split the tuple constructor arguments into types and actual values.
+      let (_, vals) = splitTupleConstructorArgs fargs
+      -- Bind each argument to each output signal
       insts <- sequence $ zipWith 
         (\outs' expr' -> getInstantiations args outs' binds expr')
         outports vals
+      -- And join all the component instantiations together
       return $ concat insts
     else do
+      -- This is an normal function application, which maps to a component
+      -- instantiation.
+      -- Lookup the hwfunction to instantiate
       HWFunction inports outport <- getHWFunc name
+      -- Generate a unique name for the application
       appname <- uniqueName "app"
+      -- Bind each of the input ports to an argument
+      let inmaps = zipWith (getPortMapEntry binds) inports fargs
+      -- Bind each of the output ports to our output signals
+      let outmaps = mapOutputPorts outport outs
+      -- Build and return a component instantiation
       let comp = AST.CompInsSm
             (AST.unsafeVHDLBasicId appname)
             (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
-            (AST.PMapAspect ports)
-          ports = 
-            zipWith (getPortMapEntry binds) inports fargs
-            ++ mapOutputPorts outport outs
+            (AST.PMapAspect (inmaps ++ outmaps))
       return [AST.CSISm comp]
 
 getInstantiations args outs binds expr = 
