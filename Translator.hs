@@ -41,7 +41,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "half_adder" (cm_binds core)
+          let bind = findBind "wire" (cm_binds core)
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -92,20 +92,20 @@ findBind lookfor =
   )
 
 getPortMapEntry ::
-  SignalNameMap String      -- The port name to bind to
+  SignalNameMap AST.VHDLId  -- The port name to bind to
   -> AST.VHDLName           -- The signal or port to bind to it
   -> AST.AssocElem          -- The resulting port map entry
   
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
 getPortMapEntry (Signal portname) signame = 
-  (Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName signame)
+  (Just portname) AST.:=>: (AST.ADName signame)
 
 getInstantiations ::
-  [SignalNameMap String]       -- The arguments that need to be applied to the
+  [SignalNameMap AST.VHDLId]   -- The arguments that need to be applied to the
                                -- expression.
-  -> SignalNameMap String      -- The output ports that the expression should generate.
-  -> [(CoreBndr, SignalNameMap String)] 
+  -> SignalNameMap AST.VHDLId  -- The output ports that the expression should generate.
+  -> [(CoreBndr, SignalNameMap AST.VHDLId)] 
                                -- A list of bindings in effect
   -> CoreSyn.CoreExpr          -- The expression to generate an architecture for
   -> VHDLState ([AST.SigDec], [AST.ConcSm])    
@@ -183,9 +183,51 @@ getInstantiations args outs binds app@(App expr arg) = do
 
 getInstantiations args outs binds expr = 
   error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
+
+expandExpr ::
+  [(CoreBndr, SignalNameMap AST.VHDLName)] 
+                                         -- A list of bindings in effect
+  -> CoreExpr                            -- The expression to expand
+  -> VHDLState (
+       [AST.SigDec],                     -- Needed signal declarations
+       [AST.ConcSm],                     -- Needed component instantations and
+                                         -- signal assignments.
+       [SignalNameMap AST.VHDLId],       -- The signal names corresponding to
+                                         -- the expression's arguments
+       SignalNameMap AST.VHDLId)         -- The signal names corresponding to
+                                         -- the expression's result.
+expandExpr binds (Lam b expr) = do
+  -- Generate a new signal to which we will expect this argument to be bound.
+  signal_name <- uniqueName ("arg-" ++ getOccString b)
+  let (signal_id, signal_decl) = mkSignal signal_name vhdl_bit_ty
+  -- Add the binder to the list of binds
+  let binds' = (b, Signal (AST.NSimple signal_id)) : binds
+  -- Expand the rest of the expression
+  (signal_decls, statements, arg_signals, res_signal) <- expandExpr binds' expr
+  -- Properly merge the results
+  return (signal_decl : signal_decls,
+          statements,
+          (Signal signal_id) : arg_signals,
+          res_signal)
+
+expandExpr binds (Var id) =
+  return ([], [], [], Signal signal_id)
+  where
+    -- Lookup the id in our binds map
+    Signal (AST.NSimple signal_id) = Maybe.fromMaybe
+      (error $ "Argument " ++ getOccString id ++ "is unknown")
+      (lookup id binds)
   
+-- Generate a signal declaration for a signal with the given name and the
+-- given type and no value. Also returns the id of the signal.
+mkSignal :: String -> AST.TypeMark -> (AST.VHDLId, AST.SigDec)
+mkSignal name ty =
+  (id, AST.SigDec id ty Nothing)
+  where 
+    id = AST.unsafeVHDLBasicId name
+
 expandArgs :: 
-  [(CoreBndr, SignalNameMap String)]     -- A list of bindings in effect
+  [(CoreBndr, SignalNameMap AST.VHDLId)] -- A list of bindings in effect
   -> [CoreExpr]                          -- The arguments to expand
   -> VHDLState ([AST.SigDec], [AST.ConcSm], [AST.VHDLName])  
                                          -- The resulting signal declarations,
@@ -198,12 +240,12 @@ expandArgs binds (e:exprs) = do
     -- A simple variable reference should be in our binds map
     Var id -> return $ let
         -- Lookup the id in our binds map
-        Signal signalname = Maybe.fromMaybe
+        Signal signalid = Maybe.fromMaybe
           (error $ "Argument " ++ getOccString id ++ "is unknown")
           (lookup id binds)
       in
         -- Create a VHDL name from the signal name
-        AST.NSimple (AST.unsafeVHDLBasicId signalname)
+        AST.NSimple signalid
     -- Other expressions are unsupported
     otherwise -> error ("Unsupported expression used as argument: " ++ (showSDoc $ ppr e))
   -- Expand the rest
@@ -236,14 +278,14 @@ splitTupleConstructorArgs (e:es) =
     (tys, vals) = splitTupleConstructorArgs es
 
 mapOutputPorts ::
-  SignalNameMap String          -- The output portnames of the component
-  -> SignalNameMap String       -- The output portnames and/or signals to map these to
+  SignalNameMap AST.VHDLId      -- The output portnames of the component
+  -> SignalNameMap AST.VHDLId   -- The output portnames and/or signals to map these to
   -> [AST.AssocElem]            -- The resulting output ports
 
 -- Map the output port of a component to the output port of the containing
 -- entity.
 mapOutputPorts (Signal portname) (Signal signalname) =
-  [(Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))]
+  [(Just portname) AST.:=>: (AST.ADName (AST.NSimple signalname))]
 
 -- Map matching output ports in the tuple
 mapOutputPorts (Tuple ports) (Tuple signals) =
@@ -259,13 +301,36 @@ getArchitecture (NonRec var expr) = do
   let name = (getOccString var)
   HWFunction inports outport <- getHWFunc name
   sess <- State.get
-  (sigs, comps) <- getInstantiations inports outport [] expr
+  (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
+  let inport_assigns = concat $ zipWith createSignalAssignments arg_signals inports
+  let outport_assigns = createSignalAssignments outport res_signal
   return $ AST.ArchBody
     (AST.unsafeVHDLBasicId "structural")
     -- Use unsafe for now, to prevent pulling in ForSyDe error handling
     (AST.NSimple (AST.unsafeVHDLBasicId name))
-    (map AST.BDISD sigs)
-    comps
+    (map AST.BDISD signal_decls)
+    (inport_assigns ++ outport_assigns ++ statements)
+
+-- Create concurrent assignments of one map of signals to another. The maps
+-- should have a similar form.
+createSignalAssignments ::
+  SignalNameMap AST.VHDLId         -- The signals to assign to
+  -> SignalNameMap AST.VHDLId      -- The signals to assign
+  -> [AST.ConcSm]                  -- The resulting assignments
+
+-- A simple assignment of one signal to another (greatly complicated because
+-- signal assignments can be conditional with multiple conditions in VHDL).
+createSignalAssignments (Signal dst) (Signal src) =
+    [AST.CSSASm assign]
+  where
+    src_name  = AST.NSimple src
+    src_expr  = AST.PrimName src_name
+    src_wform = AST.Wform [AST.WformElem src_expr Nothing]
+    dst_name  = (AST.NSimple dst)
+    assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+
+createSignalAssignments (Tuple dsts) (Tuple srcs) =
+  concat $ zipWith createSignalAssignments dsts srcs
 
 data SignalNameMap t =
   Tuple [SignalNameMap t]
@@ -274,25 +339,25 @@ data SignalNameMap t =
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
-getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap String]
+getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap AST.VHDLId]
 getPortNameMapForTys prefix num [] = [] 
 getPortNameMapForTys prefix num (t:ts) =
   (getPortNameMapForTy (prefix ++ show num) t) : getPortNameMapForTys prefix (num + 1) ts
 
-getPortNameMapForTy :: String -> Type -> SignalNameMap String
+getPortNameMapForTy :: String -> Type -> SignalNameMap AST.VHDLId
 getPortNameMapForTy name ty =
   if (TyCon.isTupleTyCon tycon) then
     -- Expand tuples we find
     Tuple (getPortNameMapForTys name 0 args)
   else -- Assume it's a type constructor application, ie simple data type
     -- TODO: Add type?
-    Signal name
+    Signal (AST.unsafeVHDLBasicId name)
   where
     (tycon, args) = Type.splitTyConApp ty 
 
 data HWFunction = HWFunction { -- A function that is available in hardware
-  inPorts   :: [SignalNameMap String],
-  outPort   :: SignalNameMap String
+  inPorts   :: [SignalNameMap AST.VHDLId],
+  outPort   :: SignalNameMap AST.VHDLId
   --entity    :: AST.EntityDec
 } deriving (Show)
 
@@ -349,11 +414,18 @@ uniqueName name = do
   count <- State.gets nameCount -- Get the funcs element from the session
   State.modify (\s -> s {nameCount = count + 1})
   return $ name ++ "-" ++ (show count)
-  
+
+-- Shortcut
+mkVHDLId :: String -> AST.VHDLId
+mkVHDLId = AST.unsafeVHDLBasicId
+
 builtin_funcs = 
   [ 
-    ("hwxor", HWFunction [Signal "a", Signal "b"] (Signal "o")),
-    ("hwand", HWFunction [Signal "a", Signal "b"] (Signal "o"))
+    ("hwxor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwand", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o"))
   ]
+
+vhdl_bit_ty :: AST.TypeMark
+vhdl_bit_ty = AST.unsafeVHDLBasicId "Bit"
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
