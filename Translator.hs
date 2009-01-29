@@ -44,7 +44,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "dup" (cm_binds core)
+          let bind = findBind "full_adder" (cm_binds core)
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -200,20 +200,24 @@ expandExpr ::
                                          -- the expression's arguments
        SignalNameMap AST.VHDLId)         -- The signal names corresponding to
                                          -- the expression's result.
-expandExpr binds (Lam b expr) = do
+expandExpr binds lam@(Lam b expr) = do
   -- Generate a new signal to which we will expect this argument to be bound.
   signal_name <- uniqueName ("arg-" ++ getOccString b)
-  -- TODO: This uses the bit type hardcoded
-  let (signal_id, signal_decl) = mkSignal signal_name vhdl_bit_ty
+  -- Find the type of the binder
+  let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
+  -- Create signal names for the binder
+  let arg_signal = getPortNameMapForTy ("xxx") arg_ty
+  -- Create the corresponding signal declarations
+  let signal_decls = mkSignalsFromMap arg_signal
   -- Add the binder to the list of binds
-  let binds' = (b, Signal signal_id) : binds
+  let binds' = (b, arg_signal) : binds
   -- Expand the rest of the expression
-  (signal_decls, statements, arg_signals, res_signal) <- expandExpr binds' expr
+  (signal_decls', statements', arg_signals', res_signal') <- expandExpr binds' expr
   -- Properly merge the results
-  return (signal_decl : signal_decls,
-          statements,
-          (Signal signal_id) : arg_signals,
-          res_signal)
+  return (signal_decls ++ signal_decls',
+          statements',
+          arg_signal : arg_signals',
+          res_signal')
 
 expandExpr binds (Var id) =
   return ([], [], [], Signal signal_id)
@@ -230,6 +234,14 @@ expandExpr binds app@(App _ _) = do
       expandBuildTupleExpr binds args
     else
       expandApplicationExpr binds (CoreUtils.exprType app) f args
+
+expandExpr binds expr@(Case (Var v) b _ alts) =
+  case alts of
+    [alt] -> expandSingleAltCaseExpr binds v b alt
+    otherwise -> error $ "Multiple alternative case expression not supported: " ++ (showSDoc $ ppr expr)
+
+expandExpr binds expr@(Case _ b _ _) =
+  error $ "Case expression with non-variable scrutinee not supported: " ++ (showSDoc $ ppr expr)
 
 expandExpr binds expr = 
   error $ "Unsupported expression: " ++ (showSDoc $ ppr $ expr)
@@ -255,6 +267,41 @@ expandBuildTupleExpr binds args = do
         concat statementss,
         [],
         Tuple res_signals)
+
+-- Expands the most simple case expression that scrutinizes a plain variable
+-- and has a single alternative. This simple form currently allows only for
+-- unpacking tuple variables.
+expandSingleAltCaseExpr ::
+  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+                            -- A list of bindings in effect
+  -> Var.Var                -- The scrutinee
+  -> CoreBndr               -- The binder to bind the scrutinee to
+  -> CoreAlt                -- The single alternative
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+                                         -- See expandExpr
+
+expandSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
+  if not (DataCon.isTupleCon datacon) 
+    then
+      error $ "Dataconstructors other than tuple constructors not supported in case pattern of alternative: " ++ (showSDoc $ ppr alt)
+    else
+      let
+        -- Lookup the scrutinee (which must be a variable bound to a tuple) in
+        -- the existing bindings list and get the portname map for each of
+        -- it's elements.
+        Tuple tuple_ports = Maybe.fromMaybe 
+          (error $ "Case expression uses unknown scrutinee " ++ getOccString v)
+          (lookup v binds)
+        -- TODO include b in the binds list
+        -- Merge our existing binds with the new binds.
+        binds' = (zip bind_vars tuple_ports) ++ binds 
+      in
+        -- Expand the expression with the new binds list
+        expandExpr binds' expr
+
+expandSingleAltCaseExpr _ _ _ alt =
+  error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr alt)
+      
 
 -- Expands the application of argument to a function into VHDL
 expandApplicationExpr ::
@@ -522,6 +569,7 @@ builtin_funcs =
   [ 
     ("hwxor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
     ("hwand", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
     ("hwnot", HWFunction [Signal $ mkVHDLId "i"] (Signal $ mkVHDLId "o"))
   ]
 
