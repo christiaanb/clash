@@ -18,6 +18,9 @@ import Outputable ( showSDoc, ppr )
 import GHC.Paths ( libdir )
 import DynFlags ( defaultDynFlags )
 import List ( find )
+import qualified List
+import qualified Monad
+
 -- The following modules come from the ForSyDe project. They are really
 -- internal modules, so ForSyDe.cabal has to be modified prior to installing
 -- ForSyDe to get access to these modules.
@@ -41,7 +44,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           liftIO $ printBinds (cm_binds core)
-          let bind = findBind "invinv" (cm_binds core)
+          let bind = findBind "dup" (cm_binds core)
           let NonRec var expr = bind
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL bind) (VHDLSession 0 builtin_funcs)
@@ -238,8 +241,20 @@ expandBuildTupleExpr ::
   -> [CoreExpr]                          -- A list of expressions to put in the tuple
   -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
                                          -- See expandExpr
-expandBuildTupleExpr binds args =
-  error $ "Tuple construction not supported"
+expandBuildTupleExpr binds args = do
+  -- Split the tuple constructor arguments into types and actual values.
+  let (_, vals) = splitTupleConstructorArgs args
+  -- Expand each of the values in the tuple
+  (signals_declss, statementss, arg_signalss, res_signals) <-
+    (Monad.liftM List.unzip4) $ mapM (expandExpr binds) vals
+  if any (not . null) arg_signalss
+    then error "Putting high order functions in tuples not supported"
+    else
+      return (
+        concat signals_declss,
+        concat statementss,
+        [],
+        Tuple res_signals)
 
 -- Expands the application of argument to a function into VHDL
 expandApplicationExpr ::
