@@ -16,8 +16,7 @@ program = [
 
 initial_state = ((Low, High), (), Low, Low)
 
---
---
+-- Register bank
 
 type RegAddr = Bit
 type RegisterBankState = (Bit, Bit)
@@ -39,6 +38,8 @@ register_bank (addr, High, d) s = -- Write
     r0' = if addr == Low then d else r0
     r1' = if addr == High then d else r1
     s' = (r0', r1')
+
+-- ALU
 
 type AluState = ()
 type AluOp = Bit

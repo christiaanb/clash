@@ -10,18 +10,18 @@ show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displ
     b = [Low, Low, Low, High]
     (s, c) = f (a, b)
 
--- Combinatoric no-carry adder
+-- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
 no_carry_adder (a, b) = a `hwxor` b
 
--- Combinatoric half adder
+-- Combinatoric stateless half adder
 -- A -> B -> (S, C)
 half_adder :: (Bit, Bit) -> (Bit, Bit)
 half_adder (a, b) = 
   ( a `hwxor` b, a `hwand` b )
 
--- Combinatoric (one-bit) full adder
+-- Combinatoric stateless full adder
 -- (A, B, C) -> (S, C)
 full_adder :: (Bit, Bit, Bit) -> (Bit, Bit)
 full_adder (a, b, cin) = (s, c)
