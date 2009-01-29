@@ -374,6 +374,8 @@ splitTupleConstructorArgs (e:es) =
   where
     (tys, vals) = splitTupleConstructorArgs es
 
+splitTupleConstructorArgs [] = ([], [])
+
 mapOutputPorts ::
   SignalNameMap AST.VHDLId      -- The output portnames of the component
   -> SignalNameMap AST.VHDLId   -- The output portnames and/or signals to map these to
