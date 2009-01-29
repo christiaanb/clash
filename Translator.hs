@@ -91,16 +91,15 @@ findBind lookfor =
     NonRec var _ -> lookfor == (occNameString $ nameOccName $ getName var)
   )
 
+getPortMapEntry ::
+  PortNameMap               -- The port name to bind to
+  -> AST.VHDLName           -- The signal or port to bind to it
+  -> AST.AssocElem          -- The resulting port map entry
+  
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
-getPortMapEntry binds (Port portname) (Var id) = 
-  (Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))
-  where
-    Port signalname = Maybe.fromMaybe
-      (error $ "Argument " ++ getOccString id ++ "is unknown")
-      (lookup id binds)
-
-getPortMapEntry binds _ a = error $ "Unsupported argument: " ++ (showSDoc $ ppr a)
+getPortMapEntry (Port portname) signame = 
+  (Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName signame)
 
 getInstantiations ::
   [PortNameMap]                -- The arguments that need to be applied to the
@@ -108,7 +107,7 @@ getInstantiations ::
   -> PortNameMap               -- The output ports that the expression should generate.
   -> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
   -> CoreSyn.CoreExpr          -- The expression to generate an architecture for
-  -> VHDLState [AST.ConcSm]    -- The resulting VHDL code
+  -> VHDLState ([AST.SigDec], [AST.ConcSm])    -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
 getInstantiations (a:as) outs binds (Lam b expr) =
@@ -151,11 +150,14 @@ getInstantiations args outs binds app@(App expr arg) = do
       -- Split the tuple constructor arguments into types and actual values.
       let (_, vals) = splitTupleConstructorArgs fargs
       -- Bind each argument to each output signal
-      insts <- sequence $ zipWith 
+      res <- sequence $ zipWith 
         (\outs' expr' -> getInstantiations args outs' binds expr')
         outports vals
-      -- And join all the component instantiations together
-      return $ concat insts
+      -- res is a list of pairs of lists, so split out the signals and
+      -- components into separate lists of lists
+      let (sigs, comps) = unzip res
+      -- And join all the signals and component instantiations together
+      return $ (concat sigs, concat comps)
     else do
       -- This is an normal function application, which maps to a component
       -- instantiation.
@@ -163,8 +165,11 @@ getInstantiations args outs binds app@(App expr arg) = do
       HWFunction inports outport <- getHWFunc name
       -- Generate a unique name for the application
       appname <- uniqueName "app"
-      -- Bind each of the input ports to an argument
-      let inmaps = zipWith (getPortMapEntry binds) inports fargs
+      -- Expand each argument to a signal or port name, possibly generating
+      -- new signals and component instantiations
+      (sigs, comps, args) <- expandArgs binds fargs
+      -- Bind each of the input ports to the expanded signal or port
+      let inmaps = zipWith getPortMapEntry inports args
       -- Bind each of the output ports to our output signals
       let outmaps = mapOutputPorts outport outs
       -- Build and return a component instantiation
@@ -172,10 +177,39 @@ getInstantiations args outs binds app@(App expr arg) = do
             (AST.unsafeVHDLBasicId appname)
             (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
             (AST.PMapAspect (inmaps ++ outmaps))
-      return [AST.CSISm comp]
+      return (sigs, (AST.CSISm comp) : comps)
 
 getInstantiations args outs binds expr = 
   error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
+
+expandArgs :: 
+  [(CoreBndr, PortNameMap)]              -- A list of bindings in effect
+  -> [CoreExpr]                          -- The arguments to expand
+  -> VHDLState ([AST.SigDec], [AST.ConcSm], [AST.VHDLName])  
+                                         -- The resulting signal declarations,
+                                         -- component instantiations and a
+                                         -- VHDLName for each of the
+                                         -- expressions passed in.
+expandArgs binds (e:exprs) = do
+  -- Expand the first expression
+  arg <- case e of
+    -- A simple variable reference should be in our binds map
+    Var id -> return $ let
+        -- Lookup the id in our binds map
+        Port signalname = Maybe.fromMaybe
+          (error $ "Argument " ++ getOccString id ++ "is unknown")
+          (lookup id binds)
+      in
+        -- Create a VHDL name from the signal name
+        AST.NSimple (AST.unsafeVHDLBasicId signalname)
+    -- Other expressions are unsupported
+    otherwise -> error ("Unsupported expression used as argument: " ++ (showSDoc $ ppr e))
+  -- Expand the rest
+  (sigs, comps, args) <- expandArgs binds exprs
+  -- Return all results
+  return (sigs, comps, arg:args)
+
+expandArgs _ [] = return ([], [], [])
 
 -- Is the given name a (binary) tuple constructor
 isTupleConstructor :: Var.Var -> Bool
@@ -223,13 +257,13 @@ getArchitecture (NonRec var expr) = do
   let name = (getOccString var)
   HWFunction inports outport <- getHWFunc name
   sess <- State.get
-  insts <- getInstantiations inports outport [] expr
+  (sigs, comps) <- getInstantiations inports outport [] expr
   return $ AST.ArchBody
     (AST.unsafeVHDLBasicId "structural")
     -- Use unsafe for now, to prevent pulling in ForSyDe error handling
     (AST.NSimple (AST.unsafeVHDLBasicId name))
-    []
-    (insts)
+    (map AST.BDISD sigs)
+    comps
 
 data PortNameMap =
   Tuple [PortNameMap]
