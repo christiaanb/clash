@@ -92,22 +92,24 @@ findBind lookfor =
   )
 
 getPortMapEntry ::
-  PortNameMap               -- The port name to bind to
+  SignalNameMap String      -- The port name to bind to
   -> AST.VHDLName           -- The signal or port to bind to it
   -> AST.AssocElem          -- The resulting port map entry
   
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
-getPortMapEntry (Port portname) signame = 
+getPortMapEntry (Signal portname) signame = 
   (Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName signame)
 
 getInstantiations ::
-  [PortNameMap]                -- The arguments that need to be applied to the
+  [SignalNameMap String]       -- The arguments that need to be applied to the
                                -- expression.
-  -> PortNameMap               -- The output ports that the expression should generate.
-  -> [(CoreBndr, PortNameMap)] -- A list of bindings in effect
+  -> SignalNameMap String      -- The output ports that the expression should generate.
+  -> [(CoreBndr, SignalNameMap String)] 
+                               -- A list of bindings in effect
   -> CoreSyn.CoreExpr          -- The expression to generate an architecture for
-  -> VHDLState ([AST.SigDec], [AST.ConcSm])    -- The resulting VHDL code
+  -> VHDLState ([AST.SigDec], [AST.ConcSm])    
+                               -- The resulting VHDL code
 
 -- A lambda expression binds the first argument (a) to the binder b.
 getInstantiations (a:as) outs binds (Lam b expr) =
@@ -181,9 +183,9 @@ getInstantiations args outs binds app@(App expr arg) = do
 
 getInstantiations args outs binds expr = 
   error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
-
+  
 expandArgs :: 
-  [(CoreBndr, PortNameMap)]              -- A list of bindings in effect
+  [(CoreBndr, SignalNameMap String)]     -- A list of bindings in effect
   -> [CoreExpr]                          -- The arguments to expand
   -> VHDLState ([AST.SigDec], [AST.ConcSm], [AST.VHDLName])  
                                          -- The resulting signal declarations,
@@ -196,7 +198,7 @@ expandArgs binds (e:exprs) = do
     -- A simple variable reference should be in our binds map
     Var id -> return $ let
         -- Lookup the id in our binds map
-        Port signalname = Maybe.fromMaybe
+        Signal signalname = Maybe.fromMaybe
           (error $ "Argument " ++ getOccString id ++ "is unknown")
           (lookup id binds)
       in
@@ -234,13 +236,13 @@ splitTupleConstructorArgs (e:es) =
     (tys, vals) = splitTupleConstructorArgs es
 
 mapOutputPorts ::
-  PortNameMap         -- The output portnames of the component
-  -> PortNameMap      -- The output portnames and/or signals to map these to
-  -> [AST.AssocElem]  -- The resulting output ports
+  SignalNameMap String          -- The output portnames of the component
+  -> SignalNameMap String       -- The output portnames and/or signals to map these to
+  -> [AST.AssocElem]            -- The resulting output ports
 
 -- Map the output port of a component to the output port of the containing
 -- entity.
-mapOutputPorts (Port portname) (Port signalname) =
+mapOutputPorts (Signal portname) (Signal signalname) =
   [(Just (AST.unsafeVHDLBasicId portname)) AST.:=>: (AST.ADName (AST.NSimple (AST.unsafeVHDLBasicId signalname)))]
 
 -- Map matching output ports in the tuple
@@ -265,32 +267,32 @@ getArchitecture (NonRec var expr) = do
     (map AST.BDISD sigs)
     comps
 
-data PortNameMap =
-  Tuple [PortNameMap]
-  | Port  String
+data SignalNameMap t =
+  Tuple [SignalNameMap t]
+  | Signal  t
   deriving (Show)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
-getPortNameMapForTys :: String -> Int -> [Type] -> [PortNameMap]
+getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap String]
 getPortNameMapForTys prefix num [] = [] 
 getPortNameMapForTys prefix num (t:ts) =
   (getPortNameMapForTy (prefix ++ show num) t) : getPortNameMapForTys prefix (num + 1) ts
 
-getPortNameMapForTy :: String -> Type -> PortNameMap
+getPortNameMapForTy :: String -> Type -> SignalNameMap String
 getPortNameMapForTy name ty =
   if (TyCon.isTupleTyCon tycon) then
     -- Expand tuples we find
     Tuple (getPortNameMapForTys name 0 args)
   else -- Assume it's a type constructor application, ie simple data type
     -- TODO: Add type?
-    Port name
+    Signal name
   where
     (tycon, args) = Type.splitTyConApp ty 
 
 data HWFunction = HWFunction { -- A function that is available in hardware
-  inPorts   :: [PortNameMap],
-  outPort   :: PortNameMap
+  inPorts   :: [SignalNameMap String],
+  outPort   :: SignalNameMap String
   --entity    :: AST.EntityDec
 } deriving (Show)
 
@@ -350,8 +352,8 @@ uniqueName name = do
   
 builtin_funcs = 
   [ 
-    ("hwxor", HWFunction [Port "a", Port "b"] (Port "o")),
-    ("hwand", HWFunction [Port "a", Port "b"] (Port "o"))
+    ("hwxor", HWFunction [Signal "a", Signal "b"] (Signal "o")),
+    ("hwand", HWFunction [Signal "a", Signal "b"] (Signal "o"))
   ]
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
