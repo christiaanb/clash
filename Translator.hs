@@ -47,12 +47,14 @@ main =
           let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["full_adder", "half_adder"]
           liftIO $ printBinds binds
           -- Turn bind into VHDL
-          let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 builtin_funcs)
+          let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 [])
           liftIO $ putStr $ concat $ map (render . ForSyDe.Backend.Ppr.ppr) vhdl
           return ()
   where
     -- Turns the given bind into VHDL
     mkVHDL binds = do
+      -- Add the builtin functions
+      mapM (uncurry addFunc) builtin_funcs
       -- Get the function signatures
       funcs <- mapM mkHWFunction binds
       -- Add them to the session
@@ -166,7 +168,7 @@ getInstantiations args outs binds app@(App expr arg) = do
       -- This is an normal function application, which maps to a component
       -- instantiation.
       -- Lookup the hwfunction to instantiate
-      HWFunction inports outport <- getHWFunc name
+      HWFunction vhdl_id inports outport <- getHWFunc name
       -- Generate a unique name for the application
       appname <- uniqueName "app"
       -- Expand each argument to a signal or port name, possibly generating
@@ -179,7 +181,7 @@ getInstantiations args outs binds app@(App expr arg) = do
       -- Build and return a component instantiation
       let comp = AST.CompInsSm
             (AST.unsafeVHDLBasicId appname)
-            (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
+            (AST.IUEntity (AST.NSimple vhdl_id))
             (AST.PMapAspect (inmaps ++ outmaps))
       return (sigs, (AST.CSISm comp) : comps)
 
@@ -325,7 +327,7 @@ expandApplicationExpr binds ty f args = do
   -- Generate a unique name for the application
   appname <- uniqueName ("app-" ++ name)
   -- Lookup the hwfunction to instantiate
-  HWFunction inports outport <- getHWFunc name
+  HWFunction vhdl_id inports outport <- getHWFunc name
   -- Expand each of the args, so each of them is reduced to output signals
   (arg_signal_decls, arg_statements, arg_res_signals) <- expandArgs binds args
   -- Bind each of the input ports to the expanded arguments
@@ -339,7 +341,7 @@ expandApplicationExpr binds ty f args = do
   -- Instantiate the component
   let component = AST.CSISm $ AST.CompInsSm
         (AST.unsafeVHDLBasicId appname)
-        (AST.IUEntity (AST.NSimple (AST.unsafeVHDLBasicId name)))
+        (AST.IUEntity (AST.NSimple vhdl_id))
         (AST.PMapAspect (inmaps ++ outmaps))
   -- Merge the generated declarations
   return (
@@ -453,18 +455,17 @@ getArchitecture (Rec _) = error "Recursive binders not supported"
 
 getArchitecture (NonRec var expr) = do
   let name = (getOccString var)
-  HWFunction inports outport <- getHWFunc name
+  HWFunction vhdl_id inports outport <- getHWFunc name
   sess <- State.get
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
   let inport_assigns = concat $ zipWith createSignalAssignments arg_signals inports
   let outport_assigns = createSignalAssignments outport res_signal
   return $ AST.ArchBody
     (AST.unsafeVHDLBasicId "structural")
-    -- Use unsafe for now, to prevent pulling in ForSyDe error handling
-    (AST.NSimple (AST.unsafeVHDLBasicId name))
+    (AST.NSimple vhdl_id)
     (map AST.BDISD signal_decls)
     (inport_assigns ++ outport_assigns ++ statements)
-
+  
 -- Create concurrent assignments of one map of signals to another. The maps
 -- should have a similar form.
 createSignalAssignments ::
@@ -513,6 +514,7 @@ getPortNameMapForTy name ty =
     (tycon, args) = Type.splitTyConApp ty 
 
 data HWFunction = HWFunction { -- A function that is available in hardware
+  vhdlId    :: AST.VHDLId,
   inPorts   :: [SignalNameMap AST.VHDLId],
   outPort   :: SignalNameMap AST.VHDLId
   --entity    :: AST.EntityDec
@@ -525,9 +527,9 @@ mkHWFunction ::
   -> VHDLState (String, HWFunction)          -- The name of the function and its interface
 
 mkHWFunction (NonRec var expr) =
-    return (name, HWFunction inports outport)
+    return (name, HWFunction (mkVHDLId name) inports outport)
   where
-    name = (getOccString var)
+    name = getOccString var
     ty = CoreUtils.exprType expr
     (fargs, res) = Type.splitFunTys ty
     args = if length fargs == 1 then fargs else (init fargs)
@@ -578,10 +580,10 @@ mkVHDLId = AST.unsafeVHDLBasicId
 
 builtin_funcs = 
   [ 
-    ("hwxor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
-    ("hwand", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
-    ("hwor", HWFunction [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
-    ("hwnot", HWFunction [Signal $ mkVHDLId "i"] (Signal $ mkVHDLId "o"))
+    ("hwxor", HWFunction (mkVHDLId "hwxor") [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwand", HWFunction (mkVHDLId "hwand") [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwor", HWFunction (mkVHDLId "hwor") [Signal $ mkVHDLId "a", Signal $ mkVHDLId "b"] (Signal $ mkVHDLId "o")),
+    ("hwnot", HWFunction (mkVHDLId "hwnot") [Signal $ mkVHDLId "i"] (Signal $ mkVHDLId "o"))
   ]
 
 vhdl_bit_ty :: AST.TypeMark
