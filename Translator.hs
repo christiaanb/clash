@@ -531,8 +531,7 @@ getPortNameMapForTy name ty =
     -- Expand tuples we find
     Tuple (getPortNameMapForTys name 0 args)
   else -- Assume it's a type constructor application, ie simple data type
-    -- TODO: Don't hardcode the type here
-    Signal (AST.unsafeVHDLBasicId name) vhdl_bit_ty
+    Signal (AST.unsafeVHDLBasicId name) (vhdl_ty ty)
   where
     (tycon, args) = Type.splitTyConApp ty 
 
@@ -611,5 +610,23 @@ builtin_funcs =
 
 vhdl_bit_ty :: AST.TypeMark
 vhdl_bit_ty = AST.unsafeVHDLBasicId "Bit"
+
+-- Translate a Haskell type to a VHDL type
+vhdl_ty :: Type -> AST.TypeMark
+vhdl_ty ty = Maybe.fromMaybe
+  (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
+  (vhdl_ty_maybe ty)
+
+-- Translate a Haskell type to a VHDL type
+vhdl_ty_maybe :: Type -> Maybe AST.TypeMark
+vhdl_ty_maybe ty =
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) ->
+      let name = TyCon.tyConName tycon in
+        -- TODO: Do something more robust than string matching
+        case getOccString name of
+          "Bit"      -> Just vhdl_bit_ty
+          otherwise  -> Nothing
+    otherwise -> Nothing
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
