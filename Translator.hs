@@ -43,8 +43,9 @@ main =
           --load LoadAllTargets
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
-          liftIO $ printBinds (cm_binds core)
+          --liftIO $ printBinds (cm_binds core)
           let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["full_adder", "half_adder"]
+          liftIO $ printBinds binds
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 builtin_funcs)
           liftIO $ putStr $ concat $ map (render . ForSyDe.Backend.Ppr.ppr) vhdl
@@ -78,7 +79,7 @@ printBind (Rec binds) = do
 
 printBind' (b, expr) = do
   putStr $ getOccString b
-  --putStr $ showSDoc $ ppr expr
+  putStr $ showSDoc $ ppr expr
   putStr "\n"
 
 findBind :: [CoreBind] -> String -> Maybe CoreBind
