@@ -1,4 +1,4 @@
-module Sim (simulate, SCircuit, Circuit, simulateIO) where
+module Sim (simulate, SCircuit, Circuit, simulateIO, stateless) where
 import Data.Typeable
 
 simulate f input s = do
@@ -50,4 +50,10 @@ printOutput (i, o, s) = do
   putStr "\nNew State: "
   putStr $ show s
   putStr "\n\n"
+
+-- Takes a stateless circuit and turns it into a stateful circuit (with an
+-- empty state) so it can be used in simulation
+stateless :: Circuit i o -> SCircuit i () o
+stateless f = \i s -> (s, f i)
+
 -- vim: set ts=8 sw=2 sts=2 expandtab:
