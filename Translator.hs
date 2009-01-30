@@ -48,7 +48,7 @@ main =
           liftIO $ printBinds binds
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 [])
-          liftIO $ putStr $ concat $ map (render . ForSyDe.Backend.Ppr.ppr) vhdl
+          liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
           return ()
   where
     -- Turns the given bind into VHDL
@@ -59,8 +59,12 @@ main =
       funcs <- mapM mkHWFunction binds
       -- Add them to the session
       mapM (uncurry addFunc) funcs
+      let entities = map getEntity (snd $ unzip funcs)
       -- Create architectures for them
-      mapM getArchitecture binds
+      archs <- mapM getArchitecture binds
+      return $ AST.DesignFile 
+        []
+        ((map AST.LUEntity entities) ++ (map AST.LUArch archs))
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
   print $ show file
@@ -465,7 +469,28 @@ getArchitecture (NonRec var expr) = do
     (AST.NSimple vhdl_id)
     (map AST.BDISD signal_decls)
     (inport_assigns ++ outport_assigns ++ statements)
+
+-- Generate a VHDL entity declaration for the given function
+getEntity :: HWFunction -> AST.EntityDec  
+getEntity (HWFunction vhdl_id inports outport) = 
+  AST.EntityDec vhdl_id ports
+  where
+    ports = 
+      (concat $ map (mkIfaceSigDecs AST.In) inports)
+      ++ mkIfaceSigDecs AST.Out outport
+
+mkIfaceSigDecs ::
+  AST.Mode                        -- The port's mode (In or Out)
+  -> SignalNameMap AST.VHDLId        -- The ports to generate a map for
+  -> [AST.IfaceSigDec]            -- The resulting ports
   
+mkIfaceSigDecs mode (Signal port_id) =
+  -- TODO: Remove hardcoded type
+  [AST.IfaceSigDec port_id mode vhdl_bit_ty]
+
+mkIfaceSigDecs mode (Tuple ports) =
+  concat $ map (mkIfaceSigDecs mode) ports
+
 -- Create concurrent assignments of one map of signals to another. The maps
 -- should have a similar form.
 createSignalAssignments ::
