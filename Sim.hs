@@ -1,4 +1,4 @@
-module Sim (simulate, SCircuit, simulateIO) where
+module Sim (simulate, SCircuit, Circuit, simulateIO) where
 import Data.Typeable
 
 simulate f input s = do
@@ -13,6 +13,7 @@ simulate f input s = do
 
 -- A circuit with input of type a, state of type s and output of type b
 type SCircuit i s o = i -> s -> (s, o)
+type Circuit i o = i -> o
 
 run :: SCircuit i s o -> [i] -> s -> [(i, o, s)]
 run f (i:input) s =
