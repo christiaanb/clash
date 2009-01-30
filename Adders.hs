@@ -42,9 +42,9 @@ half_adder (a, b) =
 full_adder :: (Bit, Bit, Bit) -> (Bit, Bit)
 full_adder (a, b, cin) = (s, c)
   where
-    x = a `hwxor` b
-    s = x `hwxor` cin
-    c = a `hwand` b `hwor` (cin `hwand` x)
+    (s1, c1) = half_adder(a, b)
+    (s, c2)  = half_adder(s1, cin)
+    c        = c1 `hwor` c2
 
 -- Four bit adder
 -- Explicit version
