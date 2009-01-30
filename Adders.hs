@@ -1,8 +1,9 @@
 module Adders where
 import Bits
+import qualified Sim
 import Language.Haskell.Syntax
 
-main = do show_add exp_adder; show_add rec_adder;
+mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
 show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displaysig c))
   where
