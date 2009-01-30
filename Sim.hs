@@ -1,4 +1,4 @@
-module Sim (simulate, Circuit, simulateIO) where
+module Sim (simulate, SCircuit, simulateIO) where
 import Data.Typeable
 
 simulate f input s = do
@@ -12,23 +12,23 @@ simulate f input s = do
     output = run f input s
 
 -- A circuit with input of type a, state of type s and output of type b
-type Circuit i s o = i -> s -> (s, o)
+type SCircuit i s o = i -> s -> (s, o)
 
-run :: Circuit i s o -> [i] -> s -> [(i, o, s)]
+run :: SCircuit i s o -> [i] -> s -> [(i, o, s)]
 run f (i:input) s =
   (i, o, s'): (run f input s')
   where
     (s', o) = f i s
 run _ [] _ = []
 
-simulateIO :: (Read i, Show i, Show o, Show s) => Sim.Circuit i s o -> s -> IO()
+simulateIO :: (Read i, Show i, Show o, Show s) => SCircuit i s o -> s -> IO()
 simulateIO c s = do
   putStr "Initial State: "
   putStr $ show s
   putStr "\n\n"
   runIO c s
 
-runIO :: (Read i, Show i, Show o, Show s) => Sim.Circuit i s o -> s -> IO()
+runIO :: (Read i, Show i, Show o, Show s) => SCircuit i s o -> s -> IO()
 runIO f s = do
   putStr "\nInput? "
   line <- getLine
