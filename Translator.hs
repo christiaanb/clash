@@ -99,8 +99,8 @@ findBind binds lookfor =
   ) binds
 
 getPortMapEntry ::
-  SignalNameMap AST.VHDLId  -- The port name to bind to
-  -> SignalNameMap AST.VHDLId 
+  SignalNameMap  -- The port name to bind to
+  -> SignalNameMap 
                             -- The signal or port to bind to it
   -> AST.AssocElem          -- The resulting port map entry
   
@@ -110,10 +110,10 @@ getPortMapEntry (Signal portname) (Signal signame) =
   (Just portname) AST.:=>: (AST.ADName (AST.NSimple signame))
 
 getInstantiations ::
-  [SignalNameMap AST.VHDLId]   -- The arguments that need to be applied to the
+  [SignalNameMap]   -- The arguments that need to be applied to the
                                -- expression.
-  -> SignalNameMap AST.VHDLId  -- The output ports that the expression should generate.
-  -> [(CoreBndr, SignalNameMap AST.VHDLId)] 
+  -> SignalNameMap  -- The output ports that the expression should generate.
+  -> [(CoreBndr, SignalNameMap)] 
                                -- A list of bindings in effect
   -> CoreSyn.CoreExpr          -- The expression to generate an architecture for
   -> VHDLState ([AST.SigDec], [AST.ConcSm])    
@@ -193,16 +193,16 @@ getInstantiations args outs binds expr =
   error $ "Unsupported expression" ++ (showSDoc $ ppr $ expr)
 
 expandExpr ::
-  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+  [(CoreBndr, SignalNameMap)] 
                                          -- A list of bindings in effect
   -> CoreExpr                            -- The expression to expand
   -> VHDLState (
        [AST.SigDec],                     -- Needed signal declarations
        [AST.ConcSm],                     -- Needed component instantations and
                                          -- signal assignments.
-       [SignalNameMap AST.VHDLId],       -- The signal names corresponding to
+       [SignalNameMap],       -- The signal names corresponding to
                                          -- the expression's arguments
-       SignalNameMap AST.VHDLId)         -- The signal names corresponding to
+       SignalNameMap)         -- The signal names corresponding to
                                          -- the expression's result.
 expandExpr binds lam@(Lam b expr) = do
   -- Generate a new signal to which we will expect this argument to be bound.
@@ -262,10 +262,10 @@ expandExpr binds expr =
 
 -- Expands the construction of a tuple into VHDL
 expandBuildTupleExpr ::
-  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+  [(CoreBndr, SignalNameMap)] 
                                          -- A list of bindings in effect
   -> [CoreExpr]                          -- A list of expressions to put in the tuple
-  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap], SignalNameMap)
                                          -- See expandExpr
 expandBuildTupleExpr binds args = do
   -- Split the tuple constructor arguments into types and actual values.
@@ -286,12 +286,12 @@ expandBuildTupleExpr binds args = do
 -- and has a single alternative. This simple form currently allows only for
 -- unpacking tuple variables.
 expandSingleAltCaseExpr ::
-  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+  [(CoreBndr, SignalNameMap)] 
                             -- A list of bindings in effect
   -> Var.Var                -- The scrutinee
   -> CoreBndr               -- The binder to bind the scrutinee to
   -> CoreAlt                -- The single alternative
-  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap], SignalNameMap)
                                          -- See expandExpr
 
 expandSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
@@ -319,12 +319,12 @@ expandSingleAltCaseExpr _ _ _ alt =
 
 -- Expands the application of argument to a function into VHDL
 expandApplicationExpr ::
-  [(CoreBndr, SignalNameMap AST.VHDLId)] 
+  [(CoreBndr, SignalNameMap)] 
                                          -- A list of bindings in effect
   -> Type                                -- The result type of the function call
   -> Var.Var                             -- The function to call
   -> [CoreExpr]                          -- A list of argumetns to apply to the function
-  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId], SignalNameMap AST.VHDLId)
+  -> VHDLState ( [AST.SigDec], [AST.ConcSm], [SignalNameMap], SignalNameMap)
                                          -- See expandExpr
 expandApplicationExpr binds ty f args = do
   let name = getOccString f
@@ -357,8 +357,8 @@ expandApplicationExpr binds ty f args = do
 -- Creates a list of AssocElems (port map lines) that maps the given signals
 -- to the given ports.
 createAssocElems ::
-  SignalNameMap AST.VHDLId      -- The port names to bind to
-  -> SignalNameMap AST.VHDLId   -- The signals to bind to it
+  SignalNameMap      -- The port names to bind to
+  -> SignalNameMap   -- The signals to bind to it
   -> [AST.AssocElem]            -- The resulting port map lines
   
 createAssocElems (Signal port_id) (Signal signal_id) = 
@@ -381,7 +381,7 @@ mkSignalFromId id ty =
 
 -- Generates signal declarations for all the signals in the given map
 mkSignalsFromMap ::
-  SignalNameMap AST.VHDLId 
+  SignalNameMap 
   -> [AST.SigDec]
 
 mkSignalsFromMap (Signal id) =
@@ -392,9 +392,9 @@ mkSignalsFromMap (Tuple signals) =
   concat $ map mkSignalsFromMap signals
 
 expandArgs :: 
-  [(CoreBndr, SignalNameMap AST.VHDLId)] -- A list of bindings in effect
+  [(CoreBndr, SignalNameMap)] -- A list of bindings in effect
   -> [CoreExpr]                          -- The arguments to expand
-  -> VHDLState ([AST.SigDec], [AST.ConcSm], [SignalNameMap AST.VHDLId])  
+  -> VHDLState ([AST.SigDec], [AST.ConcSm], [SignalNameMap])  
                                          -- The resulting signal declarations,
                                          -- component instantiations and a
                                          -- VHDLName for each of the
@@ -438,8 +438,8 @@ splitTupleConstructorArgs (e:es) =
 splitTupleConstructorArgs [] = ([], [])
 
 mapOutputPorts ::
-  SignalNameMap AST.VHDLId      -- The output portnames of the component
-  -> SignalNameMap AST.VHDLId   -- The output portnames and/or signals to map these to
+  SignalNameMap      -- The output portnames of the component
+  -> SignalNameMap   -- The output portnames and/or signals to map these to
   -> [AST.AssocElem]            -- The resulting output ports
 
 -- Map the output port of a component to the output port of the containing
@@ -481,7 +481,7 @@ getEntity (HWFunction vhdl_id inports outport) =
 
 mkIfaceSigDecs ::
   AST.Mode                        -- The port's mode (In or Out)
-  -> SignalNameMap AST.VHDLId        -- The ports to generate a map for
+  -> SignalNameMap        -- The ports to generate a map for
   -> [AST.IfaceSigDec]            -- The resulting ports
   
 mkIfaceSigDecs mode (Signal port_id) =
@@ -494,8 +494,8 @@ mkIfaceSigDecs mode (Tuple ports) =
 -- Create concurrent assignments of one map of signals to another. The maps
 -- should have a similar form.
 createSignalAssignments ::
-  SignalNameMap AST.VHDLId         -- The signals to assign to
-  -> SignalNameMap AST.VHDLId      -- The signals to assign
+  SignalNameMap         -- The signals to assign to
+  -> SignalNameMap      -- The signals to assign
   -> [AST.ConcSm]                  -- The resulting assignments
 
 -- A simple assignment of one signal to another (greatly complicated because
@@ -515,19 +515,19 @@ createSignalAssignments (Tuple dsts) (Tuple srcs) =
 createSignalAssignments dst src =
   error $ "Non matching source and destination: " ++ show dst ++ "\nand\n" ++  show src
 
-data SignalNameMap t =
-  Tuple [SignalNameMap t]
-  | Signal  t
+data SignalNameMap =
+  Tuple [SignalNameMap]
+  | Signal AST.VHDLId
   deriving (Show)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
-getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap AST.VHDLId]
+getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap]
 getPortNameMapForTys prefix num [] = [] 
 getPortNameMapForTys prefix num (t:ts) =
   (getPortNameMapForTy (prefix ++ show num) t) : getPortNameMapForTys prefix (num + 1) ts
 
-getPortNameMapForTy :: String -> Type -> SignalNameMap AST.VHDLId
+getPortNameMapForTy :: String -> Type -> SignalNameMap
 getPortNameMapForTy name ty =
   if (TyCon.isTupleTyCon tycon) then
     -- Expand tuples we find
@@ -540,8 +540,8 @@ getPortNameMapForTy name ty =
 
 data HWFunction = HWFunction { -- A function that is available in hardware
   vhdlId    :: AST.VHDLId,
-  inPorts   :: [SignalNameMap AST.VHDLId],
-  outPort   :: SignalNameMap AST.VHDLId
+  inPorts   :: [SignalNameMap],
+  outPort   :: SignalNameMap
   --entity    :: AST.EntityDec
 } deriving (Show)
 
