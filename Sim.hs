@@ -12,23 +12,23 @@ simulate f input s = do
     output = run f input s
 
 -- A circuit with input of type a, state of type s and output of type b
-type Circuit a s b = a -> s -> (s, b)
+type Circuit i s o = i -> s -> (s, o)
 
-run :: Circuit a s b -> [a] -> s -> [(a, b, s)]
+run :: Circuit i s o -> [i] -> s -> [(i, o, s)]
 run f (i:input) s =
   (i, o, s'): (run f input s')
   where
     (s', o) = f i s
 run _ [] _ = []
 
-simulateIO :: (Read a, Show a, Show b, Show s) => Sim.Circuit a s b -> s -> IO()
+simulateIO :: (Read i, Show i, Show o, Show s) => Sim.Circuit i s o -> s -> IO()
 simulateIO c s = do
   putStr "Initial State: "
   putStr $ show s
   putStr "\n\n"
   runIO c s
 
-runIO :: (Read a, Show a, Show b, Show s) => Sim.Circuit a s b -> s -> IO()
+runIO :: (Read i, Show i, Show o, Show s) => Sim.Circuit i s o -> s -> IO()
 runIO f s = do
   putStr "\nInput? "
   line <- getLine
