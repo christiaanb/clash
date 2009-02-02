@@ -360,7 +360,9 @@ expandBind (Rec _) = error "Recursive binders not supported"
 
 expandBind bind@(NonRec var expr) = do
   -- Create the function signature
-  (hsfunc, hwfunc) <- mkHWFunction bind
+  hwfunc <- mkHWFunction bind
+  let ty = CoreUtils.exprType expr
+  let hsfunc = mkHsFunction var ty
   -- Add it to the session
   addFunc hsfunc hwfunc 
   arch <- getArchitecture hwfunc expr
@@ -492,10 +494,10 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 -- output ports.
 mkHWFunction ::
   CoreBind                                   -- The core binder to generate the interface for
-  -> VHDLState (HsFunction, HWFunction)          -- The name of the function and its interface
+  -> VHDLState HWFunction                    -- The function interface
 
 mkHWFunction (NonRec var expr) =
-    return (hsfunc, HWFunction (mkVHDLId name) inports outport)
+    return $ HWFunction (mkVHDLId name) inports outport
   where
     name = getOccString var
     ty = CoreUtils.exprType expr
@@ -507,7 +509,6 @@ mkHWFunction (NonRec var expr) =
       [port] -> [getPortNameMapForTy "portin" port]
       ps     -> getPortNameMapForTys "portin" 0 ps
     outport = getPortNameMapForTy "portout" res
-    hsfunc = HsFunction name [] (Tuple [])
 
 mkHWFunction (Rec _) =
   error "Recursive binders not supported"
@@ -540,6 +541,23 @@ appToHsFunction f args ty =
     mkPort = \x -> Single Port
     hsargs = map (mkHsValueMap mkPort . CoreUtils.exprType) args
     hsres  = mkHsValueMap mkPort ty
+    hsname = getOccString f
+
+-- | Translate a top level function declaration to a HsFunction. i.e., which
+--   interface will be provided by this function. This function essentially
+--   defines the "calling convention" for hardware models.
+mkHsFunction ::
+  Var.Var         -- ^ The function defined
+  -> Type         -- ^ The function type (including arguments!)
+  -> HsFunction   -- ^ The resulting HsFunction
+
+mkHsFunction f ty =
+  HsFunction hsname hsargs hsres
+  where
+    (arg_tys, res_ty) = Type.splitFunTys ty
+    mkPort = \x -> Single Port
+    hsargs = map (mkHsValueMap mkPort) arg_tys
+    hsres  = mkHsValueMap mkPort res_ty
     hsname = getOccString f
 
 data VHDLSession = VHDLSession {
