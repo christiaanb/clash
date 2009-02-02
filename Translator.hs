@@ -521,6 +521,9 @@ data HsValueUse =
   | State --- ^ Use it as state (input or output)
   deriving (Show, Eq)
 
+useAsPort = mkHsValueMap (\x -> Single Port)
+useAsState = mkHsValueMap (\x -> Single State)
+
 -- | This type describes a particular use of a Haskell function and is used to
 --   look up an appropriate hardware description.  
 data HsFunction = HsFunction {
@@ -556,21 +559,19 @@ mkHsFunction ::
 mkHsFunction f ty =
   HsFunction hsname hsargs hsres
   where
-    mkPort = mkHsValueMap (\x -> Single Port)
-    mkState = mkHsValueMap (\x -> Single State)
     hsname  = getOccString f
     (arg_tys, res_ty) = Type.splitFunTys ty
     -- The last argument must be state
     state_ty = last arg_tys
-    state    = mkState state_ty
+    state    = useAsState state_ty
     -- All but the last argument are inports
-    inports = map mkPort (init arg_tys)
+    inports = map useAsPort (init arg_tys)
     hsargs   = inports ++ [state]
     hsres    = case splitTupleType res_ty of
       -- Result type must be a two tuple (state, ports)
       Just [outstate_ty, outport_ty] -> if Type.coreEqType state_ty outstate_ty
         then
-          Tuple [state, mkPort outport_ty]
+          Tuple [state, useAsPort outport_ty]
         else
           error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
       otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
