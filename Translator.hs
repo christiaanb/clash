@@ -45,7 +45,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           --liftIO $ printBinds (cm_binds core)
-          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["full_adder", "half_adder"]
+          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["shalf_adder"]
           liftIO $ printBinds binds
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 [])
@@ -517,6 +517,7 @@ mkHWFunction (Rec _) =
 -- return value) used?
 data HsValueUse = 
   Port -- ^ Use it as a port (input or output)
+  | State --- ^ Use it as state (input or output)
   deriving (Show, Eq)
 
 -- | This type describes a particular use of a Haskell function and is used to
@@ -554,11 +555,24 @@ mkHsFunction ::
 mkHsFunction f ty =
   HsFunction hsname hsargs hsres
   where
+    mkPort = mkHsValueMap (\x -> Single Port)
+    mkState = mkHsValueMap (\x -> Single State)
+    hsname  = getOccString f
     (arg_tys, res_ty) = Type.splitFunTys ty
-    mkPort = \x -> Single Port
-    hsargs = map (mkHsValueMap mkPort) arg_tys
-    hsres  = mkHsValueMap mkPort res_ty
-    hsname = getOccString f
+    -- The last argument must be state
+    state_ty = last arg_tys
+    state    = mkState state_ty
+    -- All but the last argument are inports
+    inports = map mkPort (init arg_tys)
+    hsargs   = inports ++ [state]
+    hsres    = case splitTupleType res_ty of
+      -- Result type must be a two tuple (state, ports)
+      Just [outstate_ty, outport_ty] -> if Type.coreEqType state_ty outstate_ty
+        then
+          Tuple [state, mkPort outport_ty]
+        else
+          error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
+      otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
 
 data VHDLSession = VHDLSession {
   nameCount :: Int,                       -- A counter that can be used to generate unique names
@@ -581,6 +595,21 @@ getHWFunc hsfunc = do
   return $ Maybe.fromMaybe
     (error $ "Function " ++ (hsName hsfunc) ++ "is unknown? This should not happen!")
     (lookup hsfunc fs)
+
+-- | Splits a tuple type into a list of element types, or Nothing if the type
+--   is not a tuple type.
+splitTupleType ::
+  Type              -- ^ The type to split
+  -> Maybe [Type]   -- ^ The tuples element types
+
+splitTupleType ty =
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) -> if TyCon.isTupleTyCon tycon 
+      then
+        Just args
+      else
+        Nothing
+    Nothing -> Nothing
 
 -- Makes the given name unique by appending a unique number.
 -- This does not do any checking against existing names, so it only guarantees
