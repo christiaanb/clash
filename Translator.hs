@@ -137,10 +137,10 @@ expandExpr binds lam@(Lam b expr) = do
           res_signal')
 
 expandExpr binds (Var id) =
-  return ([], [], [], Single (signal_id, ty))
+  return ([], [], [], bind)
   where
     -- Lookup the id in our binds map
-    Single (signal_id, ty) = Maybe.fromMaybe
+    bind = Maybe.fromMaybe
       (error $ "Argument " ++ getOccString id ++ "is unknown")
       (lookup id binds)
 
