@@ -57,16 +57,11 @@ main =
     mkVHDL binds = do
       -- Add the builtin functions
       mapM (uncurry addFunc) builtin_funcs
-      -- Get the function signatures
-      funcs <- mapM mkHWFunction binds
-      -- Add them to the session
-      mapM (uncurry addFunc) funcs
-      let entities = map getEntity (snd $ unzip funcs)
-      -- Create architectures for them
-      archs <- mapM getArchitecture binds
+      -- Create entities and architectures for them
+      units <- mapM expandBind binds
       return $ AST.DesignFile 
         []
-        ((map AST.LUEntity entities) ++ (map AST.LUArch archs))
+        (concat units)
 
 printTarget (Target (TargetFile file (Just x)) obj Nothing) =
   print $ show file
@@ -357,16 +352,32 @@ mapOutputPorts (Single (portname, _)) (Single (signalname, _)) =
 mapOutputPorts (Tuple ports) (Tuple signals) =
   concat (zipWith mapOutputPorts ports signals)
 
+expandBind ::
+  CoreBind                        -- The binder to expand into VHDL
+  -> VHDLState [AST.LibraryUnit]  -- The resulting VHDL
+
+expandBind (Rec _) = error "Recursive binders not supported"
+
+expandBind bind@(NonRec var expr) = do
+  -- Create the function signature
+  (hsfunc, hwfunc) <- mkHWFunction bind
+  -- Add it to the session
+  addFunc hsfunc hwfunc 
+  arch <- getArchitecture hwfunc expr
+  let entity = getEntity hwfunc
+  return $ [
+    AST.LUEntity entity,
+    AST.LUArch arch ]
+
 getArchitecture ::
-  CoreBind                  -- The binder to expand into an architecture
+  HWFunction                -- The function to generate an architecture for
+  -> CoreExpr               -- The expression that is bound to the function
   -> VHDLState AST.ArchBody -- The resulting architecture
    
-getArchitecture (Rec _) = error "Recursive binders not supported"
-
-getArchitecture (NonRec var expr) = do
-  let name = (getOccString var)
-  HWFunction vhdl_id inports outport <- getHWFunc (HsFunction name [] (Tuple []))
-  sess <- State.get
+getArchitecture hwfunc expr = do
+  -- Unpack our hwfunc
+  let HWFunction vhdl_id inports outport = hwfunc
+  -- Expand the expression into an architecture body
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
   let inport_assigns = concat $ zipWith createSignalAssignments arg_signals inports
   let outport_assigns = createSignalAssignments outport res_signal
