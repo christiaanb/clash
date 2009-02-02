@@ -124,7 +124,8 @@ expandExpr binds lam@(Lam b expr) = do
   -- Find the type of the binder
   let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
   -- Create signal names for the binder
-  let arg_signal = getPortNameMapForTy ("xxx") arg_ty
+  -- TODO: We assume arguments are ports here
+  let arg_signal = getPortNameMapForTy ("xxx") arg_ty (useAsPort arg_ty)
   -- Create the corresponding signal declarations
   let signal_decls = mkSignalsFromMap arg_signal
   -- Add the binder to the list of binds
@@ -256,7 +257,8 @@ expandApplicationExpr binds ty f args = do
   -- Bind each of the input ports to the expanded arguments
   let inmaps = concat $ zipWith createAssocElems inports arg_res_signals
   -- Create signal names for our result
-  let res_signal = getPortNameMapForTy (appname ++ "_out") ty
+  -- TODO: We assume the result is a port here
+  let res_signal = getPortNameMapForTy (appname ++ "_out") ty (useAsPort ty)
   -- Create the corresponding signal declarations
   let signal_decls = mkSignalsFromMap res_signal
   -- Bind each of the output ports to our output signals
@@ -361,9 +363,9 @@ expandBind (Rec _) = error "Recursive binders not supported"
 
 expandBind bind@(NonRec var expr) = do
   -- Create the function signature
-  hwfunc <- mkHWFunction bind
   let ty = CoreUtils.exprType expr
   let hsfunc = mkHsFunction var ty
+  hwfunc <- mkHWFunction bind hsfunc
   -- Add it to the session
   addFunc hsfunc hwfunc 
   arch <- getArchitecture hwfunc expr
@@ -442,6 +444,7 @@ type SignalNameMap = HsValueMap (AST.VHDLId, AST.TypeMark)
 data HsValueMap mapto =
   Tuple [HsValueMap mapto]
   | Single mapto
+  | Unused
   deriving (Show, Eq)
 
 -- | Creates a HsValueMap with the same structure as the given type, using the
@@ -469,16 +472,20 @@ mkHsValueMap f ty =
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
-getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap]
-getPortNameMapForTys prefix num [] = [] 
-getPortNameMapForTys prefix num (t:ts) =
-  (getPortNameMapForTy (prefix ++ show num) t) : getPortNameMapForTys prefix (num + 1) ts
+getPortNameMapForTys :: String -> Int -> [Type] -> [HsUseMap] -> [SignalNameMap]
+getPortNameMapForTys prefix num [] [] = [] 
+getPortNameMapForTys prefix num (t:ts) (u:us) =
+  (getPortNameMapForTy (prefix ++ show num) t u) : getPortNameMapForTys prefix (num + 1) ts us
 
-getPortNameMapForTy :: String -> Type -> SignalNameMap
-getPortNameMapForTy name ty =
+getPortNameMapForTy :: String -> Type -> HsUseMap -> SignalNameMap
+getPortNameMapForTy name _ (Single State) =
+  Unused
+
+getPortNameMapForTy name ty use =
   if (TyCon.isTupleTyCon tycon) then
+    let (Tuple uses) = use in
     -- Expand tuples we find
-    Tuple (getPortNameMapForTys name 0 args)
+    Tuple (getPortNameMapForTys name 0 args uses)
   else -- Assume it's a type constructor application, ie simple data type
     Single ((AST.unsafeVHDLBasicId name), (vhdl_ty ty))
   where
@@ -495,23 +502,22 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 -- output ports.
 mkHWFunction ::
   CoreBind                                   -- The core binder to generate the interface for
+  -> HsFunction                              -- The HsFunction describing the function
   -> VHDLState HWFunction                    -- The function interface
 
-mkHWFunction (NonRec var expr) =
+mkHWFunction (NonRec var expr) hsfunc =
     return $ HWFunction (mkVHDLId name) inports outport
   where
     name = getOccString var
     ty = CoreUtils.exprType expr
-    (fargs, res) = Type.splitFunTys ty
-    args = if length fargs == 1 then fargs else (init fargs)
-    --state = if length fargs == 1 then () else (last fargs)
+    (args, res) = Type.splitFunTys ty
     inports = case args of
       -- Handle a single port specially, to prevent an extra 0 in the name
-      [port] -> [getPortNameMapForTy "portin" port]
-      ps     -> getPortNameMapForTys "portin" 0 ps
-    outport = getPortNameMapForTy "portout" res
+      [port] -> [getPortNameMapForTy "portin" port (head $ hsArgs hsfunc)]
+      ps     -> getPortNameMapForTys "portin" 0 ps (hsArgs hsfunc)
+    outport = getPortNameMapForTy "portout" res (hsRes hsfunc)
 
-mkHWFunction (Rec _) =
+mkHWFunction (Rec _) _ =
   error "Recursive binders not supported"
 
 -- | How is a given (single) value in a function's type (ie, argument or
@@ -524,12 +530,14 @@ data HsValueUse =
 useAsPort = mkHsValueMap (\x -> Single Port)
 useAsState = mkHsValueMap (\x -> Single State)
 
+type HsUseMap = HsValueMap HsValueUse
+
 -- | This type describes a particular use of a Haskell function and is used to
 --   look up an appropriate hardware description.  
 data HsFunction = HsFunction {
   hsName :: String,                      -- ^ What was the name of the original Haskell function?
-  hsArgs :: [HsValueMap HsValueUse],     -- ^ How are the arguments used?
-  hsRes  :: HsValueMap HsValueUse        -- ^ How is the result value used?
+  hsArgs :: [HsUseMap],                  -- ^ How are the arguments used?
+  hsRes  :: HsUseMap                     -- ^ How is the result value used?
 } deriving (Show, Eq)
 
 -- | Translate a function application to a HsFunction. i.e., which function
