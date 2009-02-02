@@ -31,6 +31,13 @@ invinv a = hwnot (hwnot a)
 dup :: Bit -> (Bit, Bit)
 dup a = (a, a)
 
+-- Not really an adder either, but a simple stateful example (D-flipflop)
+dff :: Bit -> Bit -> (Bit, Bit)
+dff d s = (s', q)
+  where
+    q = s
+    s' = d
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
