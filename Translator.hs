@@ -160,11 +160,17 @@ expandExpr binds l@(Let (NonRec b bexpr) expr) = do
     res_signals')
 
 expandExpr binds app@(App _ _) = do
-  let ((Var f), args) = collectArgs app
-  if isTupleConstructor f 
-    then
-      expandBuildTupleExpr binds args
-    else
+  -- Is this a data constructor application?
+  case CoreUtils.exprIsConApp_maybe app of
+    -- Is this a tuple construction?
+    Just (dc, args) -> if DataCon.isTupleCon dc 
+      then
+        expandBuildTupleExpr binds (dataConAppArgs dc args)
+      else
+        error "Data constructors other than tuples not supported"
+    otherise ->
+      -- Normal function application, should map to a component instantiation
+      let ((Var f), args) = collectArgs app in
       expandApplicationExpr binds (CoreUtils.exprType app) f args
 
 expandExpr binds expr@(Case (Var v) b _ alts) =
@@ -187,10 +193,9 @@ expandBuildTupleExpr ::
                                          -- See expandExpr
 expandBuildTupleExpr binds args = do
   -- Split the tuple constructor arguments into types and actual values.
-  let (_, vals) = splitTupleConstructorArgs args
   -- Expand each of the values in the tuple
   (signals_declss, statementss, arg_signalss, res_signals) <-
-    (Monad.liftM List.unzip4) $ mapM (expandExpr binds) vals
+    (Monad.liftM List.unzip4) $ mapM (expandExpr binds) args
   if any (not . null) arg_signalss
     then error "Putting high order functions in tuples not supported"
     else
@@ -330,29 +335,13 @@ expandArgs binds (e:exprs) = do
 
 expandArgs _ [] = return ([], [], [])
 
--- Is the given name a (binary) tuple constructor
-isTupleConstructor :: Var.Var -> Bool
-isTupleConstructor var =
-  Name.isWiredInName name
-  && Name.nameModule name == tuple_mod
-  && (Name.occNameString $ Name.nameOccName name) == "(,)"
+-- Extract the arguments from a data constructor application (that is, the
+-- normal args, leaving out the type args).
+dataConAppArgs :: DataCon -> [CoreExpr] -> [CoreExpr]
+dataConAppArgs dc args =
+    drop tycount args
   where
-    name = Var.varName var
-    mod = nameModule name
-    tuple_mod = Module.mkModule (Module.stringToPackageId "ghc-prim") (Module.mkModuleName "GHC.Tuple")
-
--- Split arguments into type arguments and value arguments This is probably
--- not really sufficient (not sure if Types can actually occur as value
--- arguments...)
-splitTupleConstructorArgs :: [CoreExpr] -> ([CoreExpr], [CoreExpr])
-splitTupleConstructorArgs (e:es) =
-  case e of
-    Type t     -> (e:tys, vals)
-    otherwise  -> (tys, e:vals)
-  where
-    (tys, vals) = splitTupleConstructorArgs es
-
-splitTupleConstructorArgs [] = ([], [])
+    tycount = length $ DataCon.dataConAllTyVars dc
 
 mapOutputPorts ::
   SignalNameMap      -- The output portnames of the component
