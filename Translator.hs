@@ -26,6 +26,7 @@ import qualified Monad
 -- ForSyDe to get access to these modules.
 import qualified ForSyDe.Backend.VHDL.AST as AST
 import qualified ForSyDe.Backend.VHDL.Ppr
+import qualified ForSyDe.Backend.VHDL.FileIO
 import qualified ForSyDe.Backend.Ppr
 -- This is needed for rendering the pretty printed VHDL
 import Text.PrettyPrint.HughesPJ (render)
@@ -49,6 +50,7 @@ main =
           -- Turn bind into VHDL
           let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 [])
           liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
+          liftIO $ ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl "../vhdl/vhdl/output.vhdl"
           return ()
   where
     -- Turns the given bind into VHDL
