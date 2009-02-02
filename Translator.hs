@@ -108,7 +108,7 @@ getPortMapEntry ::
   
 -- Accepts a port name and an argument to map to it.
 -- Returns the appropriate line for in the port map
-getPortMapEntry (Signal portname _) (Signal signame _) = 
+getPortMapEntry (Single (portname, _)) (Single (signame, _)) = 
   (Just portname) AST.:=>: (AST.ADName (AST.NSimple signame))
 expandExpr ::
   [(CoreBndr, SignalNameMap)] 
@@ -142,10 +142,10 @@ expandExpr binds lam@(Lam b expr) = do
           res_signal')
 
 expandExpr binds (Var id) =
-  return ([], [], [], Signal signal_id ty)
+  return ([], [], [], Single (signal_id, ty))
   where
     -- Lookup the id in our binds map
-    Signal signal_id ty = Maybe.fromMaybe
+    Single (signal_id, ty) = Maybe.fromMaybe
       (error $ "Argument " ++ getOccString id ++ "is unknown")
       (lookup id binds)
 
@@ -284,7 +284,7 @@ createAssocElems ::
   -> SignalNameMap   -- The signals to bind to it
   -> [AST.AssocElem]            -- The resulting port map lines
   
-createAssocElems (Signal port_id _) (Signal signal_id _) = 
+createAssocElems (Single (port_id, _)) (Single (signal_id, _)) = 
   [(Just port_id) AST.:=>: (AST.ADName (AST.NSimple signal_id))]
 
 createAssocElems (Tuple ports) (Tuple signals) = 
@@ -307,7 +307,7 @@ mkSignalsFromMap ::
   SignalNameMap 
   -> [AST.SigDec]
 
-mkSignalsFromMap (Signal id ty) =
+mkSignalsFromMap (Single (id, ty)) =
   [mkSignalFromId id ty]
 
 mkSignalsFromMap (Tuple signals) =
@@ -350,7 +350,7 @@ mapOutputPorts ::
 
 -- Map the output port of a component to the output port of the containing
 -- entity.
-mapOutputPorts (Signal portname _) (Signal signalname _) =
+mapOutputPorts (Single (portname, _)) (Single (signalname, _)) =
   [(Just portname) AST.:=>: (AST.ADName (AST.NSimple signalname))]
 
 -- Map matching output ports in the tuple
@@ -390,7 +390,7 @@ mkIfaceSigDecs ::
   -> SignalNameMap        -- The ports to generate a map for
   -> [AST.IfaceSigDec]            -- The resulting ports
   
-mkIfaceSigDecs mode (Signal port_id ty) =
+mkIfaceSigDecs mode (Single (port_id, ty)) =
   [AST.IfaceSigDec port_id mode ty]
 
 mkIfaceSigDecs mode (Tuple ports) =
@@ -405,7 +405,7 @@ createSignalAssignments ::
 
 -- A simple assignment of one signal to another (greatly complicated because
 -- signal assignments can be conditional with multiple conditions in VHDL).
-createSignalAssignments (Signal dst _) (Signal src _) =
+createSignalAssignments (Single (dst, _)) (Single (src, _)) =
     [AST.CSSASm assign]
   where
     src_name  = AST.NSimple src
@@ -420,9 +420,14 @@ createSignalAssignments (Tuple dsts) (Tuple srcs) =
 createSignalAssignments dst src =
   error $ "Non matching source and destination: " ++ show dst ++ "\nand\n" ++  show src
 
-data SignalNameMap =
-  Tuple [SignalNameMap]
-  | Signal AST.VHDLId AST.TypeMark   -- A signal (or port) of the given (VDHL) type
+type SignalNameMap = HsValueMap (AST.VHDLId, AST.TypeMark)
+
+-- | A datatype that maps each of the single values in a haskell structure to
+-- a mapto. The map has the same structure as the haskell type mapped, ie
+-- nested tuples etc.
+data HsValueMap mapto =
+  Tuple [HsValueMap mapto]
+  | Single mapto
   deriving (Show)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
@@ -438,7 +443,7 @@ getPortNameMapForTy name ty =
     -- Expand tuples we find
     Tuple (getPortNameMapForTys name 0 args)
   else -- Assume it's a type constructor application, ie simple data type
-    Signal (AST.unsafeVHDLBasicId name) (vhdl_ty ty)
+    Single ((AST.unsafeVHDLBasicId name), (vhdl_ty ty))
   where
     (tycon, args) = Type.splitTyConApp ty 
 
@@ -509,10 +514,10 @@ mkVHDLId = AST.unsafeVHDLBasicId
 
 builtin_funcs = 
   [ 
-    ("hwxor", HWFunction (mkVHDLId "hwxor") [Signal (mkVHDLId "a") vhdl_bit_ty, Signal (mkVHDLId "b") vhdl_bit_ty] (Signal (mkVHDLId "o") vhdl_bit_ty)),
-    ("hwand", HWFunction (mkVHDLId "hwand") [Signal (mkVHDLId "a") vhdl_bit_ty, Signal (mkVHDLId "b") vhdl_bit_ty] (Signal (mkVHDLId "o") vhdl_bit_ty)),
-    ("hwor", HWFunction (mkVHDLId "hwor") [Signal (mkVHDLId "a") vhdl_bit_ty, Signal (mkVHDLId "b") vhdl_bit_ty] (Signal (mkVHDLId "o") vhdl_bit_ty)),
-    ("hwnot", HWFunction (mkVHDLId "hwnot") [Signal (mkVHDLId "i") vhdl_bit_ty] (Signal (mkVHDLId "o") vhdl_bit_ty))
+    ("hwxor", HWFunction (mkVHDLId "hwxor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    ("hwand", HWFunction (mkVHDLId "hwand") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    ("hwor", HWFunction (mkVHDLId "hwor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    ("hwnot", HWFunction (mkVHDLId "hwnot") [Single (mkVHDLId "i", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty)))
   ]
 
 vhdl_bit_ty :: AST.TypeMark
