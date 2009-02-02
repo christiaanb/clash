@@ -206,7 +206,7 @@ expandExpr ::
                                          -- the expression's result.
 expandExpr binds lam@(Lam b expr) = do
   -- Generate a new signal to which we will expect this argument to be bound.
-  signal_name <- uniqueName ("arg-" ++ getOccString b)
+  signal_name <- uniqueName ("arg_" ++ getOccString b)
   -- Find the type of the binder
   let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
   -- Create signal names for the binder
@@ -329,7 +329,7 @@ expandApplicationExpr ::
 expandApplicationExpr binds ty f args = do
   let name = getOccString f
   -- Generate a unique name for the application
-  appname <- uniqueName ("app-" ++ name)
+  appname <- uniqueName ("app_" ++ name)
   -- Lookup the hwfunction to instantiate
   HWFunction vhdl_id inports outport <- getHWFunc name
   -- Expand each of the args, so each of them is reduced to output signals
@@ -337,7 +337,7 @@ expandApplicationExpr binds ty f args = do
   -- Bind each of the input ports to the expanded arguments
   let inmaps = concat $ zipWith createAssocElems inports arg_res_signals
   -- Create signal names for our result
-  let res_signal = getPortNameMapForTy (appname ++ "-out") ty
+  let res_signal = getPortNameMapForTy (appname ++ "_out") ty
   -- Create the corresponding signal declarations
   let signal_decls = mkSignalsFromMap res_signal
   -- Bind each of the output ports to our output signals
@@ -594,7 +594,7 @@ uniqueName :: String -> VHDLState String
 uniqueName name = do
   count <- State.gets nameCount -- Get the funcs element from the session
   State.modify (\s -> s {nameCount = count + 1})
-  return $ name ++ "-" ++ (show count)
+  return $ name ++ "_" ++ (show count)
 
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
