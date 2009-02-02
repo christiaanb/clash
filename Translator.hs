@@ -254,7 +254,7 @@ expandApplicationExpr binds ty f args = do
   -- Generate a unique name for the application
   appname <- uniqueName ("app_" ++ name)
   -- Lookup the hwfunction to instantiate
-  HWFunction vhdl_id inports outport <- getHWFunc (HsFunction name [] (Tuple []))
+  HWFunction vhdl_id inports outport <- getHWFunc (appToHsFunction f args ty)
   -- Expand each of the args, so each of them is reduced to output signals
   (arg_signal_decls, arg_statements, arg_res_signals) <- expandArgs binds args
   -- Bind each of the input ports to the expanded arguments
@@ -430,6 +430,29 @@ data HsValueMap mapto =
   | Single mapto
   deriving (Show, Eq)
 
+-- | Creates a HsValueMap with the same structure as the given type, using the
+--   given function for mapping the single types.
+mkHsValueMap ::
+  (Type -> HsValueMap mapto)    -- ^ A function to map single value Types
+                                --   (basically anything but tuples) to a
+                                --   HsValueMap (not limited to the Single
+                                --   constructor)
+  -> Type                       -- ^ The type to map to a HsValueMap
+  -> HsValueMap mapto           -- ^ The resulting map
+
+mkHsValueMap f ty =
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) ->
+      if (TyCon.isTupleTyCon tycon) 
+        then
+          -- Handle tuple construction especially
+          Tuple (map (mkHsValueMap f) args)
+        else
+          -- And let f handle the rest
+          f ty
+    -- And let f handle the rest
+    Nothing -> f ty
+
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
 getPortNameMapForTys :: String -> Int -> [Type] -> [SignalNameMap]
@@ -492,6 +515,22 @@ data HsFunction = HsFunction {
   hsRes  :: HsValueMap HsValueUse        -- ^ How is the result value used?
 } deriving (Show, Eq)
 
+-- | Translate a function application to a HsFunction. i.e., which function
+--   do you need to translate this function application.
+appToHsFunction ::
+  Var.Var         -- ^ The function to call
+  -> [CoreExpr]   -- ^ The function arguments
+  -> Type         -- ^ The return type
+  -> HsFunction   -- ^ The needed HsFunction
+
+appToHsFunction f args ty =
+  HsFunction hsname hsargs hsres
+  where
+    mkPort = \x -> Single Port
+    hsargs = map (mkHsValueMap mkPort . CoreUtils.exprType) args
+    hsres  = mkHsValueMap mkPort ty
+    hsname = getOccString f
+
 data VHDLSession = VHDLSession {
   nameCount :: Int,                       -- A counter that can be used to generate unique names
   funcs     :: [(HsFunction, HWFunction)] -- All functions available
@@ -529,10 +568,10 @@ mkVHDLId = AST.unsafeVHDLBasicId
 
 builtin_funcs = 
   [ 
-    (HsFunction "hwxor" [] (Tuple []), HWFunction (mkVHDLId "hwxor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    (HsFunction "hwand" [] (Tuple []), HWFunction (mkVHDLId "hwand") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    (HsFunction "hwor" [] (Tuple []), HWFunction (mkVHDLId "hwor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    (HsFunction "hwnot" [] (Tuple []), HWFunction (mkVHDLId "hwnot") [Single (mkVHDLId "i", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty)))
+    (HsFunction "hwxor" [(Single Port), (Single Port)] (Single Port), HWFunction (mkVHDLId "hwxor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwand" [(Single Port), (Single Port)] (Single Port), HWFunction (mkVHDLId "hwand") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwor" [(Single Port), (Single Port)] (Single Port), HWFunction (mkVHDLId "hwor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwnot" [(Single Port)] (Single Port), HWFunction (mkVHDLId "hwnot") [Single (mkVHDLId "i", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty)))
   ]
 
 vhdl_bit_ty :: AST.TypeMark
