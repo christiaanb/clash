@@ -48,9 +48,10 @@ main =
           let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["shalf_adder"]
           liftIO $ printBinds binds
           -- Turn bind into VHDL
-          let vhdl = State.evalState (mkVHDL binds) (VHDLSession 0 [])
+          let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession 0 [])
           liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
           liftIO $ ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl "../vhdl/vhdl/output.vhdl"
+          liftIO $ putStr $ "\n\nFinal session:\n" ++ show sess
           return ()
   where
     -- Turns the given bind into VHDL
