@@ -5,6 +5,10 @@ import Language.Haskell.Syntax
 
 mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
+-- This function is from Sim.hs, but we redefine it here so it can get inlined
+-- by default.
+stateless f = \i s -> (s, f i)
+
 show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displaysig c))
   where
     a = [High, High, High, High]
@@ -46,6 +50,8 @@ full_adder (a, b, cin) = (s, c)
     (s1, c1) = half_adder(a, b)
     (s, c2)  = half_adder(s1, cin)
     c        = c1 `hwor` c2
+
+sfull_adder = stateless full_adder
 
 -- Four bit adder
 -- Explicit version
