@@ -254,7 +254,7 @@ expandApplicationExpr binds ty f args = do
   -- Generate a unique name for the application
   appname <- uniqueName ("app_" ++ name)
   -- Lookup the hwfunction to instantiate
-  HWFunction vhdl_id inports outport <- getHWFunc name
+  HWFunction vhdl_id inports outport <- getHWFunc (HsFunction name [] (Tuple []))
   -- Expand each of the args, so each of them is reduced to output signals
   (arg_signal_decls, arg_statements, arg_res_signals) <- expandArgs binds args
   -- Bind each of the input ports to the expanded arguments
@@ -365,7 +365,7 @@ getArchitecture (Rec _) = error "Recursive binders not supported"
 
 getArchitecture (NonRec var expr) = do
   let name = (getOccString var)
-  HWFunction vhdl_id inports outport <- getHWFunc name
+  HWFunction vhdl_id inports outport <- getHWFunc (HsFunction name [] (Tuple []))
   sess <- State.get
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
   let inport_assigns = concat $ zipWith createSignalAssignments arg_signals inports
@@ -428,7 +428,7 @@ type SignalNameMap = HsValueMap (AST.VHDLId, AST.TypeMark)
 data HsValueMap mapto =
   Tuple [HsValueMap mapto]
   | Single mapto
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
@@ -458,10 +458,10 @@ data HWFunction = HWFunction { -- A function that is available in hardware
 -- output ports.
 mkHWFunction ::
   CoreBind                                   -- The core binder to generate the interface for
-  -> VHDLState (String, HWFunction)          -- The name of the function and its interface
+  -> VHDLState (HsFunction, HWFunction)          -- The name of the function and its interface
 
 mkHWFunction (NonRec var expr) =
-    return (name, HWFunction (mkVHDLId name) inports outport)
+    return (hsfunc, HWFunction (mkVHDLId name) inports outport)
   where
     name = getOccString var
     ty = CoreUtils.exprType expr
@@ -473,31 +473,46 @@ mkHWFunction (NonRec var expr) =
       [port] -> [getPortNameMapForTy "portin" port]
       ps     -> getPortNameMapForTys "portin" 0 ps
     outport = getPortNameMapForTy "portout" res
+    hsfunc = HsFunction name [] (Tuple [])
 
 mkHWFunction (Rec _) =
   error "Recursive binders not supported"
 
+-- | How is a given (single) value in a function's type (ie, argument or
+-- return value) used?
+data HsValueUse = 
+  Port -- ^ Use it as a port (input or output)
+  deriving (Show, Eq)
+
+-- | This type describes a particular use of a Haskell function and is used to
+--   look up an appropriate hardware description.  
+data HsFunction = HsFunction {
+  hsName :: String,                      -- ^ What was the name of the original Haskell function?
+  hsArgs :: [HsValueMap HsValueUse],     -- ^ How are the arguments used?
+  hsRes  :: HsValueMap HsValueUse        -- ^ How is the result value used?
+} deriving (Show, Eq)
+
 data VHDLSession = VHDLSession {
-  nameCount :: Int,                      -- A counter that can be used to generate unique names
-  funcs     :: [(String, HWFunction)]    -- All functions available, indexed by name
+  nameCount :: Int,                       -- A counter that can be used to generate unique names
+  funcs     :: [(HsFunction, HWFunction)] -- All functions available
 } deriving (Show)
 
 type VHDLState = State.State VHDLSession
 
 -- Add the function to the session
-addFunc :: String -> HWFunction -> VHDLState ()
-addFunc name f = do
+addFunc :: HsFunction -> HWFunction -> VHDLState ()
+addFunc hsfunc hwfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  State.modify (\x -> x {funcs = (name, f) : fs }) -- Prepend name and f
+  State.modify (\x -> x {funcs = (hsfunc, hwfunc) : fs }) -- Prepend name and f
 
 -- Lookup the function with the given name in the current session. Errors if
 -- it was not found.
-getHWFunc :: String -> VHDLState HWFunction
-getHWFunc name = do
+getHWFunc :: HsFunction -> VHDLState HWFunction
+getHWFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   return $ Maybe.fromMaybe
-    (error $ "Function " ++ name ++ "is unknown? This should not happen!")
-    (lookup name fs)
+    (error $ "Function " ++ (hsName hsfunc) ++ "is unknown? This should not happen!")
+    (lookup hsfunc fs)
 
 -- Makes the given name unique by appending a unique number.
 -- This does not do any checking against existing names, so it only guarantees
@@ -514,10 +529,10 @@ mkVHDLId = AST.unsafeVHDLBasicId
 
 builtin_funcs = 
   [ 
-    ("hwxor", HWFunction (mkVHDLId "hwxor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    ("hwand", HWFunction (mkVHDLId "hwand") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    ("hwor", HWFunction (mkVHDLId "hwor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
-    ("hwnot", HWFunction (mkVHDLId "hwnot") [Single (mkVHDLId "i", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty)))
+    (HsFunction "hwxor" [] (Tuple []), HWFunction (mkVHDLId "hwxor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwand" [] (Tuple []), HWFunction (mkVHDLId "hwand") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwor" [] (Tuple []), HWFunction (mkVHDLId "hwor") [Single (mkVHDLId "a", vhdl_bit_ty), Single (mkVHDLId "b", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty))),
+    (HsFunction "hwnot" [] (Tuple []), HWFunction (mkVHDLId "hwnot") [Single (mkVHDLId "i", vhdl_bit_ty)] (Single (mkVHDLId "o", vhdl_bit_ty)))
   ]
 
 vhdl_bit_ty :: AST.TypeMark
