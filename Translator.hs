@@ -446,7 +446,7 @@ createSignalAssignments (Single (src, _)) Unused =
   []
 
 createSignalAssignments dst src =
-  error $ "Non matching source and destination: " ++ show dst ++ "\nand\n" ++  show src
+  error $ "Non matching source and destination: " ++ show dst ++ " <= " ++  show src
 
 type SignalNameMap = HsValueMap (AST.VHDLId, AST.TypeMark)
 
