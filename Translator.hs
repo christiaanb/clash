@@ -368,24 +368,25 @@ expandBind bind@(NonRec var expr) = do
   hwfunc <- mkHWFunction bind hsfunc
   -- Add it to the session
   addFunc hsfunc hwfunc 
-  arch <- getArchitecture hwfunc expr
+  arch <- getArchitecture hsfunc hwfunc expr
   let entity = getEntity hwfunc
   return $ [
     AST.LUEntity entity,
     AST.LUArch arch ]
 
 getArchitecture ::
-  HWFunction                -- The function to generate an architecture for
+  HsFunction                -- The function interface
+  -> HWFunction             -- The function to generate an architecture for
   -> CoreExpr               -- The expression that is bound to the function
   -> VHDLState AST.ArchBody -- The resulting architecture
    
-getArchitecture hwfunc expr = do
+getArchitecture hsfunc hwfunc expr = do
   -- Unpack our hwfunc
   let HWFunction vhdl_id inports outport = hwfunc
   -- Expand the expression into an architecture body
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
-  let inport_assigns = concat $ zipWith createSignalAssignments arg_signals inports
-  let outport_assigns = createSignalAssignments outport res_signal
+  let (inport_assigns, instate_map)  = concat_elements $ unzip $ zipWith3 createSignalAssignments arg_signals inports (hsArgs hsfunc)
+  let (outport_assigns, outstate_map) = createSignalAssignments outport res_signal (hsRes hsfunc)
   return $ AST.ArchBody
     (AST.unsafeVHDLBasicId "structural")
     (AST.NSimple vhdl_id)
@@ -419,14 +420,16 @@ mkIfaceSigDecs mode Unused =
 -- Create concurrent assignments of one map of signals to another. The maps
 -- should have a similar form.
 createSignalAssignments ::
-  SignalNameMap         -- The signals to assign to
-  -> SignalNameMap      -- The signals to assign
-  -> [AST.ConcSm]                  -- The resulting assignments
+  SignalNameMap           -- The signals to assign to
+  -> SignalNameMap        -- The signals to assign
+  -> HsUseMap             -- What function does each of the signals have?
+  -> ([AST.ConcSm],       -- The resulting assignments
+      [(Int, AST.VHDLId)]) -- The resulting state -> signal mappings
 
 -- A simple assignment of one signal to another (greatly complicated because
 -- signal assignments can be conditional with multiple conditions in VHDL).
-createSignalAssignments (Single (dst, _)) (Single (src, _)) =
-    [AST.CSSASm assign]
+createSignalAssignments (Single (dst, _)) (Single (src, _)) (Single Port)=
+    ([AST.CSSASm assign], [])
   where
     src_name  = AST.NSimple src
     src_expr  = AST.PrimName src_name
@@ -434,19 +437,19 @@ createSignalAssignments (Single (dst, _)) (Single (src, _)) =
     dst_name  = (AST.NSimple dst)
     assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
 
-createSignalAssignments (Tuple dsts) (Tuple srcs) =
-  concat $ zipWith createSignalAssignments dsts srcs
+createSignalAssignments (Tuple dsts) (Tuple srcs) (Tuple uses) =
+  concat_elements $ unzip $ zipWith3 createSignalAssignments dsts srcs uses
 
-createSignalAssignments Unused (Single (src, _)) =
+createSignalAssignments Unused (Single (src, _)) (Single (State n)) =
   -- Write state
-  []
+  ([], [(n, src)])
 
-createSignalAssignments (Single (src, _)) Unused =
+createSignalAssignments (Single (dst, _)) Unused (Single (State n)) =
   -- Read state
-  []
+  ([], [(n, dst)])
 
-createSignalAssignments dst src =
-  error $ "Non matching source and destination: " ++ show dst ++ " <= " ++  show src
+createSignalAssignments dst src use =
+  error $ "Non matching source and destination: " ++ show dst ++ " <= " ++  show src ++ " (Used as " ++ show use ++ ")"
 
 type SignalNameMap = HsValueMap (AST.VHDLId, AST.TypeMark)
 
@@ -658,6 +661,12 @@ uniqueName name = do
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
 mkVHDLId = AST.unsafeVHDLBasicId
+
+-- Concatenate each of the lists of lists inside the given tuple.
+-- Since the element types in the lists might differ, we can't generalize
+-- this (unless we pass in f twice).
+concat_elements :: ([[a]], [[b]]) -> ([a], [b])
+concat_elements (a, b) = (concat a, concat b)
 
 builtin_funcs = 
   [ 
