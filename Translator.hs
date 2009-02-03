@@ -125,7 +125,7 @@ expandExpr binds lam@(Lam b expr) = do
   let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
   -- Create signal names for the binder
   -- TODO: We assume arguments are ports here
-  let arg_signal = getPortNameMapForTy ("xxx") arg_ty (useAsPort arg_ty)
+  let arg_signal = getPortNameMapForTy signal_name arg_ty (useAsPort arg_ty)
   -- Create the corresponding signal declarations
   let signal_decls = mkSignalsFromMap arg_signal
   -- Add the binder to the list of binds
