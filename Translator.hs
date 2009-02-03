@@ -45,7 +45,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           --liftIO $ printBinds (cm_binds core)
-          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["shalf_adder"]
+          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["dff"]
           liftIO $ printBinds binds
           -- Turn bind into VHDL
           let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession 0 [])
@@ -412,6 +412,10 @@ mkIfaceSigDecs mode (Single (port_id, ty)) =
 mkIfaceSigDecs mode (Tuple ports) =
   concat $ map (mkIfaceSigDecs mode) ports
 
+-- Unused values (state) don't generate ports
+mkIfaceSigDecs mode Unused =
+  []
+
 -- Create concurrent assignments of one map of signals to another. The maps
 -- should have a similar form.
 createSignalAssignments ::
@@ -432,6 +436,14 @@ createSignalAssignments (Single (dst, _)) (Single (src, _)) =
 
 createSignalAssignments (Tuple dsts) (Tuple srcs) =
   concat $ zipWith createSignalAssignments dsts srcs
+
+createSignalAssignments Unused (Single (src, _)) =
+  -- Write state
+  []
+
+createSignalAssignments (Single (src, _)) Unused =
+  -- Read state
+  []
 
 createSignalAssignments dst src =
   error $ "Non matching source and destination: " ++ show dst ++ "\nand\n" ++  show src
