@@ -462,25 +462,36 @@ data HsValueMap mapto =
 -- | Creates a HsValueMap with the same structure as the given type, using the
 --   given function for mapping the single types.
 mkHsValueMap ::
-  (Type -> HsValueMap mapto)    -- ^ A function to map single value Types
+  ((Type, s) -> (HsValueMap mapto, s))
+                                -- ^ A function to map single value Types
                                 --   (basically anything but tuples) to a
                                 --   HsValueMap (not limited to the Single
-                                --   constructor)
+                                --   constructor) Also accepts and produces a
+                                --   state that will be passed on between
+                                --   each call to the function.
+  -> s                          -- ^ The initial state
   -> Type                       -- ^ The type to map to a HsValueMap
-  -> HsValueMap mapto           -- ^ The resulting map
+  -> (HsValueMap mapto, s)      -- ^ The resulting map and state
 
-mkHsValueMap f ty =
+mkHsValueMap f s ty =
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) ->
       if (TyCon.isTupleTyCon tycon) 
         then
+          let (args', s') = mapTuple f s args in
           -- Handle tuple construction especially
-          Tuple (map (mkHsValueMap f) args)
+          (Tuple args', s')
         else
           -- And let f handle the rest
-          f ty
+          f (ty, s)
     -- And let f handle the rest
-    Nothing -> f ty
+    Nothing -> f (ty, s)
+  where
+    mapTuple f s (ty:tys) =
+      let (map, s') = mkHsValueMap f s ty in
+      let (maps, s'') = mapTuple f s' tys in
+      (map: maps, s'')
+    mapTuple f s [] = ([], s)
 
 -- Generate a port name map (or multiple for tuple types) in the given direction for
 -- each type given.
@@ -490,7 +501,7 @@ getPortNameMapForTys prefix num (t:ts) (u:us) =
   (getPortNameMapForTy (prefix ++ show num) t u) : getPortNameMapForTys prefix (num + 1) ts us
 
 getPortNameMapForTy :: String -> Type -> HsUseMap -> SignalNameMap
-getPortNameMapForTy name _ (Single State) =
+getPortNameMapForTy name _ (Single (State _)) =
   Unused
 
 getPortNameMapForTy name ty use =
@@ -535,12 +546,15 @@ mkHWFunction (Rec _) _ =
 -- | How is a given (single) value in a function's type (ie, argument or
 -- return value) used?
 data HsValueUse = 
-  Port -- ^ Use it as a port (input or output)
-  | State --- ^ Use it as state (input or output)
+  Port        -- ^ Use it as a port (input or output)
+  | State Int -- ^ Use it as state (input or output). The int is used to
+              --   match input state to output state.
   deriving (Show, Eq)
 
-useAsPort = mkHsValueMap (\x -> Single Port)
-useAsState = mkHsValueMap (\x -> Single State)
+useAsPort :: Type -> HsUseMap
+useAsPort = fst . (mkHsValueMap (\(ty, s) -> (Single Port, s)) 0)
+useAsState :: Type -> HsUseMap
+useAsState = fst . (mkHsValueMap (\(ty, s) -> (Single $ State s, s + 1)) 0)
 
 type HsUseMap = HsValueMap HsValueUse
 
@@ -563,9 +577,8 @@ appToHsFunction ::
 appToHsFunction f args ty =
   HsFunction hsname hsargs hsres
   where
-    mkPort = \x -> Single Port
-    hsargs = map (mkHsValueMap mkPort . CoreUtils.exprType) args
-    hsres  = mkHsValueMap mkPort ty
+    hsargs = map (useAsPort . CoreUtils.exprType) args
+    hsres  = useAsPort ty
     hsname = getOccString f
 
 -- | Translate a top level function declaration to a HsFunction. i.e., which
