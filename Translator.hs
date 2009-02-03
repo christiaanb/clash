@@ -369,7 +369,10 @@ expandBind bind@(NonRec var expr) = do
   -- Add it to the session
   addFunc hsfunc hwfunc 
   arch <- getArchitecture hsfunc hwfunc expr
-  let entity = getEntity hwfunc
+  -- Give every entity a clock port
+  -- TODO: Omit this for stateless entities
+  let clk_port = AST.IfaceSigDec (mkVHDLId "clk") AST.In vhdl_bit_ty
+  let entity = getEntity hwfunc [clk_port]
   return $ [
     AST.LUEntity entity,
     AST.LUArch arch ]
@@ -387,20 +390,52 @@ getArchitecture hsfunc hwfunc expr = do
   (signal_decls, statements, arg_signals, res_signal) <- expandExpr [] expr
   let (inport_assigns, instate_map)  = concat_elements $ unzip $ zipWith3 createSignalAssignments arg_signals inports (hsArgs hsfunc)
   let (outport_assigns, outstate_map) = createSignalAssignments outport res_signal (hsRes hsfunc)
+  let state_procs = map AST.CSPSm $ createStateProcs (sortMap instate_map) (sortMap outstate_map)
   return $ AST.ArchBody
     (AST.unsafeVHDLBasicId "structural")
     (AST.NSimple vhdl_id)
     (map AST.BDISD signal_decls)
-    (inport_assigns ++ outport_assigns ++ statements)
+    (state_procs ++ inport_assigns ++ outport_assigns ++ statements)
+
+-- | Sorts a map modeled as a list of (key,value) pairs by key
+sortMap :: Ord a => [(a, b)] -> [(a, b)]
+sortMap = List.sortBy (\(a, _) (b, _) -> compare a b)
+
+-- | Generate procs for state variables
+createStateProcs ::
+  [(Int, AST.VHDLId)]
+                    -- ^ The sorted list of signals that should be assigned
+                    --   to each state
+  -> [(Int, AST.VHDLId)]   
+                    -- ^ The sorted list of signals that contain each new state
+  -> [AST.ProcSm]   -- ^ The resulting procs
+
+createStateProcs ((old_num, old_id):olds) ((new_num, new_id):news) =
+  if (old_num == new_num)
+    then
+      AST.ProcSm label [clk] [statement] : createStateProcs olds news
+    else
+      error "State numbers don't match!"
+  where
+    label       = mkVHDLId $ "state_" ++ (show old_num)
+    clk         = mkVHDLId "clk"
+    rising_edge = AST.NSimple $ mkVHDLId "rising_edge"
+    wform       = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple $ new_id) Nothing]
+    assign      = AST.SigAssign (AST.NSimple old_id) wform
+    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
+    statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
+
+createStateProcs [] [] = []
 
 -- Generate a VHDL entity declaration for the given function
-getEntity :: HWFunction -> AST.EntityDec  
-getEntity (HWFunction vhdl_id inports outport) = 
+getEntity :: HWFunction -> [AST.IfaceSigDec] -> AST.EntityDec  
+getEntity (HWFunction vhdl_id inports outport) extra_ports = 
   AST.EntityDec vhdl_id ports
   where
     ports = 
       (concat $ map (mkIfaceSigDecs AST.In) inports)
       ++ mkIfaceSigDecs AST.Out outport
+      ++ extra_ports
 
 mkIfaceSigDecs ::
   AST.Mode                        -- The port's mode (In or Out)
