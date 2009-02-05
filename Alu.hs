@@ -1,4 +1,4 @@
-module Alu (main) where
+module Alu  where
 import Bits
 import qualified Sim
 
