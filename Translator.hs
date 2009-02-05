@@ -1,4 +1,4 @@
-module Main(main) where
+module Translator(main) where
 import GHC
 import CoreSyn
 import qualified CoreUtils
