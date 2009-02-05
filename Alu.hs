@@ -45,9 +45,9 @@ register_bank (addr, High, d) s = -- Write
 
 type AluOp = Bit
 
-alu :: (AluOp, Bit, Bit) -> Bit
-alu (High, a, b) = a `hwand` b
-alu (Low, a, b) = a `hwor` b
+alu :: AluOp -> Bit -> Bit -> Bit
+alu High a b = a `hwand` b
+alu Low a b = a `hwor` b
 
 type ExecState = (RegisterBankState, Bit, Bit)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, ())
@@ -58,7 +58,7 @@ exec (addr, Low, op) s =
   where
     (reg_s, t, z) = s
     (reg_s', t') = register_bank (addr, Low, DontCare) reg_s
-    z' = alu (op, t', t)
+    z' = alu op t' t
     s' = (reg_s', t', z')
 
 -- Write
