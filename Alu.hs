@@ -14,7 +14,7 @@ program = [
             (High, High, DontCare) -- r1 = z (0)
           ]
 
-initial_state = (Regs Low High, (), Low, Low)
+initial_state = (Regs Low High, Low, Low)
 
 -- Register bank
 
@@ -43,31 +43,30 @@ register_bank (addr, High, d) s = -- Write
 
 -- ALU
 
-type AluState = ()
 type AluOp = Bit
 
-alu :: (AluOp, Bit, Bit) -> AluState -> (AluState, Bit)
-alu (High, a, b) s = ((), a `hwand` b)
-alu (Low, a, b) s = ((), a `hwor` b)
+alu :: (AluOp, Bit, Bit) -> Bit
+alu (High, a, b) = a `hwand` b
+alu (Low, a, b) = a `hwor` b
 
-type ExecState = (RegisterBankState, AluState, Bit, Bit)
+type ExecState = (RegisterBankState, Bit, Bit)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, ())
 
 -- Read & Exec
 exec (addr, Low, op) s =
   (s', ())
   where
-    (reg_s, alu_s, t, z) = s
+    (reg_s, t, z) = s
     (reg_s', t') = register_bank (addr, Low, DontCare) reg_s
-    (alu_s', z') = alu (op, t', t) alu_s
-    s' = (reg_s', alu_s', t', z')
+    z' = alu (op, t', t)
+    s' = (reg_s', t', z')
 
 -- Write
 exec (addr, High, op) s =
   (s', ())
   where
-    (reg_s, alu_s, t, z) = s
+    (reg_s, t, z) = s
     (reg_s', _) = register_bank (addr, High, z) reg_s
-    s' = (reg_s', alu_s, t, z)
+    s' = (reg_s', t, z)
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
