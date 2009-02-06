@@ -108,15 +108,17 @@ flattenFunction hsfunc bind@(NonRec var expr) =
   FlatFunction args res apps conds
   where
     init_state        = ([], [], 0)
-    (fres, end_state) = State.runState (flattenExpr expr) init_state
+    (fres, end_state) = State.runState (flattenExpr [] expr) init_state
     (args, res)       = fres
     (apps, conds, _)  = end_state
 
 flattenExpr ::
-  CoreExpr
+  BindMap
+  -> CoreExpr
   -> FlattenState ([SignalDefMap], SignalUseMap)
 
-flattenExpr _ = do
+
+flattenExpr _ _ = do
   return ([], Tuple [])
 
 
