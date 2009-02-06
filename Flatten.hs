@@ -22,12 +22,13 @@ data FlatFunction = FlatFunction {
 type SignalUseMap = HsValueMap SignalUse
 type SignalDefMap = HsValueMap SignalDef
 
+type SignalId = Int
 data SignalUse = SignalUse {
-  sigUseId :: Int
+  sigUseId :: SignalId
 } deriving (Show, Eq)
 
 data SignalDef = SignalDef {
-  sigDefId :: Int
+  sigDefId :: SignalId
 } deriving (Show, Eq)
 
 data App = App {
@@ -75,7 +76,26 @@ type BindMap = [(
     )
   )]
 
-type FlattenState = State.State ([App], [CondDef], Int)
+type FlattenState = State.State ([App], [CondDef], SignalId)
+
+-- | Add an application to the current FlattenState
+addApp :: App -> FlattenState ()
+addApp a = do
+  (apps, conds, n) <- State.get
+  State.put (a:apps, conds, n)
+
+-- | Add a conditional definition to the current FlattenState
+addCondDef :: CondDef -> FlattenState ()
+addCondDef c = do
+  (apps, conds, n) <- State.get
+  State.put (apps, c:conds, n)
+
+-- | Generates a new signal id, which is unique within the current flattening.
+genSignalId :: FlattenState SignalId 
+genSignalId = do
+  (apps, conds, n) <- State.get
+  State.put (apps, conds, n+1)
+  return n
 
 -- | Flatten a haskell function
 flattenFunction ::
