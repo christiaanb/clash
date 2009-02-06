@@ -1,6 +1,15 @@
 module Flatten where
-import Translator (HsValueMap)
+import CoreSyn
+import qualified Control.Monad.State as State
 
+-- | A datatype that maps each of the single values in a haskell structure to
+-- a mapto. The map has the same structure as the haskell type mapped, ie
+-- nested tuples etc.
+data HsValueMap mapto =
+  Tuple [HsValueMap mapto]
+  | Single mapto
+  | Unused
+  deriving (Show, Eq)
 
 data FlatFunction = FlatFunction {
   args   :: [SignalDefMap],
@@ -65,4 +74,32 @@ type BindMap = [(
       [SignalUse]      -- ^ With these signals already applied to it
     )
   )]
+
+type FlattenState = State.State ([App], [CondDef], Int)
+
+-- | Flatten a haskell function
+flattenFunction ::
+  HsFunction                      -- ^ The function to flatten
+  -> CoreBind                     -- ^ The function value
+  -> FlatFunction                 -- ^ The resulting flat function
+
+flattenFunction _ (Rec _) = error "Recursive binders not supported"
+flattenFunction hsfunc bind@(NonRec var expr) =
+  FlatFunction args res apps conds
+  where
+    init_state        = ([], [], 0)
+    (fres, end_state) = State.runState (flattenExpr expr) init_state
+    (args, res)       = fres
+    (apps, conds, _)  = end_state
+
+flattenExpr ::
+  CoreExpr
+  -> FlattenState ([SignalDefMap], SignalUseMap)
+
+flattenExpr _ = do
+  return ([], Tuple [])
+
+
+
+
 -- vim: set ts=8 sw=2 sts=2 expandtab:
