@@ -61,6 +61,10 @@ type SignalDefMap = HsValueMap SignalDef
 useMapToDefMap :: SignalUseMap -> SignalDefMap
 useMapToDefMap = fmap (\(SignalUse u) -> SignalDef u)
 
+defMapToUseMap :: SignalDefMap -> SignalUseMap
+defMapToUseMap = fmap (\(SignalDef u) -> SignalUse u)
+
+
 type SignalId = Int
 data SignalUse = SignalUse {
   sigUseId :: SignalId
