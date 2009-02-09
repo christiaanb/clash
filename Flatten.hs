@@ -1,7 +1,9 @@
 module Flatten where
 import CoreSyn
 import qualified Type
+import qualified Name
 import qualified TyCon
+import qualified Maybe
 import qualified CoreUtils
 import qualified Control.Monad.State as State
 
@@ -166,6 +168,15 @@ flattenExpr binds lam@(Lam b expr) = do
   defs <- genSignalUses arg_ty
   let binds' = (b, Left defs):binds
   flattenExpr binds' expr
+
+flattenExpr binds (Var id) =
+  case bind of
+    Left sig_use -> return ([], sig_use)
+    Right _ -> error "Higher order functions not supported."
+  where
+    bind = Maybe.fromMaybe
+      (error $ "Argument " ++ Name.getOccString id ++ "is unknown")
+      (lookup id binds)
 
 flattenExpr _ _ = do
   return ([], Tuple [])
