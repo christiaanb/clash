@@ -4,7 +4,9 @@ import qualified Type
 import qualified Name
 import qualified TyCon
 import qualified Maybe
+import qualified DataCon
 import qualified CoreUtils
+import Outputable ( showSDoc, ppr )
 import qualified Control.Monad.State as State
 
 -- | A datatype that maps each of the single values in a haskell structure to
@@ -33,11 +35,21 @@ mkHsValueMap ty =
           Single ty
     Nothing -> Single ty
 
+-- Extract the arguments from a data constructor application (that is, the
+-- normal args, leaving out the type args).
+dataConAppArgs :: DataCon.DataCon -> [CoreExpr] -> [CoreExpr]
+dataConAppArgs dc args =
+    drop tycount args
+  where
+    tycount = length $ DataCon.dataConAllTyVars dc
+
+
+
 data FlatFunction = FlatFunction {
   args   :: [SignalDefMap],
   res    :: SignalUseMap,
   --sigs   :: [SignalDef],
-  apps   :: [App],
+  apps   :: [FApp],
   conds  :: [CondDef]
 } deriving (Show, Eq)
     
@@ -57,7 +69,7 @@ data SignalDef = SignalDef {
   sigDefId :: SignalId
 } deriving (Show, Eq)
 
-data App = App {
+data FApp = FApp {
   appFunc :: HsFunction,
   appArgs :: [SignalUseMap],
   appRes  :: SignalDefMap
@@ -102,10 +114,10 @@ type BindMap = [(
     )
   )]
 
-type FlattenState = State.State ([App], [CondDef], SignalId)
+type FlattenState = State.State ([FApp], [CondDef], SignalId)
 
 -- | Add an application to the current FlattenState
-addApp :: App -> FlattenState ()
+addApp :: FApp -> FlattenState ()
 addApp a = do
   (apps, conds, n) <- State.get
   State.put (a:apps, conds, n)
@@ -182,6 +194,23 @@ flattenExpr binds (Var id) =
     bind = Maybe.fromMaybe
       (error $ "Argument " ++ Name.getOccString id ++ "is unknown")
       (lookup id binds)
+
+flattenExpr binds app@(App _ _) = do
+  -- Is this a data constructor application?
+  case CoreUtils.exprIsConApp_maybe app of
+    -- Is this a tuple construction?
+    Just (dc, args) -> if DataCon.isTupleCon dc 
+      then
+        flattenBuildTupleExpr binds (dataConAppArgs dc args)
+      else
+        error $ "Data constructors other than tuples not supported: " ++ (showSDoc $ ppr app)
+    otherwise ->
+      -- Normal function application
+      let ((Var f), args) = collectArgs app in
+      flattenApplicationExpr binds (CoreUtils.exprType app) f args
+  where
+    flattenBuildTupleExpr = error $ "Tuple construction not supported: " ++ (showSDoc $ ppr app)
+    flattenApplicationExpr binds ty f args = error $ "Function application not supported: " ++ (showSDoc $ ppr app)
 
 flattenExpr _ _ = do
   return ([], Tuple [])
