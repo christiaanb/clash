@@ -44,6 +44,10 @@ data FlatFunction = FlatFunction {
 type SignalUseMap = HsValueMap SignalUse
 type SignalDefMap = HsValueMap SignalDef
 
+useMapToDefMap :: SignalUseMap -> SignalDefMap
+useMapToDefMap (Single (SignalUse u)) = Single (SignalDef u)
+useMapToDefMap (Tuple uses) = Tuple (map useMapToDefMap uses)
+
 type SignalId = Int
 data SignalUse = SignalUse {
   sigUseId :: SignalId
@@ -167,7 +171,8 @@ flattenExpr binds lam@(Lam b expr) = do
   -- Create signal names for the binder
   defs <- genSignalUses arg_ty
   let binds' = (b, Left defs):binds
-  flattenExpr binds' expr
+  (args, res) <- flattenExpr binds' expr
+  return ((useMapToDefMap defs) : args, res)
 
 flattenExpr binds (Var id) =
   case bind of
