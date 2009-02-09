@@ -17,7 +17,9 @@ data HsValueMap mapto =
   | Single mapto
   deriving (Show, Eq)
 
-
+instance Functor HsValueMap where
+  fmap f (Single s) = Single (f s)
+  fmap f (Tuple maps) = Tuple (fmap (fmap f) maps)
 
 -- | Creates a HsValueMap with the same structure as the given type, using the
 --   given function for mapping the single types.
@@ -57,8 +59,7 @@ type SignalUseMap = HsValueMap SignalUse
 type SignalDefMap = HsValueMap SignalDef
 
 useMapToDefMap :: SignalUseMap -> SignalDefMap
-useMapToDefMap (Single (SignalUse u)) = Single (SignalDef u)
-useMapToDefMap (Tuple uses) = Tuple (map useMapToDefMap uses)
+useMapToDefMap = fmap (\(SignalUse u) -> SignalDef u)
 
 type SignalId = Int
 data SignalUse = SignalUse {
