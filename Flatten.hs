@@ -1,5 +1,8 @@
 module Flatten where
 import CoreSyn
+import qualified Type
+import qualified TyCon
+import qualified CoreUtils
 import qualified Control.Monad.State as State
 
 -- | A datatype that maps each of the single values in a haskell structure to
@@ -8,8 +11,25 @@ import qualified Control.Monad.State as State
 data HsValueMap mapto =
   Tuple [HsValueMap mapto]
   | Single mapto
-  | Unused
   deriving (Show, Eq)
+
+
+
+-- | Creates a HsValueMap with the same structure as the given type, using the
+--   given function for mapping the single types.
+mkHsValueMap ::
+  Type.Type                         -- ^ The type to map to a HsValueMap
+  -> HsValueMap Type.Type           -- ^ The resulting map and state
+
+mkHsValueMap ty =
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) ->
+      if (TyCon.isTupleTyCon tycon) 
+        then
+          Tuple (map mkHsValueMap args)
+        else
+          Single ty
+    Nothing -> Single ty
 
 data FlatFunction = FlatFunction {
   args   :: [SignalDefMap],
@@ -67,9 +87,9 @@ data HsFunction = HsFunction {
 } deriving (Show, Eq)
 
 type BindMap = [(
-  String,              -- ^ The bind name
+  CoreBndr,            -- ^ The bind name
   Either               -- ^ The bind value which is either
-    SignalUse          -- ^ a signal
+    SignalUseMap       -- ^ a signal
     (
       HsValueUse,      -- ^ or a HighOrder function
       [SignalUse]      -- ^ With these signals already applied to it
@@ -97,6 +117,28 @@ genSignalId = do
   State.put (apps, conds, n+1)
   return n
 
+genSignalUses ::
+  Type.Type
+  -> FlattenState SignalUseMap
+
+genSignalUses ty = do
+  typeMapToUseMap tymap
+  where
+    -- First generate a map with the right structure containing the types
+    tymap = mkHsValueMap ty
+
+typeMapToUseMap ::
+  HsValueMap Type.Type
+  -> FlattenState SignalUseMap
+
+typeMapToUseMap (Single ty) = do
+  id <- genSignalId
+  return $ Single (SignalUse id)
+
+typeMapToUseMap (Tuple tymaps) = do
+  usemaps <- mapM typeMapToUseMap tymaps
+  return $ Tuple usemaps
+
 -- | Flatten a haskell function
 flattenFunction ::
   HsFunction                      -- ^ The function to flatten
@@ -117,11 +159,16 @@ flattenExpr ::
   -> CoreExpr
   -> FlattenState ([SignalDefMap], SignalUseMap)
 
+flattenExpr binds lam@(Lam b expr) = do
+  -- Find the type of the binder
+  let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
+  -- Create signal names for the binder
+  defs <- genSignalUses arg_ty
+  let binds' = (b, Left defs):binds
+  flattenExpr binds' expr
 
 flattenExpr _ _ = do
   return ([], Tuple [])
-
-
 
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
