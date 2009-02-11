@@ -6,12 +6,13 @@ module TranslatorTypes where
 
 import qualified Control.Monad.State as State
 import qualified HscTypes
+import qualified Data.Map as Map
 import Flatten
 
 
 -- | A map from a HsFunction identifier to various stuff we collect about a
 --   function along the way.
-type FuncMap  = [(HsFunction, FuncData)]
+type FuncMap  = Map.Map HsFunction FuncData
 -- | Some stuff we collect about a function along the way.
 type FuncData = (FlatFunction)
 
@@ -25,13 +26,14 @@ data VHDLSession = VHDLSession {
 addFunc :: HsFunction -> FlatFunction -> VHDLState ()
 addFunc hsfunc flatfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  State.modify (\x -> x {funcs = (hsfunc, flatfunc) : fs }) -- Prepend name and f
+  let fs' = Map.insert hsfunc (flatfunc) fs -- Insert function
+  State.modify (\x -> x {funcs = fs' })
 
 -- | Find the given function in the current session
 getFunc :: HsFunction -> VHDLState (Maybe FuncData)
 getFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  return $ lookup hsfunc fs
+  return $ Map.lookup hsfunc fs
 
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session

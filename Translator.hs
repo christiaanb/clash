@@ -10,6 +10,7 @@ import qualified Maybe
 import qualified Module
 import qualified Control.Monad.State as State
 import Name
+import qualified Data.Map as Map
 import Data.Generics
 import NameEnv ( lookupNameEnv )
 import HscTypes ( cm_binds, cm_types )
@@ -53,7 +54,7 @@ main =
           let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["sfull_adder"]
           liftIO $ putStr $ prettyShow binds
           -- Turn bind into VHDL
-          let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 [])
+          let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)
           liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
           liftIO $ ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl "../vhdl/vhdl/output.vhdl"
           liftIO $ putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
@@ -168,4 +169,20 @@ splitTupleType ty =
         Nothing
     Nothing -> Nothing
 
+-- | A consise representation of a (set of) ports on a builtin function
+type PortMap = HsValueMap (String, AST.TypeMark)
+{-
+-- | Translate a concise representation of a builtin function to something
+--   that can be put into FuncMap directly.
+make_builtin :: String -> [PortMap] -> PortMap -> (HsFunction, FuncData)
+make_builtin name args res =
+    (hsfunc, (Nothing))
+  where
+    hsfunc = HsFunction name (map useAsPort args) (useAsPort res)
+
+builtin_funcs = 
+  [ 
+    make_builtin "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
+  ]
+-}
 -- vim: set ts=8 sw=2 sts=2 expandtab:

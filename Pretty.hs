@@ -1,5 +1,6 @@
 module Pretty (prettyShow) where
 
+import qualified Data.Map as Map
 import qualified CoreSyn
 import qualified Module
 import qualified HscTypes
@@ -48,7 +49,7 @@ instance Pretty VHDLSession where
   pPrint (VHDLSession mod nameCount funcs) =
     text "Module: " $$ nest 15 (text modname)
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
-    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc funcs))
+    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList funcs)))
     where
       ppfunc (hsfunc, (flatfunc)) =
         pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
