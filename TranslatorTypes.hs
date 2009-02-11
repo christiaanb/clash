@@ -8,8 +8,12 @@ import qualified Control.Monad.State as State
 import qualified HscTypes
 import Flatten
 
-type FuncMap = [(HsFunction, 
-    (FlatFunction))]
+
+-- | A map from a HsFunction identifier to various stuff we collect about a
+--   function along the way.
+type FuncMap  = [(HsFunction, FuncData)]
+-- | Some stuff we collect about a function along the way.
+type FuncData = (FlatFunction)
 
 data VHDLSession = VHDLSession {
   coreMod   :: HscTypes.CoreModule, -- The current module
@@ -17,11 +21,17 @@ data VHDLSession = VHDLSession {
   funcs     :: FuncMap          -- A map from HsFunction to FlatFunction, HWFunction, VHDL Entity and Architecture
 }
 
--- Add the function to the session
+-- | Add the function to the session
 addFunc :: HsFunction -> FlatFunction -> VHDLState ()
 addFunc hsfunc flatfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   State.modify (\x -> x {funcs = (hsfunc, flatfunc) : fs }) -- Prepend name and f
+
+-- | Find the given function in the current session
+getFunc :: HsFunction -> VHDLState (Maybe FuncData)
+getFunc hsfunc = do
+  fs <- State.gets funcs -- Get the funcs element from the session
+  return $ lookup hsfunc fs
 
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session
@@ -37,3 +47,4 @@ uniqueName name = do
   State.modify (\s -> s {nameCount = count + 1})
   return $ name ++ "_" ++ (show count)
 
+-- vim: set ts=8 sw=2 sts=2 expandtab:
