@@ -294,6 +294,17 @@ flattenExpr binds app@(App _ _) = do
         then error $ "Passing lambda expression or function as a function argument not supported: " ++ (showSDoc $ ppr arg)
         else flat 
 
+flattenExpr binds l@(Let (NonRec b bexpr) expr) = do
+  (b_args, b_res) <- flattenExpr binds bexpr
+  if not (null b_args)
+    then
+      error $ "Higher order functions not supported in let expression: " ++ (showSDoc $ ppr l)
+    else
+      let binds' = (b, Left b_res) : binds in
+      flattenExpr binds' expr
+
+flattenExpr binds l@(Let (Rec _) _) = error $ "Recursive let definitions not supported: " ++ (showSDoc $ ppr l)
+
 flattenExpr _ _ = do
   return ([], Tuple [])
 
