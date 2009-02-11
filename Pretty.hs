@@ -45,6 +45,9 @@ instance Pretty id => Pretty (CondDef id) where
 instance Pretty id => Pretty (Signal id) where
   pPrint (Signal id) = pPrint id
 
+instance Pretty NamedSignal where
+  pPrint (NamedSignal name) = pPrint name
+
 instance Pretty VHDLSession where
   pPrint (VHDLSession mod nameCount funcs) =
     text "Module: " $$ nest 15 (text modname)
@@ -52,7 +55,10 @@ instance Pretty VHDLSession where
     $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList funcs)))
     where
       ppfunc (hsfunc, (FuncData flatfunc)) =
-        pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
+        pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (ppffunc flatfunc))
+      ppffunc (Just (Left f)) = pPrint f
+      ppffunc (Just (Right f)) = pPrint f
+      ppffunc Nothing = text "Nothing"
       modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
 
 instance (OutputableBndr b) => Pretty (CoreSyn.Bind b) where

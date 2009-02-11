@@ -15,9 +15,15 @@ import HsValueMap
 --   function along the way.
 type FuncMap  = Map.Map HsFunction FuncData
 
+-- | A signal that has been assigned a (unique) name
+data NamedSignal = NamedSignal String
+
+-- | A function in which all signals have been assigned unique names
+type NamedFlatFunction = FlatFunction' NamedSignal
+
 -- | Some stuff we collect about a function along the way.
 data FuncData = FuncData {
-  flatFunc :: Maybe FlatFunction
+  flatFunc :: Maybe (Either FlatFunction NamedFlatFunction)
 }
 
 data VHDLSession = VHDLSession {
@@ -40,7 +46,7 @@ getFunc hsfunc = do
   return $ Map.lookup hsfunc fs
 
 -- | Sets the FlatFunction for the given HsFunction in the given setting.
-setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
+setFlatFunc :: HsFunction -> (Either FlatFunction NamedFlatFunction) -> VHDLState ()
 setFlatFunc hsfunc flatfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   let fs'= Map.adjust (\d -> d { flatFunc = Just flatfunc }) hsfunc fs
