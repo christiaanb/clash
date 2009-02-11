@@ -27,24 +27,24 @@ instance Pretty HsValueUse where
   pPrint (State n)       = char 'C' <> int n
   pPrint (HighOrder _ _) = text "Higher Order"
 
-instance Pretty FlatFunction where
+instance Pretty id => Pretty (FlatFunction' id) where
   pPrint (FlatFunction args res apps conds) =
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
     $+$ (text "Apps: ") $$ nest 10 (vcat (map pPrint apps))
     $+$ (text "Conds: ") $$ nest 10 (pPrint conds)
 
-instance Pretty FApp where
+instance Pretty id => Pretty (FApp id) where
   pPrint (FApp func args res) =
     pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
 
-instance Pretty SignalDef where
+instance Pretty id => Pretty (SignalDef id) where
   pPrint (SignalDef id) = pPrint id
 
-instance Pretty SignalUse where
+instance Pretty id => Pretty (SignalUse id) where
   pPrint (SignalUse id) = pPrint id
 
-instance Pretty CondDef where
+instance Pretty id => Pretty (CondDef id) where
   pPrint _ = text "TODO"
 
 instance Pretty VHDLSession where

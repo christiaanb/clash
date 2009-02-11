@@ -25,7 +25,7 @@ dataConAppArgs dc args =
 
 genSignalUses ::
   Type.Type
-  -> FlattenState SignalUseMap
+  -> FlattenState (SignalUseMap UnnamedSignal)
 
 genSignalUses ty = do
   typeMapToUseMap tymap
@@ -35,7 +35,7 @@ genSignalUses ty = do
 
 typeMapToUseMap ::
   HsValueMap Type.Type
-  -> FlattenState SignalUseMap
+  -> FlattenState (SignalUseMap UnnamedSignal)
 
 typeMapToUseMap (Single ty) = do
   id <- genSignalId
@@ -63,7 +63,7 @@ flattenFunction hsfunc bind@(NonRec var expr) =
 flattenExpr ::
   BindMap
   -> CoreExpr
-  -> FlattenState ([SignalDefMap], SignalUseMap)
+  -> FlattenState ([SignalDefMap UnnamedSignal], (SignalUseMap UnnamedSignal))
 
 flattenExpr binds lam@(Lam b expr) = do
   -- Find the type of the binder
@@ -154,7 +154,7 @@ flattenExpr binds expr@(Case (Var v) b _ alts) =
       -> Var.Var                -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> CoreAlt                -- The single alternative
-      -> FlattenState ( [SignalDefMap], SignalUseMap)
+      -> FlattenState ( [SignalDefMap UnnamedSignal], SignalUseMap UnnamedSignal)
                                            -- See expandExpr
     flattenSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
       if not (DataCon.isTupleCon datacon) 

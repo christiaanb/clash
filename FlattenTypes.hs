@@ -8,29 +8,29 @@ import CoreSyn
 import HsValueMap
 
 -- | A signal identifier
-type SignalId = Int
+type UnnamedSignal = Int
 
 -- | A use of a signal
-data SignalUse = SignalUse {
-  sigUseId :: SignalId
+data SignalUse sigid = SignalUse {
+  sigUseId :: sigid
 } deriving (Show, Eq)
 
 -- | A def of a signal
-data SignalDef = SignalDef {
-  sigDefId :: SignalId
+data SignalDef sigid = SignalDef {
+  sigDefId :: sigid
 } deriving (Show, Eq)
 
 -- | A map of a Haskell value to signal uses
-type SignalUseMap = HsValueMap SignalUse
+type SignalUseMap sigid = HsValueMap (SignalUse sigid)
 -- | A map of a Haskell value to signal defs
-type SignalDefMap = HsValueMap SignalDef
+type SignalDefMap sigid = HsValueMap (SignalDef sigid)
 
 -- | Translate a SignalUseMap to an equivalent SignalDefMap
-useMapToDefMap :: SignalUseMap -> SignalDefMap
+useMapToDefMap :: SignalUseMap sigid -> SignalDefMap sigid
 useMapToDefMap = fmap (\(SignalUse u) -> SignalDef u)
 
 -- | Translate a SignalDefMap to an equivalent SignalUseMap 
-defMapToUseMap :: SignalDefMap -> SignalUseMap
+defMapToUseMap :: SignalDefMap sigid -> SignalUseMap sigid
 defMapToUseMap = fmap (\(SignalDef u) -> SignalUse u)
 
 -- | How is a given (single) value in a function's type (ie, argument or
@@ -80,57 +80,61 @@ data HsFunction = HsFunction {
 } deriving (Show, Eq, Ord)
 
 -- | A flattened function application
-data FApp = FApp {
+data FApp sigid = FApp {
   appFunc :: HsFunction,
-  appArgs :: [SignalUseMap],
-  appRes  :: SignalDefMap
+  appArgs :: [SignalUseMap sigid],
+  appRes  :: SignalDefMap sigid
 } deriving (Show, Eq)
 
 -- | A conditional signal definition
-data CondDef = CondDef {
-  cond    :: SignalUse,
-  high    :: SignalUse,
-  low     :: SignalUse,
-  condRes :: SignalDef
+data CondDef sigid = CondDef {
+  cond    :: SignalUse sigid,
+  high    :: SignalUse sigid,
+  low     :: SignalUse sigid,
+  condRes :: SignalDef sigid
 } deriving (Show, Eq)
 
 -- | A flattened function
-data FlatFunction = FlatFunction {
-  args   :: [SignalDefMap],
-  res    :: SignalUseMap,
+data FlatFunction' sigid = FlatFunction {
+  args   :: [SignalDefMap sigid],
+  res    :: SignalUseMap sigid,
   --sigs   :: [SignalDef],
-  apps   :: [FApp],
-  conds  :: [CondDef]
+  apps   :: [FApp sigid],
+  conds  :: [CondDef sigid]
 } deriving (Show, Eq)
+
+-- | A flat function that does not have its signals named
+type FlatFunction = FlatFunction' UnnamedSignal
 
 -- | A list of binds in effect at a particular point of evaluation
 type BindMap = [(
   CoreBndr,            -- ^ The bind name
   Either               -- ^ The bind value which is either
-    SignalUseMap       -- ^ a signal
+    (SignalUseMap UnnamedSignal)
+                       -- ^ a signal
     (
       HsValueUse,      -- ^ or a HighOrder function
-      [SignalUse]      -- ^ With these signals already applied to it
+      [SignalUse UnnamedSignal] -- ^ With these signals already applied to it
     )
   )]
 
 -- | The state during the flattening of a single function
-type FlattenState = State.State ([FApp], [CondDef], SignalId)
+type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], UnnamedSignal)
 
 -- | Add an application to the current FlattenState
-addApp :: FApp -> FlattenState ()
+addApp :: (FApp UnnamedSignal) -> FlattenState ()
 addApp a = do
   (apps, conds, n) <- State.get
   State.put (a:apps, conds, n)
 
 -- | Add a conditional definition to the current FlattenState
-addCondDef :: CondDef -> FlattenState ()
+addCondDef :: (CondDef UnnamedSignal) -> FlattenState ()
 addCondDef c = do
   (apps, conds, n) <- State.get
   State.put (apps, c:conds, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
-genSignalId :: FlattenState SignalId 
+genSignalId :: FlattenState UnnamedSignal 
 genSignalId = do
   (apps, conds, n) <- State.get
   State.put (apps, conds, n+1)
