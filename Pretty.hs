@@ -1,6 +1,8 @@
 module Pretty (prettyShow) where
 
 import qualified CoreSyn
+import qualified Module
+import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
 import Outputable ( showSDoc, ppr, Outputable, OutputableBndr)
 import Flatten
@@ -43,12 +45,14 @@ instance Pretty CondDef where
   pPrint _ = text "TODO"
 
 instance Pretty VHDLSession where
-  pPrint (VHDLSession nameCount funcs) =
-    text "NameCount: " $$ nest 15 (int nameCount)
+  pPrint (VHDLSession mod nameCount funcs) =
+    text "Module: " $$ nest 15 (text modname)
+    $+$ text "NameCount: " $$ nest 15 (int nameCount)
     $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc funcs))
     where
       ppfunc (hsfunc, (flatfunc)) =
         pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
+      modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
 
 instance (OutputableBndr b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.NonRec b expr) =

@@ -5,21 +5,26 @@
 module TranslatorTypes where
 
 import qualified Control.Monad.State as State
+import qualified HscTypes
 import Flatten
 
 type FuncMap = [(HsFunction, 
     (FlatFunction))]
 
 data VHDLSession = VHDLSession {
+  coreMod   :: HscTypes.CoreModule, -- The current module
   nameCount :: Int,             -- A counter that can be used to generate unique names
   funcs     :: FuncMap          -- A map from HsFunction to FlatFunction, HWFunction, VHDL Entity and Architecture
-} deriving (Show)
+}
 
 -- Add the function to the session
 addFunc :: HsFunction -> FlatFunction -> VHDLState ()
 addFunc hsfunc flatfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   State.modify (\x -> x {funcs = (hsfunc, flatfunc) : fs }) -- Prepend name and f
+
+getModule :: VHDLState HscTypes.CoreModule
+getModule = State.gets coreMod -- Get the coreMod element from the session
 
 type VHDLState = State.State VHDLSession
 
