@@ -259,7 +259,14 @@ flattenExpr binds app@(App _ _) = do
       let ((Var f), args) = collectArgs app in
       flattenApplicationExpr binds (CoreUtils.exprType app) f args
   where
-    flattenBuildTupleExpr = error $ "Tuple construction not supported: " ++ (showSDoc $ ppr app)
+    flattenBuildTupleExpr binds args = do
+      -- Flatten each of our args
+      flat_args <- (State.mapM (flattenExpr binds) args)
+      -- Check and split each of the arguments
+      let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
+      let res = Tuple arg_ress
+      return ([], res)
+
     -- | Flatten a normal application expression
     flattenApplicationExpr binds ty f args = do
       -- Find the function to call
