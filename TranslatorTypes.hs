@@ -13,8 +13,11 @@ import Flatten
 -- | A map from a HsFunction identifier to various stuff we collect about a
 --   function along the way.
 type FuncMap  = Map.Map HsFunction FuncData
+
 -- | Some stuff we collect about a function along the way.
-type FuncData = (Maybe FlatFunction)
+data FuncData = FuncData {
+  flatFunc :: Maybe FlatFunction
+}
 
 data VHDLSession = VHDLSession {
   coreMod   :: HscTypes.CoreModule, -- The current module
@@ -26,7 +29,7 @@ data VHDLSession = VHDLSession {
 addFunc :: HsFunction -> VHDLState ()
 addFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  let fs' = Map.insert hsfunc (Nothing) fs -- Insert function
+  let fs' = Map.insert hsfunc (FuncData Nothing) fs -- Insert function
   State.modify (\x -> x {funcs = fs' })
 
 -- | Find the given function in the current session
@@ -34,6 +37,13 @@ getFunc :: HsFunction -> VHDLState (Maybe FuncData)
 getFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   return $ Map.lookup hsfunc fs
+
+-- | Sets the FlatFunction for the given HsFunction in the given setting.
+setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
+setFlatFunc hsfunc flatfunc = do
+  fs <- State.gets funcs -- Get the funcs element from the session
+  let fs'= Map.adjust (\d -> d { flatFunc = Just flatfunc }) hsfunc fs
+  State.modify (\x -> x {funcs = fs' })
 
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session

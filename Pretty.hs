@@ -51,7 +51,7 @@ instance Pretty VHDLSession where
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
     $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList funcs)))
     where
-      ppfunc (hsfunc, (flatfunc)) =
+      ppfunc (hsfunc, (FuncData flatfunc)) =
         pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
       modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
 

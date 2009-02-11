@@ -97,6 +97,7 @@ flattenBind bind@(NonRec var expr) = do
   --addFunc hsfunc hwfunc 
   let flatfunc = flattenFunction hsfunc bind
   addFunc hsfunc
+  setFlatFunc hsfunc flatfunc
   let used_hsfuncs = map appFunc (apps flatfunc)
   State.mapM resolvFunc used_hsfuncs
   return ()
