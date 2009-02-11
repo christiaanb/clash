@@ -65,7 +65,7 @@ main =
       -- Add the builtin functions
       mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
-      mapM flattenBind binds
+      mapM processBind binds
       return $ AST.DesignFile 
         []
         []
@@ -80,21 +80,30 @@ findBind binds lookfor =
     NonRec var _ -> lookfor == (occNameString $ nameOccName $ getName var)
   ) binds
 
--- | Flattens the given bind and adds it to the session. Then (recursively)
---   finds any functions it uses and does the same with them.
-flattenBind ::
-  CoreBind                        -- The binder to flatten
+-- | Processes the given bind as a top level bind.
+processBind ::
+  CoreBind                        -- The bind to process
   -> VHDLState ()
 
-flattenBind (Rec _) = error "Recursive binders not supported"
-
-flattenBind bind@(NonRec var expr) = do
+processBind  (Rec _) = error "Recursive binders not supported"
+processBind bind@(NonRec var expr) = do
   -- Create the function signature
   let ty = CoreUtils.exprType expr
   let hsfunc = mkHsFunction var ty
-  --hwfunc <- mkHWFunction bind hsfunc
-  -- Add it to the session
-  --addFunc hsfunc hwfunc 
+  flattenBind hsfunc bind
+
+-- | Flattens the given bind into the given signature and adds it to the
+--   session. Then (recursively) finds any functions it uses and does the same
+--   with them.
+flattenBind ::
+  HsFunction                         -- The signature to flatten into
+  -> CoreBind                        -- The bind to flatten
+  -> VHDLState ()
+
+flattenBind _ (Rec _) = error "Recursive binders not supported"
+
+flattenBind hsfunc bind@(NonRec var expr) = do
+  -- Flatten the function
   let flatfunc = flattenFunction hsfunc bind
   addFunc hsfunc
   setFlatFunc hsfunc flatfunc
@@ -123,7 +132,7 @@ resolvFunc hsfunc = do
       let bind = findBind (cm_binds core) name
       case bind of
         Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
-        Just b  -> flattenBind b
+        Just b  -> flattenBind hsfunc b
   where
     name = hsFuncName hsfunc
 
