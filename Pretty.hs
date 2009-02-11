@@ -1,6 +1,8 @@
 module Pretty (prettyShow) where
 
+import qualified CoreSyn
 import Text.PrettyPrint.HughesPJClass
+import Outputable ( showSDoc, ppr, Outputable, OutputableBndr)
 import Flatten
 import TranslatorTypes
 
@@ -47,3 +49,16 @@ instance Pretty VHDLSession where
     where
       ppfunc (hsfunc, (flatfunc)) =
         pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
+
+instance (OutputableBndr b) => Pretty (CoreSyn.Bind b) where
+  pPrint (CoreSyn.NonRec b expr) =
+    text "NonRec: " $$ nest 10 (prettyBind (b, expr))
+  pPrint (CoreSyn.Rec binds) =
+    text "Rec: " $$ nest 10 (vcat $ map (prettyBind) binds)
+
+prettyBind :: (Outputable b, Outputable e) => (b, e) -> Doc
+prettyBind (b, expr) =
+  text b' <> text " = " <> text expr'
+  where
+    b' = showSDoc $ ppr b
+    expr' = showSDoc $ ppr expr

@@ -51,7 +51,7 @@ main =
           core <- GHC.compileToCoreSimplified "Adders.hs"
           --liftIO $ printBinds (cm_binds core)
           let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["sfull_adder"]
-          liftIO $ printBinds binds
+          liftIO $ putStr $ prettyShow binds
           -- Turn bind into VHDL
           let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession 0 [])
           liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
@@ -68,28 +68,6 @@ main =
       return $ AST.DesignFile 
         []
         []
-
-printTarget (Target (TargetFile file (Just x)) obj Nothing) =
-  print $ show file
-
-printBinds [] = putStr "done\n\n"
-printBinds (b:bs) = do
-  printBind b
-  putStr "\n"
-  printBinds bs
-
-printBind (NonRec b expr) = do
-  putStr "NonRec: "
-  printBind' (b, expr)
-
-printBind (Rec binds) = do
-  putStr "Rec: \n"  
-  foldl1 (>>) (map printBind' binds)
-
-printBind' (b, expr) = do
-  putStr $ getOccString b
-  putStr $ showSDoc $ ppr expr
-  putStr "\n"
 
 findBind :: [CoreBind] -> String -> Maybe CoreBind
 findBind binds lookfor =
