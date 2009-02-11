@@ -7,6 +7,7 @@ mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
 -- This function is from Sim.hs, but we redefine it here so it can get inlined
 -- by default.
+stateless :: (i -> o) -> (i -> () -> ((), o))
 stateless f = \i s -> (s, f i)
 
 show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displaysig c))
