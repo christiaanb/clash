@@ -2,6 +2,7 @@ module Pretty (prettyShow) where
 
 import Text.PrettyPrint.HughesPJClass
 import Flatten
+import TranslatorTypes
 
 instance Pretty HsFunction where
   pPrint (HsFunction name args res) =
@@ -38,3 +39,11 @@ instance Pretty SignalUse where
 
 instance Pretty CondDef where
   pPrint _ = text "TODO"
+
+instance Pretty VHDLSession where
+  pPrint (VHDLSession nameCount funcs) =
+    text "NameCount: " $$ nest 15 (int nameCount)
+    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc funcs))
+    where
+      ppfunc (hsfunc, (flatfunc)) =
+        pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (pPrint flatfunc))
