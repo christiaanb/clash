@@ -10,28 +10,8 @@ import HsValueMap
 -- | A signal identifier
 type UnnamedSignal = Int
 
--- | A use of a signal
-data SignalUse sigid = SignalUse {
-  sigUseId :: sigid
-} deriving (Show, Eq)
-
--- | A def of a signal
-data SignalDef sigid = SignalDef {
-  sigDefId :: sigid
-} deriving (Show, Eq)
-
--- | A map of a Haskell value to signal uses
-type SignalUseMap sigid = HsValueMap (SignalUse sigid)
--- | A map of a Haskell value to signal defs
-type SignalDefMap sigid = HsValueMap (SignalDef sigid)
-
--- | Translate a SignalUseMap to an equivalent SignalDefMap
-useMapToDefMap :: SignalUseMap sigid -> SignalDefMap sigid
-useMapToDefMap = fmap (\(SignalUse u) -> SignalDef u)
-
--- | Translate a SignalDefMap to an equivalent SignalUseMap 
-defMapToUseMap :: SignalDefMap sigid -> SignalUseMap sigid
-defMapToUseMap = fmap (\(SignalDef u) -> SignalUse u)
+-- | A map of a Haskell value to signal ids
+type SignalMap sigid = HsValueMap sigid
 
 -- | How is a given (single) value in a function's type (ie, argument or
 -- return value) used?
@@ -82,23 +62,23 @@ data HsFunction = HsFunction {
 -- | A flattened function application
 data FApp sigid = FApp {
   appFunc :: HsFunction,
-  appArgs :: [SignalUseMap sigid],
-  appRes  :: SignalDefMap sigid
+  appArgs :: [SignalMap sigid],
+  appRes  :: SignalMap sigid
 } deriving (Show, Eq)
 
 -- | A conditional signal definition
 data CondDef sigid = CondDef {
-  cond    :: SignalUse sigid,
-  high    :: SignalUse sigid,
-  low     :: SignalUse sigid,
-  condRes :: SignalDef sigid
+  cond    :: sigid,
+  high    :: sigid,
+  low     :: sigid,
+  condRes :: sigid
 } deriving (Show, Eq)
 
 -- | A flattened function
 data FlatFunction' sigid = FlatFunction {
-  args   :: [SignalDefMap sigid],
-  res    :: SignalUseMap sigid,
-  --sigs   :: [SignalDef],
+  args   :: [SignalMap sigid],
+  res    :: SignalMap sigid,
+  --sigs   :: [Signal],
   apps   :: [FApp sigid],
   conds  :: [CondDef sigid]
 } deriving (Show, Eq)
@@ -110,11 +90,11 @@ type FlatFunction = FlatFunction' UnnamedSignal
 type BindMap = [(
   CoreBndr,            -- ^ The bind name
   Either               -- ^ The bind value which is either
-    (SignalUseMap UnnamedSignal)
+    (SignalMap UnnamedSignal)
                        -- ^ a signal
     (
       HsValueUse,      -- ^ or a HighOrder function
-      [SignalUse UnnamedSignal] -- ^ With these signals already applied to it
+      [UnnamedSignal]  -- ^ With these signals already applied to it
     )
   )]
 

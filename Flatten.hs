@@ -23,11 +23,11 @@ dataConAppArgs dc args =
   where
     tycount = length $ DataCon.dataConAllTyVars dc
 
-genSignalUses ::
+genSignals ::
   Type.Type
-  -> FlattenState (SignalUseMap UnnamedSignal)
+  -> FlattenState (SignalMap UnnamedSignal)
 
-genSignalUses ty = do
+genSignals ty = do
   typeMapToUseMap tymap
   where
     -- First generate a map with the right structure containing the types
@@ -35,11 +35,11 @@ genSignalUses ty = do
 
 typeMapToUseMap ::
   HsValueMap Type.Type
-  -> FlattenState (SignalUseMap UnnamedSignal)
+  -> FlattenState (SignalMap UnnamedSignal)
 
 typeMapToUseMap (Single ty) = do
   id <- genSignalId
-  return $ Single (SignalUse id)
+  return $ Single id
 
 typeMapToUseMap (Tuple tymaps) = do
   usemaps <- State.mapM typeMapToUseMap tymaps
@@ -63,16 +63,16 @@ flattenFunction hsfunc bind@(NonRec var expr) =
 flattenExpr ::
   BindMap
   -> CoreExpr
-  -> FlattenState ([SignalDefMap UnnamedSignal], (SignalUseMap UnnamedSignal))
+  -> FlattenState ([SignalMap UnnamedSignal], (SignalMap UnnamedSignal))
 
 flattenExpr binds lam@(Lam b expr) = do
   -- Find the type of the binder
   let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
   -- Create signal names for the binder
-  defs <- genSignalUses arg_ty
+  defs <- genSignals arg_ty
   let binds' = (b, Left defs):binds
   (args, res) <- flattenExpr binds' expr
-  return ((useMapToDefMap defs) : args, res)
+  return (defs : args, res)
 
 flattenExpr binds (Var id) =
   case bind of
@@ -114,12 +114,12 @@ flattenExpr binds app@(App _ _) = do
       -- Check and split each of the arguments
       let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
       -- Generate signals for our result
-      res <- genSignalUses ty
+      res <- genSignals ty
       -- Create the function application
       let app = FApp {
         appFunc = func,
         appArgs = arg_ress,
-        appRes  = useMapToDefMap res
+        appRes  = res
       }
       addApp app
       return ([], res)
@@ -154,7 +154,7 @@ flattenExpr binds expr@(Case (Var v) b _ alts) =
       -> Var.Var                -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> CoreAlt                -- The single alternative
-      -> FlattenState ( [SignalDefMap UnnamedSignal], SignalUseMap UnnamedSignal)
+      -> FlattenState ( [SignalMap UnnamedSignal], SignalMap UnnamedSignal)
                                            -- See expandExpr
     flattenSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
       if not (DataCon.isTupleCon datacon) 

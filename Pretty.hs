@@ -38,12 +38,6 @@ instance Pretty id => Pretty (FApp id) where
   pPrint (FApp func args res) =
     pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
 
-instance Pretty id => Pretty (SignalDef id) where
-  pPrint (SignalDef id) = pPrint id
-
-instance Pretty id => Pretty (SignalUse id) where
-  pPrint (SignalUse id) = pPrint id
-
 instance Pretty id => Pretty (CondDef id) where
   pPrint _ = text "TODO"
 
