@@ -74,13 +74,18 @@ data CondDef sigid = CondDef {
   condRes :: sigid
 } deriving (Show, Eq)
 
+-- | Information on a signal definition
+data Signal sigid = Signal {
+  id :: sigid
+} deriving (Eq, Show)
+
 -- | A flattened function
 data FlatFunction' sigid = FlatFunction {
   args   :: [SignalMap sigid],
   res    :: SignalMap sigid,
-  --sigs   :: [Signal],
   apps   :: [FApp sigid],
-  conds  :: [CondDef sigid]
+  conds  :: [CondDef sigid],
+  sigs   :: [Signal sigid]
 } deriving (Show, Eq)
 
 -- | A flat function that does not have its signals named

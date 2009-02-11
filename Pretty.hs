@@ -28,11 +28,12 @@ instance Pretty HsValueUse where
   pPrint (HighOrder _ _) = text "Higher Order"
 
 instance Pretty id => Pretty (FlatFunction' id) where
-  pPrint (FlatFunction args res apps conds) =
+  pPrint (FlatFunction args res apps conds sigs) =
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
     $+$ (text "Apps: ") $$ nest 10 (vcat (map pPrint apps))
     $+$ (text "Conds: ") $$ nest 10 (pPrint conds)
+    $+$ text "Signals: " $$ nest 10 (pPrint sigs)
 
 instance Pretty id => Pretty (FApp id) where
   pPrint (FApp func args res) =
@@ -40,6 +41,9 @@ instance Pretty id => Pretty (FApp id) where
 
 instance Pretty id => Pretty (CondDef id) where
   pPrint _ = text "TODO"
+
+instance Pretty id => Pretty (Signal id) where
+  pPrint (Signal id) = pPrint id
 
 instance Pretty VHDLSession where
   pPrint (VHDLSession mod nameCount funcs) =
