@@ -63,7 +63,7 @@ main =
     -- Turns the given bind into VHDL
     mkVHDL binds = do
       -- Add the builtin functions
-      --mapM (uncurry addFunc) builtin_funcs
+      mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       mapM flattenBind binds
       return $ AST.DesignFile 
@@ -172,18 +172,20 @@ splitTupleType ty =
 
 -- | A consise representation of a (set of) ports on a builtin function
 type PortMap = HsValueMap (String, AST.TypeMark)
-{-
+-- | A consise representation of a builtin function
+data BuiltIn = BuiltIn String [PortMap] PortMap
+
 -- | Translate a concise representation of a builtin function to something
 --   that can be put into FuncMap directly.
-make_builtin :: String -> [PortMap] -> PortMap -> (HsFunction, FuncData)
-make_builtin name args res =
-    (hsfunc, (Nothing))
+addBuiltIn :: BuiltIn -> VHDLState ()
+addBuiltIn (BuiltIn name args res) = do
+    addFunc hsfunc
   where
     hsfunc = HsFunction name (map useAsPort args) (useAsPort res)
 
 builtin_funcs = 
   [ 
-    make_builtin "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
+    BuiltIn "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
   ]
--}
+
 -- vim: set ts=8 sw=2 sts=2 expandtab:
