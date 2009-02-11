@@ -1,12 +1,16 @@
 module Flatten where
 import CoreSyn
+import Control.Monad
 import qualified Type
 import qualified Name
 import qualified TyCon
 import qualified Maybe
+import Data.Traversable
 import qualified DataCon
 import qualified CoreUtils
+import Control.Applicative
 import Outputable ( showSDoc, ppr )
+import qualified Data.Foldable as Foldable
 import qualified Control.Monad.State as State
 
 -- | A datatype that maps each of the single values in a haskell structure to
@@ -19,7 +23,26 @@ data HsValueMap mapto =
 
 instance Functor HsValueMap where
   fmap f (Single s) = Single (f s)
-  fmap f (Tuple maps) = Tuple (fmap (fmap f) maps)
+  fmap f (Tuple maps) = Tuple (map (fmap f) maps)
+
+instance Foldable.Foldable HsValueMap where
+  foldMap f (Single s) = f s
+  -- The first foldMap folds a list of HsValueMaps, the second foldMap folds
+  -- each of the HsValueMaps in that list
+  foldMap f (Tuple maps) = Foldable.foldMap (Foldable.foldMap f) maps
+
+instance Traversable HsValueMap where
+  traverse f (Single s) = Single <$> f s
+  traverse f (Tuple maps) = Tuple <$> (traverse (traverse f) maps)
+
+data PassState s x = PassState (s -> (s, x))
+
+instance Functor (PassState s) where
+  fmap f (PassState a) = PassState (\s -> let (s', a') = a s in (s', f a'))
+
+instance Applicative (PassState s) where
+  pure x = PassState (\s -> (s, x))
+  PassState f <*> PassState x = PassState (\s -> let (s', f') = f s; (s'', x') = x s' in (s'', f' x'))
 
 -- | Creates a HsValueMap with the same structure as the given type, using the
 --   given function for mapping the single types.
@@ -103,6 +126,27 @@ data HsValueUse =
 
 type HsUseMap = HsValueMap HsValueUse
 
+-- | Builds a HsUseMap with the same structure has the given HsValueMap in
+--   which all the Single elements are marked as State, with increasing state
+--   numbers.
+useAsState :: HsValueMap a -> HsUseMap
+useAsState map =
+  map'
+  where
+    -- Traverse the existing map, resulting in a function that maps an initial
+    -- state number to the final state number and the new map
+    PassState f = traverse asState map
+    -- Run this function to get the new map
+    (_, map')   = f 0
+    -- This function maps each element to a State with a unique number, by
+    -- incrementing the state count.
+    asState x   = PassState (\s -> (s+1, State s))
+
+-- | Builds a HsUseMap with the same structure has the given HsValueMap in
+--   which all the Single elements are marked as Port.
+useAsPort :: HsValueMap a -> HsUseMap
+useAsPort map = fmap (\x -> Port) map
+
 data HsFunction = HsFunction {
   hsFuncName :: String,
   hsFuncArgs :: [HsUseMap],
@@ -159,7 +203,7 @@ typeMapToUseMap (Single ty) = do
   return $ Single (SignalUse id)
 
 typeMapToUseMap (Tuple tymaps) = do
-  usemaps <- mapM typeMapToUseMap tymaps
+  usemaps <- State.mapM typeMapToUseMap tymaps
   return $ Tuple usemaps
 
 -- | Flatten a haskell function
