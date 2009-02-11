@@ -6,7 +6,9 @@ import qualified Module
 import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
 import Outputable ( showSDoc, ppr, Outputable, OutputableBndr)
-import Flatten
+
+import HsValueMap
+import FlattenTypes
 import TranslatorTypes
 
 instance Pretty HsFunction where

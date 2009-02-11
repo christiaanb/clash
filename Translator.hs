@@ -33,8 +33,10 @@ import qualified ForSyDe.Backend.Ppr
 import Text.PrettyPrint.HughesPJ (render)
 
 import TranslatorTypes
+import HsValueMap
 import Pretty
 import Flatten
+import FlattenTypes
 import qualified VHDL
 
 main = 

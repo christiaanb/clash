@@ -11,7 +11,6 @@ import qualified Maybe
 import Outputable ( showSDoc, ppr )
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
-
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark
 bit_ty = AST.unsafeVHDLBasicId "Bit"

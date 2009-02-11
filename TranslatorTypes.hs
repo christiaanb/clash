@@ -7,7 +7,8 @@ module TranslatorTypes where
 import qualified Control.Monad.State as State
 import qualified HscTypes
 import qualified Data.Map as Map
-import Flatten
+import FlattenTypes
+import HsValueMap
 
 
 -- | A map from a HsFunction identifier to various stuff we collect about a
