@@ -106,8 +106,24 @@ resolvFunc ::
   HsFunction        -- | The function to look for
   -> VHDLState ()
 
-resolvFunc hsfunc =
-  return ()
+resolvFunc hsfunc = do
+  -- See if the function is already known
+  func <- getFunc hsfunc
+  case func of
+    -- Already known, do nothing
+    Just _ -> do
+      return ()
+    -- New function, resolve it
+    Nothing -> do
+      -- Get the current module
+      core <- getModule
+      -- Find the named function
+      let bind = findBind (cm_binds core) name
+      case bind of
+        Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
+        Just b  -> flattenBind b
+  where
+    name = hsFuncName hsfunc
 
 -- | Translate a top level function declaration to a HsFunction. i.e., which
 --   interface will be provided by this function. This function essentially
