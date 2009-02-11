@@ -14,7 +14,7 @@ import Flatten
 --   function along the way.
 type FuncMap  = Map.Map HsFunction FuncData
 -- | Some stuff we collect about a function along the way.
-type FuncData = (FlatFunction)
+type FuncData = (Maybe FlatFunction)
 
 data VHDLSession = VHDLSession {
   coreMod   :: HscTypes.CoreModule, -- The current module
@@ -23,10 +23,10 @@ data VHDLSession = VHDLSession {
 }
 
 -- | Add the function to the session
-addFunc :: HsFunction -> FlatFunction -> VHDLState ()
-addFunc hsfunc flatfunc = do
+addFunc :: HsFunction -> VHDLState ()
+addFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  let fs' = Map.insert hsfunc (flatfunc) fs -- Insert function
+  let fs' = Map.insert hsfunc (Nothing) fs -- Insert function
   State.modify (\x -> x {funcs = fs' })
 
 -- | Find the given function in the current session

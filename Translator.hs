@@ -96,7 +96,7 @@ flattenBind bind@(NonRec var expr) = do
   -- Add it to the session
   --addFunc hsfunc hwfunc 
   let flatfunc = flattenFunction hsfunc bind
-  addFunc hsfunc flatfunc
+  addFunc hsfunc
   let used_hsfuncs = map appFunc (apps flatfunc)
   State.mapM resolvFunc used_hsfuncs
   return ()
