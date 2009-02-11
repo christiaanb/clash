@@ -20,7 +20,7 @@ import qualified Control.Monad.State as State
 data HsValueMap mapto =
   Tuple [HsValueMap mapto]
   | Single mapto
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 instance Functor HsValueMap where
   fmap f (Single s) = Single (f s)
@@ -123,7 +123,7 @@ data HsValueUse =
                          -- ^ map should only contain Port and other
                          --   HighOrder values. 
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 type HsUseMap = HsValueMap HsValueUse
 
@@ -152,7 +152,7 @@ data HsFunction = HsFunction {
   hsFuncName :: String,
   hsFuncArgs :: [HsUseMap],
   hsFuncRes  :: HsUseMap
-} deriving (Show, Eq)
+} deriving (Show, Eq, Ord)
 
 type BindMap = [(
   CoreBndr,            -- ^ The bind name
