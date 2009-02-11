@@ -104,24 +104,24 @@ type BindMap = [(
   )]
 
 -- | The state during the flattening of a single function
-type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], UnnamedSignal)
+type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], [Signal UnnamedSignal], UnnamedSignal)
 
 -- | Add an application to the current FlattenState
 addApp :: (FApp UnnamedSignal) -> FlattenState ()
 addApp a = do
-  (apps, conds, n) <- State.get
-  State.put (a:apps, conds, n)
+  (apps, conds, sigs, n) <- State.get
+  State.put (a:apps, conds, sigs, n)
 
 -- | Add a conditional definition to the current FlattenState
 addCondDef :: (CondDef UnnamedSignal) -> FlattenState ()
 addCondDef c = do
-  (apps, conds, n) <- State.get
-  State.put (apps, c:conds, n)
+  (apps, conds, sigs, n) <- State.get
+  State.put (apps, c:conds, sigs, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
 genSignalId :: FlattenState UnnamedSignal 
 genSignalId = do
-  (apps, conds, n) <- State.get
-  State.put (apps, conds, n+1)
+  (apps, conds, sigs, n) <- State.get
+  let s = Signal n
+  State.put (apps, conds, s:sigs, n+1)
   return n
-

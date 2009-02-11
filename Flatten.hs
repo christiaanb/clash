@@ -53,12 +53,12 @@ flattenFunction ::
 
 flattenFunction _ (Rec _) = error "Recursive binders not supported"
 flattenFunction hsfunc bind@(NonRec var expr) =
-  FlatFunction args res apps conds []
+  FlatFunction args res apps conds sigs
   where
-    init_state        = ([], [], 0)
+    init_state        = ([], [], [], 0)
     (fres, end_state) = State.runState (flattenExpr [] expr) init_state
     (args, res)       = fres
-    (apps, conds, _)  = end_state
+    (apps, conds, sigs, _)  = end_state
 
 flattenExpr ::
   BindMap
