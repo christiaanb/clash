@@ -1,6 +1,7 @@
 module Flatten where
 import CoreSyn
 import Control.Monad
+import qualified Var
 import qualified Type
 import qualified Name
 import qualified TyCon
@@ -259,10 +260,47 @@ flattenExpr binds app@(App _ _) = do
       flattenApplicationExpr binds (CoreUtils.exprType app) f args
   where
     flattenBuildTupleExpr = error $ "Tuple construction not supported: " ++ (showSDoc $ ppr app)
-    flattenApplicationExpr binds ty f args = error $ "Function application not supported: " ++ (showSDoc $ ppr app)
+    -- | Flatten a normal application expression
+    flattenApplicationExpr binds ty f args = do
+      -- Find the function to call
+      let func = appToHsFunction ty f args
+      -- Flatten each of our args
+      flat_args <- (State.mapM (flattenExpr binds) args)
+      -- Check and split each of the arguments
+      let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
+      -- Generate signals for our result
+      res <- genSignalUses ty
+      -- Create the function application
+      let app = FApp {
+        appFunc = func,
+        appArgs = arg_ress,
+        appRes  = useMapToDefMap res
+      }
+      addApp app
+      return ([], res)
+    -- | Check a flattened expression to see if it is valid to use as a
+    --   function argument. The first argument is the original expression for
+    --   use in the error message.
+    checkArg arg flat =
+      let (args, res) = flat in
+      if not (null args)
+        then error $ "Passing lambda expression or function as a function argument not supported: " ++ (showSDoc $ ppr arg)
+        else flat 
 
 flattenExpr _ _ = do
   return ([], Tuple [])
 
+appToHsFunction ::
+  Type.Type       -- ^ The return type
+  -> Var.Var      -- ^ The function to call
+  -> [CoreExpr]   -- ^ The function arguments
+  -> HsFunction   -- ^ The needed HsFunction
+
+appToHsFunction ty f args =
+  HsFunction hsname hsargs hsres
+  where
+    hsname = Name.getOccString f
+    hsargs = map (useAsPort . mkHsValueMap . CoreUtils.exprType) args
+    hsres  = useAsPort (mkHsValueMap ty)
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
