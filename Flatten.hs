@@ -305,6 +305,41 @@ flattenExpr binds l@(Let (NonRec b bexpr) expr) = do
 
 flattenExpr binds l@(Let (Rec _) _) = error $ "Recursive let definitions not supported: " ++ (showSDoc $ ppr l)
 
+flattenExpr binds expr@(Case (Var v) b _ alts) =
+  case alts of
+    [alt] -> flattenSingleAltCaseExpr binds v b alt
+    otherwise -> error $ "Multiple alternative case expression not supported: " ++ (showSDoc $ ppr expr)
+  where
+    flattenSingleAltCaseExpr ::
+      BindMap
+                                -- A list of bindings in effect
+      -> Var.Var                -- The scrutinee
+      -> CoreBndr               -- The binder to bind the scrutinee to
+      -> CoreAlt                -- The single alternative
+      -> FlattenState ( [SignalDefMap], SignalUseMap)
+                                           -- See expandExpr
+    flattenSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
+      if not (DataCon.isTupleCon datacon) 
+        then
+          error $ "Dataconstructors other than tuple constructors not supported in case pattern of alternative: " ++ (showSDoc $ ppr alt)
+        else
+          let
+            -- Lookup the scrutinee (which must be a variable bound to a tuple) in
+            -- the existing bindings list and get the portname map for each of
+            -- it's elements.
+            Left (Tuple tuple_sigs) = Maybe.fromMaybe 
+              (error $ "Case expression uses unknown scrutinee " ++ Name.getOccString v)
+              (lookup v binds)
+            -- TODO include b in the binds list
+            -- Merge our existing binds with the new binds.
+            binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
+          in
+            -- Expand the expression with the new binds list
+            flattenExpr binds' expr
+    flattenSingleAltCaseExpr _ _ _ alt = error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr alt)
+
+
+      
 flattenExpr _ _ = do
   return ([], Tuple [])
 
