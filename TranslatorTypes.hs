@@ -35,10 +35,8 @@ data VHDLSession = VHDLSession {
 
 -- | Add the function to the session
 addFunc :: HsFunction -> VHDLState ()
-addFunc hsfunc = do
-  fs <- State.gets funcs -- Get the funcs element from the session
-  let fs' = Map.insert hsfunc (FuncData Nothing Nothing Nothing) fs -- Insert function
-  State.modify (\x -> x {funcs = fs' })
+addFunc hsfunc =
+  modFuncMap (Map.insert hsfunc (FuncData Nothing Nothing Nothing))
 
 -- | Find the given function in the current session
 getFunc :: HsFunction -> VHDLState (Maybe FuncData)
@@ -54,17 +52,25 @@ getFuncs = do
 
 -- | Sets the FlatFunction for the given HsFunction in the given setting.
 setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
-setFlatFunc hsfunc flatfunc = do
+setFlatFunc hsfunc flatfunc =
+  modFunc (\d -> d { flatFunc = Just flatfunc }) hsfunc
+
+-- | Modify a function in the map using the given function
+modFunc :: (FuncData -> FuncData) -> HsFunction -> VHDLState ()
+modFunc f hsfunc =
+  modFuncMap (Map.adjust f hsfunc)
+
+-- | Modify the function map in the session using the given function
+modFuncMap :: (FuncMap -> FuncMap) -> VHDLState ()
+modFuncMap f = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  let fs'= Map.adjust (\d -> d { flatFunc = Just flatfunc }) hsfunc fs
+  let fs' = f fs
   State.modify (\x -> x {funcs = fs' })
 
 -- | Modify all functions in the map using the given function
 modFuncs :: (HsFunction -> FuncData -> FuncData) -> VHDLState ()
-modFuncs f = do
-  fs <- State.gets funcs -- Get the funcs element from the session
-  let fs' = Map.mapWithKey f fs
-  State.modify (\x -> x {funcs = fs' })
+modFuncs f =
+  modFuncMap (Map.mapWithKey f)
 
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session
