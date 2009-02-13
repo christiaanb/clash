@@ -4,6 +4,7 @@
 module VHDL where
 
 import Data.Traversable
+import qualified Data.Foldable as Foldable
 import qualified Maybe
 
 import qualified Type
@@ -65,7 +66,19 @@ createEntityAST hsfunc args res =
   AST.EntityDec vhdl_id ports
   where
     vhdl_id = mkEntityId hsfunc
-    ports = []
+    ports = concatMap (mapToPorts AST.In) args
+            ++ mapToPorts AST.Out res
+    mapToPorts :: AST.Mode -> VHDLSignalMap -> [AST.IfaceSigDec] 
+    mapToPorts mode m =
+      map (mkIfaceSigDec mode) (Foldable.toList m)
+
+-- | Create a port declaration
+mkIfaceSigDec ::
+  AST.Mode                         -- | The mode for the port (In / Out)
+  -> (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
+  -> AST.IfaceSigDec               -- | The resulting port declaration
+
+mkIfaceSigDec mode (id, ty) = AST.IfaceSigDec id mode ty
 
 -- | Generate a VHDL entity name for the given hsfunc
 mkEntityId hsfunc =
