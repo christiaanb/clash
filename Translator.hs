@@ -69,6 +69,7 @@ main =
       -- Create entities and architectures for them
       mapM processBind binds
       modFuncs nameFlatFunction
+      modFuncs VHDL.createEntity
       return $ AST.DesignFile 
         []
         []
