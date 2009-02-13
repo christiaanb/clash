@@ -43,6 +43,12 @@ getFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
   return $ Map.lookup hsfunc fs
 
+-- | Gets all functions from the current session
+getFuncs :: VHDLState [(HsFunction, FuncData)]
+getFuncs = do
+  fs <- State.gets funcs -- Get the funcs element from the session
+  return $ Map.toList fs
+
 -- | Sets the FlatFunction for the given HsFunction in the given setting.
 setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
 setFlatFunc hsfunc flatfunc = do

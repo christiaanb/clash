@@ -71,6 +71,16 @@ mkEntityId hsfunc =
   -- TODO: This doesn't work for functions with multiple signatures!
   mkVHDLId $ hsFuncName hsfunc
 
+getLibraryUnits ::
+  (HsFunction, FuncData)      -- | A function from the session
+  -> [AST.LibraryUnit]        -- | The library units it generates
+
+getLibraryUnits (hsfunc, fdata) =
+  case entity fdata of 
+    Nothing -> []
+    Just ent -> case ent_decl ent of
+      Nothing -> []
+      Just decl -> [AST.LUEntity decl]
 
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark
