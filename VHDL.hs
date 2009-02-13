@@ -85,6 +85,49 @@ mkEntityId hsfunc =
   -- TODO: This doesn't work for functions with multiple signatures!
   mkVHDLId $ hsFuncName hsfunc
 
+-- | Create an architecture for a given function
+createArchitecture ::
+  HsFunction        -- | The function signature
+  -> FuncData       -- | The function data collected so far
+  -> FuncData       -- | The modified function data
+
+createArchitecture hsfunc fdata = 
+  let func = flatFunc fdata in
+  case func of
+    -- Skip (builtin) functions without a FlatFunction
+    Nothing -> fdata
+    -- Create an architecture for all other functions
+    Just flatfunc ->
+      let 
+        s        = sigs flatfunc
+        a        = args flatfunc
+        r        = res  flatfunc
+        entity_id = Maybe.fromMaybe
+                      (error $ "Building architecture without an entity? This should not happen!")
+                      (getEntityId fdata)
+        sig_decs = [mkSigDec info | (id, info) <- s, (all (id `Foldable.notElem`) (r:a)) ]
+        arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) []
+      in
+        fdata { funcArch = Just arch }
+
+mkSigDec :: SignalInfo -> AST.SigDec
+mkSigDec info =
+    AST.SigDec (mkVHDLId name) (vhdl_ty ty) Nothing
+  where
+    name = Maybe.fromMaybe
+      (error $ "Unnamed signal? This should not happen!")
+      (sigName info)
+    ty = sigTy info
+    
+-- | Extracts the generated entity id from the given funcdata
+getEntityId :: FuncData -> Maybe AST.VHDLId
+getEntityId fdata =
+  case entity fdata of
+    Nothing -> Nothing
+    Just e  -> case ent_decl e of
+      Nothing -> Nothing
+      Just (AST.EntityDec id _) -> Just id
+
 getLibraryUnits ::
   (HsFunction, FuncData)      -- | A function from the session
   -> [AST.LibraryUnit]        -- | The library units it generates
@@ -95,6 +138,10 @@ getLibraryUnits (hsfunc, fdata) =
     Just ent -> case ent_decl ent of
       Nothing -> []
       Just decl -> [AST.LUEntity decl]
+  ++
+  case funcArch fdata of
+    Nothing -> []
+    Just arch -> [AST.LUArch arch]
 
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark

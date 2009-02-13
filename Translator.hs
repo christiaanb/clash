@@ -70,6 +70,7 @@ main =
       mapM processBind binds
       modFuncs nameFlatFunction
       modFuncs VHDL.createEntity
+      modFuncs VHDL.createArchitecture
       -- Extract the library units generated from all the functions in the
       -- session.
       funcs <- getFuncs

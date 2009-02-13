@@ -9,6 +9,8 @@ import qualified Data.Map as Map
 
 import qualified HscTypes
 
+import qualified ForSyDe.Backend.VHDL.AST as AST
+
 import FlattenTypes
 import VHDLTypes
 import HsValueMap
@@ -21,7 +23,8 @@ type FuncMap  = Map.Map HsFunction FuncData
 -- | Some stuff we collect about a function along the way.
 data FuncData = FuncData {
   flatFunc :: Maybe FlatFunction,
-  entity   :: Maybe Entity
+  entity   :: Maybe Entity,
+  funcArch :: Maybe AST.ArchBody
 }
 
 data VHDLSession = VHDLSession {
@@ -34,7 +37,7 @@ data VHDLSession = VHDLSession {
 addFunc :: HsFunction -> VHDLState ()
 addFunc hsfunc = do
   fs <- State.gets funcs -- Get the funcs element from the session
-  let fs' = Map.insert hsfunc (FuncData Nothing Nothing) fs -- Insert function
+  let fs' = Map.insert hsfunc (FuncData Nothing Nothing Nothing) fs -- Insert function
   State.modify (\x -> x {funcs = fs' })
 
 -- | Find the given function in the current session
