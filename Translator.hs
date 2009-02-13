@@ -177,19 +177,19 @@ mkHsFunction f ty =
 nameFlatFunction ::
   HsFunction
   -> FuncData
-  -> FuncData
+  -> VHDLState ()
 
 nameFlatFunction hsfunc fdata =
   let func = flatFunc fdata in
   case func of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> fdata
+    Nothing -> do return ()
     -- Name the signals in all other functions
     Just flatfunc ->
       let s = flat_sigs flatfunc in
       let s' = map (\(id, (SignalInfo Nothing ty)) -> (id, SignalInfo (Just $ "sig_" ++ (show id)) ty)) s in
       let flatfunc' = flatfunc { flat_sigs = s' } in
-      fdata { flatFunc = Just flatfunc' }
+      setFlatFunc hsfunc flatfunc'
 
 -- | Splits a tuple type into a list of element types, or Nothing if the type
 --   is not a tuple type.

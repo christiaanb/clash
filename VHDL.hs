@@ -22,13 +22,13 @@ import TranslatorTypes
 createEntity ::
   HsFunction        -- | The function signature
   -> FuncData       -- | The function data collected so far
-  -> FuncData       -- | The modified function data
+  -> VHDLState ()
 
 createEntity hsfunc fdata = 
   let func = flatFunc fdata in
   case func of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> fdata
+    Nothing -> do return ()
     -- Create an entity for all other functions
     Just flatfunc ->
       
@@ -41,7 +41,7 @@ createEntity hsfunc fdata =
         ent_decl' = createEntityAST hsfunc args' res'
         entity' = Entity args' res' (Just ent_decl')
       in
-        fdata { funcEntity = Just entity' }
+        setEntity hsfunc entity'
   where
     mkMap :: Eq id => [(id, SignalInfo)] -> id -> (AST.VHDLId, AST.TypeMark)
     mkMap sigmap id =
@@ -89,13 +89,13 @@ mkEntityId hsfunc =
 createArchitecture ::
   HsFunction        -- | The function signature
   -> FuncData       -- | The function data collected so far
-  -> FuncData       -- | The modified function data
+  -> VHDLState ()
 
 createArchitecture hsfunc fdata = 
   let func = flatFunc fdata in
   case func of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> fdata
+    Nothing -> do return ()
     -- Create an architecture for all other functions
     Just flatfunc ->
       let 
@@ -113,7 +113,7 @@ createArchitecture hsfunc fdata =
         insts    = map (AST.CSISm . mkCompInsSm) apps
         arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts
       in
-        fdata { funcArch = Just arch }
+        setArchitecture hsfunc arch
 
 mkSigDec :: SignalInfo -> AST.SigDec
 mkSigDec info =

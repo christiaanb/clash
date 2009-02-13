@@ -50,10 +50,26 @@ getFuncs = do
   fs <- State.gets funcs -- Get the funcs element from the session
   return $ Map.toList fs
 
--- | Sets the FlatFunction for the given HsFunction in the given setting.
+-- | Gets all the functions from the current session
+getHsFuncs :: VHDLState [HsFunction]
+getHsFuncs = do
+  fs <- State.gets funcs -- Get the funcs element from the session
+  return $ Map.keys fs
+  
+-- | Sets the FlatFunction for the given HsFunction in the current session.
 setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
 setFlatFunc hsfunc flatfunc =
   modFunc (\d -> d { flatFunc = Just flatfunc }) hsfunc
+
+-- | Sets the Entity for the given HsFunction in the current session.
+setEntity :: HsFunction -> Entity -> VHDLState ()
+setEntity hsfunc entity =
+  modFunc (\d -> d { funcEntity = Just entity }) hsfunc
+
+-- | Sets the Entity for the given HsFunction in the current session.
+setArchitecture :: HsFunction -> AST.ArchBody -> VHDLState ()
+setArchitecture hsfunc arch =
+  modFunc (\d -> d { funcArch = Just arch }) hsfunc
 
 -- | Modify a function in the map using the given function
 modFunc :: (FuncData -> FuncData) -> HsFunction -> VHDLState ()
@@ -67,10 +83,20 @@ modFuncMap f = do
   let fs' = f fs
   State.modify (\x -> x {funcs = fs' })
 
--- | Modify all functions in the map using the given function
-modFuncs :: (HsFunction -> FuncData -> FuncData) -> VHDLState ()
-modFuncs f =
-  modFuncMap (Map.mapWithKey f)
+-- | Apply the given function to all functions in the map, and collect the
+--   results. The function is allowed to change the function map in the
+--   session, but any new functions added will not be mapped.
+modFuncs :: (HsFunction -> FuncData -> VHDLState ()) -> VHDLState ()
+modFuncs f = do
+  hsfuncs <- getHsFuncs
+  mapM doFunc hsfuncs
+  return ()
+  where
+    doFunc hsfunc = do
+      fdata_maybe <- getFunc hsfunc
+      case fdata_maybe of
+        Nothing -> do return ()
+        Just fdata -> f hsfunc fdata
 
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session
