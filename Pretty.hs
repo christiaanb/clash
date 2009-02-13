@@ -56,17 +56,22 @@ instance Pretty VHDLSession where
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
     $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList funcs)))
     where
-      ppfunc (hsfunc, (FuncData flatfunc entity arch)) =
-        pPrint hsfunc $+$ (text "Flattened: " $$ nest 15 (ppffunc flatfunc))
-        $+$ (text "Entity") $$ nest 15 (ppent entity)
-        $+$ pparch arch
+      ppfunc (hsfunc, fdata) =
+        pPrint hsfunc $+$ nest 5 (pPrint fdata)
+      modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
+
+instance Pretty FuncData where
+  pPrint (FuncData flatfunc entity arch) =
+    text "Flattened: " $$ nest 15 (ppffunc flatfunc)
+    $+$ text "Entity" $$ nest 15 (ppent entity)
+    $+$ pparch arch
+    where
       ppffunc (Just f) = pPrint f
       ppffunc Nothing  = text "Nothing"
       ppent (Just e)   = pPrint e
       ppent Nothing    = text "Nothing"
       pparch Nothing = text "VHDL architecture not present"
       pparch (Just _) = text "VHDL architecture present"
-      modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
 
 instance Pretty Entity where
   pPrint (Entity args res decl) =
