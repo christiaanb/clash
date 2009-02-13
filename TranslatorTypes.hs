@@ -46,6 +46,12 @@ setFlatFunc hsfunc flatfunc = do
   let fs'= Map.adjust (\d -> d { flatFunc = Just flatfunc }) hsfunc fs
   State.modify (\x -> x {funcs = fs' })
 
+modFunc :: HsFunction -> (HsFunction -> FuncData -> FuncData) -> VHDLState ()
+modFunc hsfunc f = do
+  fs <- State.gets funcs -- Get the funcs element from the session
+  let fs' = Map.adjustWithKey f hsfunc fs
+  State.modify (\x -> x {funcs = fs' })
+
 getModule :: VHDLState HscTypes.CoreModule
 getModule = State.gets coreMod -- Get the coreMod element from the session
 
