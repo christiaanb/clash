@@ -68,6 +68,7 @@ main =
       mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       mapM processBind binds
+      modFuncs nameFlatFunction
       return $ AST.DesignFile 
         []
         []
@@ -165,6 +166,24 @@ mkHsFunction f ty =
         else
           error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
       otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
+
+-- | Adds signal names to the given FlatFunction
+nameFlatFunction ::
+  HsFunction
+  -> FuncData
+  -> FuncData
+
+nameFlatFunction hsfunc fdata =
+  let func = flatFunc fdata in
+  case func of
+    -- Skip (builtin) functions without a FlatFunction
+    Nothing -> fdata
+    -- Name the signals in all other functions
+    Just flatfunc ->
+      let s = sigs flatfunc in
+      let s' = map (\(Signal id Nothing) -> Signal id (Just $ "sig_" ++ (show id))) s in
+      let flatfunc' = flatfunc { sigs = s' } in
+      fdata { flatFunc = Just flatfunc' }
 
 -- | Splits a tuple type into a list of element types, or Nothing if the type
 --   is not a tuple type.

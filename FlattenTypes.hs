@@ -76,7 +76,8 @@ data CondDef sigid = CondDef {
 
 -- | Information on a signal definition
 data Signal sigid = Signal {
-  id :: sigid
+  id :: sigid,
+  name :: Maybe String
 } deriving (Eq, Show)
 
 -- | A flattened function
@@ -122,6 +123,7 @@ addCondDef c = do
 genSignalId :: FlattenState UnnamedSignal 
 genSignalId = do
   (apps, conds, sigs, n) <- State.get
-  let s = Signal n
+  -- Generate a new numbered but unnamed signal
+  let s = Signal n Nothing
   State.put (apps, conds, s:sigs, n+1)
   return n
