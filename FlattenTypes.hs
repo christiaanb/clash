@@ -77,8 +77,8 @@ data CondDef sigid = CondDef {
 
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
-  name :: Maybe String,
-  ty   :: Type.Type
+  sigName :: Maybe String,
+  sigTy   :: Type.Type
 }
 
 -- | A flattened function

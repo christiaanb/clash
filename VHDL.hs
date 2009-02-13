@@ -51,7 +51,7 @@ createEntity hsfunc fdata =
           (lookup id sigmap)
         nm = Maybe.fromMaybe
           (error $ "Signal not named? This should not happen!")
-          (name info)
+          (sigName info)
 
 -- | Create the VHDL AST for an entity
 createEntityAST ::
