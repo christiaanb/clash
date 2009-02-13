@@ -83,11 +83,11 @@ data SignalInfo = SignalInfo {
 
 -- | A flattened function
 data FlatFunction' sigid = FlatFunction {
-  args   :: [SignalMap sigid],
-  res    :: SignalMap sigid,
-  apps   :: [FApp sigid],
-  conds  :: [CondDef sigid],
-  sigs   :: [(sigid, SignalInfo)]
+  flat_args   :: [SignalMap sigid],
+  flat_res    :: SignalMap sigid,
+  flat_apps   :: [FApp sigid],
+  flat_conds  :: [CondDef sigid],
+  flat_sigs   :: [(sigid, SignalInfo)]
 }
 
 -- | A flat function that does not have its signals named

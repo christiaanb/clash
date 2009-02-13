@@ -33,15 +33,15 @@ createEntity hsfunc fdata =
     Just flatfunc ->
       
       let 
-        s       = sigs flatfunc
-        a       = args flatfunc
-        r       = res  flatfunc
-        args'   = map (fmap (mkMap s)) a
-        res'    = fmap (mkMap s) r
+        sigs    = flat_sigs flatfunc
+        args    = flat_args flatfunc
+        res     = flat_res  flatfunc
+        args'   = map (fmap (mkMap sigs)) args
+        res'    = fmap (mkMap sigs) res
         ent_decl' = createEntityAST hsfunc args' res'
         entity' = Entity args' res' (Just ent_decl')
       in
-        fdata { entity = Just entity' }
+        fdata { funcEntity = Just entity' }
   where
     mkMap :: Eq id => [(id, SignalInfo)] -> id -> (AST.VHDLId, AST.TypeMark)
     mkMap sigmap id =
@@ -99,13 +99,15 @@ createArchitecture hsfunc fdata =
     -- Create an architecture for all other functions
     Just flatfunc ->
       let 
-        s        = sigs flatfunc
-        a        = args flatfunc
-        r        = res  flatfunc
+        sigs      = flat_sigs flatfunc
+        args      = flat_args flatfunc
+        res       = flat_res  flatfunc
         entity_id = Maybe.fromMaybe
                       (error $ "Building architecture without an entity? This should not happen!")
                       (getEntityId fdata)
-        sig_decs = [mkSigDec info | (id, info) <- s, (all (id `Foldable.notElem`) (r:a)) ]
+        -- Create signal declarations for all signals that are not in args and
+        -- res
+        sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
         arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) []
       in
         fdata { funcArch = Just arch }
@@ -122,7 +124,7 @@ mkSigDec info =
 -- | Extracts the generated entity id from the given funcdata
 getEntityId :: FuncData -> Maybe AST.VHDLId
 getEntityId fdata =
-  case entity fdata of
+  case funcEntity fdata of
     Nothing -> Nothing
     Just e  -> case ent_decl e of
       Nothing -> Nothing
@@ -133,7 +135,7 @@ getLibraryUnits ::
   -> [AST.LibraryUnit]        -- | The library units it generates
 
 getLibraryUnits (hsfunc, fdata) =
-  case entity fdata of 
+  case funcEntity fdata of 
     Nothing -> []
     Just ent -> case ent_decl ent of
       Nothing -> []

@@ -22,9 +22,9 @@ type FuncMap  = Map.Map HsFunction FuncData
 
 -- | Some stuff we collect about a function along the way.
 data FuncData = FuncData {
-  flatFunc :: Maybe FlatFunction,
-  entity   :: Maybe Entity,
-  funcArch :: Maybe AST.ArchBody
+  flatFunc     :: Maybe FlatFunction,
+  funcEntity   :: Maybe Entity,
+  funcArch     :: Maybe AST.ArchBody
 }
 
 data VHDLSession = VHDLSession {

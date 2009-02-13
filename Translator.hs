@@ -116,7 +116,7 @@ flattenBind hsfunc bind@(NonRec var expr) = do
   let flatfunc = flattenFunction hsfunc bind
   addFunc hsfunc
   setFlatFunc hsfunc flatfunc
-  let used_hsfuncs = map appFunc (apps flatfunc)
+  let used_hsfuncs = map appFunc (flat_apps flatfunc)
   State.mapM resolvFunc used_hsfuncs
   return ()
 
@@ -186,9 +186,9 @@ nameFlatFunction hsfunc fdata =
     Nothing -> fdata
     -- Name the signals in all other functions
     Just flatfunc ->
-      let s = sigs flatfunc in
+      let s = flat_sigs flatfunc in
       let s' = map (\(id, (SignalInfo Nothing ty)) -> (id, SignalInfo (Just $ "sig_" ++ (show id)) ty)) s in
-      let flatfunc' = flatfunc { sigs = s' } in
+      let flatfunc' = flatfunc { flat_sigs = s' } in
       fdata { flatFunc = Just flatfunc' }
 
 -- | Splits a tuple type into a list of element types, or Nothing if the type
