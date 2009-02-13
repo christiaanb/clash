@@ -75,8 +75,7 @@ data CondDef sigid = CondDef {
 } deriving (Show, Eq)
 
 -- | Information on a signal definition
-data Signal sigid = Signal {
-  id :: sigid,
+data SignalInfo = SignalInfo {
   name :: Maybe String
 } deriving (Eq, Show)
 
@@ -86,7 +85,7 @@ data FlatFunction' sigid = FlatFunction {
   res    :: SignalMap sigid,
   apps   :: [FApp sigid],
   conds  :: [CondDef sigid],
-  sigs   :: [Signal sigid]
+  sigs   :: [(sigid, SignalInfo)]
 } deriving (Show, Eq)
 
 -- | A flat function that does not have its signals named
@@ -105,7 +104,7 @@ type BindMap = [(
   )]
 
 -- | The state during the flattening of a single function
-type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], [Signal UnnamedSignal], UnnamedSignal)
+type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], [(UnnamedSignal, SignalInfo)], UnnamedSignal)
 
 -- | Add an application to the current FlattenState
 addApp :: (FApp UnnamedSignal) -> FlattenState ()
@@ -124,6 +123,6 @@ genSignalId :: FlattenState UnnamedSignal
 genSignalId = do
   (apps, conds, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal
-  let s = Signal n Nothing
+  let s = (n, SignalInfo Nothing)
   State.put (apps, conds, s:sigs, n+1)
   return n

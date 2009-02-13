@@ -181,7 +181,7 @@ nameFlatFunction hsfunc fdata =
     -- Name the signals in all other functions
     Just flatfunc ->
       let s = sigs flatfunc in
-      let s' = map (\(Signal id Nothing) -> Signal id (Just $ "sig_" ++ (show id))) s in
+      let s' = map (\(id, (SignalInfo Nothing)) -> (id, SignalInfo (Just $ "sig_" ++ (show id)))) s in
       let flatfunc' = flatfunc { sigs = s' } in
       fdata { flatFunc = Just flatfunc' }
 

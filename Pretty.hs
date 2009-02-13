@@ -42,9 +42,9 @@ instance Pretty id => Pretty (FApp id) where
 instance Pretty id => Pretty (CondDef id) where
   pPrint _ = text "TODO"
 
-instance Pretty id => Pretty (Signal id) where
-  pPrint (Signal id Nothing) = pPrint id
-  pPrint (Signal id (Just name)) = pPrint id <> text ":" <> text name
+instance Pretty SignalInfo where
+  pPrint (SignalInfo Nothing) = empty
+  pPrint (SignalInfo (Just name)) = text ":" <> text name
 
 instance Pretty VHDLSession where
   pPrint (VHDLSession mod nameCount funcs) =
