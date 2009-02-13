@@ -4,6 +4,7 @@ import Data.Traversable
 import qualified Control.Monad.State as State
 
 import CoreSyn
+import qualified Type
 
 import HsValueMap
 
@@ -76,8 +77,9 @@ data CondDef sigid = CondDef {
 
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
-  name :: Maybe String
-} deriving (Eq, Show)
+  name :: Maybe String,
+  ty   :: Type.Type
+}
 
 -- | A flattened function
 data FlatFunction' sigid = FlatFunction {
@@ -86,7 +88,7 @@ data FlatFunction' sigid = FlatFunction {
   apps   :: [FApp sigid],
   conds  :: [CondDef sigid],
   sigs   :: [(sigid, SignalInfo)]
-} deriving (Show, Eq)
+}
 
 -- | A flat function that does not have its signals named
 type FlatFunction = FlatFunction' UnnamedSignal
@@ -119,10 +121,10 @@ addCondDef c = do
   State.put (apps, c:conds, sigs, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
-genSignalId :: FlattenState UnnamedSignal 
-genSignalId = do
+genSignalId :: Type.Type -> FlattenState UnnamedSignal 
+genSignalId ty = do
   (apps, conds, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal
-  let s = (n, SignalInfo Nothing)
+  let s = (n, SignalInfo Nothing ty)
   State.put (apps, conds, s:sigs, n+1)
   return n

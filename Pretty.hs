@@ -47,8 +47,8 @@ instance Pretty id => Pretty (CondDef id) where
   pPrint _ = text "TODO"
 
 instance Pretty SignalInfo where
-  pPrint (SignalInfo Nothing) = empty
-  pPrint (SignalInfo (Just name)) = text ":" <> text name
+  pPrint (SignalInfo Nothing ty) = empty
+  pPrint (SignalInfo (Just name) ty) = text ":" <> text name
 
 instance Pretty VHDLSession where
   pPrint (VHDLSession mod nameCount funcs) =

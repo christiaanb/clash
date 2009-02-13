@@ -38,7 +38,7 @@ typeMapToUseMap ::
   -> FlattenState (SignalMap UnnamedSignal)
 
 typeMapToUseMap (Single ty) = do
-  id <- genSignalId
+  id <- genSignalId ty
   return $ Single id
 
 typeMapToUseMap (Tuple tymaps) = do
