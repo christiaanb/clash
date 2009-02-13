@@ -7,7 +7,7 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 
 import FlattenTypes
 
-type VHDLSignalMap = SignalMap AST.VHDLId
+type VHDLSignalMap = SignalMap (AST.VHDLId, AST.TypeMark)
 
 -- A description of a VHDL entity. Contains both the entity itself as well as
 -- info on how to map a haskell value (argument / result) on to the entity's

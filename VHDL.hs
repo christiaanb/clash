@@ -42,9 +42,9 @@ createEntity hsfunc fdata =
       in
         fdata { entity = Just entity' }
   where
-    mkMap :: Eq id => [(id, SignalInfo)] -> id -> AST.VHDLId
+    mkMap :: Eq id => [(id, SignalInfo)] -> id -> (AST.VHDLId, AST.TypeMark)
     mkMap sigmap id =
-      mkVHDLId nm
+      (mkVHDLId nm, vhdl_ty ty)
       where
         info = Maybe.fromMaybe
           (error $ "Signal not found in the name map? This should not happen!")
@@ -52,6 +52,7 @@ createEntity hsfunc fdata =
         nm = Maybe.fromMaybe
           (error $ "Signal not named? This should not happen!")
           (sigName info)
+        ty = sigTy info
 
 -- | Create the VHDL AST for an entity
 createEntityAST ::
