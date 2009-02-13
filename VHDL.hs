@@ -102,13 +102,16 @@ createArchitecture hsfunc fdata =
         sigs      = flat_sigs flatfunc
         args      = flat_args flatfunc
         res       = flat_res  flatfunc
+        apps      = flat_apps flatfunc
         entity_id = Maybe.fromMaybe
                       (error $ "Building architecture without an entity? This should not happen!")
                       (getEntityId fdata)
         -- Create signal declarations for all signals that are not in args and
         -- res
         sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
-        arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) []
+        -- Create component instantiations for all function applications
+        insts    = map (AST.CSISm . mkCompInsSm) apps
+        arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts
       in
         fdata { funcArch = Just arch }
 
@@ -120,7 +123,19 @@ mkSigDec info =
       (error $ "Unnamed signal? This should not happen!")
       (sigName info)
     ty = sigTy info
-    
+
+-- | Transforms a flat function application to a VHDL component instantiation.
+mkCompInsSm ::
+  FApp UnnamedSignal  -- | The application to look at.
+  -> AST.CompInsSm    -- | The corresponding VHDL component instantiation.
+
+mkCompInsSm app =
+  AST.CompInsSm label (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+  where
+    entity_id = mkVHDLId "foo"
+    label     = mkVHDLId "app"
+    portmaps  = []
+
 -- | Extracts the generated entity id from the given funcdata
 getEntityId :: FuncData -> Maybe AST.VHDLId
 getEntityId fdata =
