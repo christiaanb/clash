@@ -36,4 +36,3 @@ vhdl_ty_maybe ty =
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
 mkVHDLId = AST.unsafeVHDLBasicId
-
