@@ -37,7 +37,8 @@ createEntity hsfunc fdata =
         r       = res  flatfunc
         args'   = map (fmap (mkMap s)) a
         res'    = fmap (mkMap s) r
-        entity' = Entity args' res' Nothing
+        ent_decl' = createEntityAST hsfunc args' res'
+        entity' = Entity args' res' (Just ent_decl')
       in
         fdata { entity = Just entity' }
   where
@@ -51,9 +52,24 @@ createEntity hsfunc fdata =
         nm = Maybe.fromMaybe
           (error $ "Signal not named? This should not happen!")
           (name info)
-      
 
+-- | Create the VHDL AST for an entity
+createEntityAST ::
+  HsFunction            -- | The signature of the function we're working with
+  -> [VHDLSignalMap]    -- | The entity's arguments
+  -> VHDLSignalMap      -- | The entity's result
+  -> AST.EntityDec      -- | The entity with the ent_decl filled in as well
 
+createEntityAST hsfunc args res =
+  AST.EntityDec vhdl_id ports
+  where
+    vhdl_id = mkEntityId hsfunc
+    ports = []
+
+-- | Generate a VHDL entity name for the given hsfunc
+mkEntityId hsfunc =
+  -- TODO: This doesn't work for functions with multiple signatures!
+  mkVHDLId $ hsFuncName hsfunc
 
 
 -- | The VHDL Bit type
