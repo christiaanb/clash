@@ -140,9 +140,9 @@ mkCompInsSm app = do
         (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without entity declaration? This should not happen!")
         (funcEntity fdata)
   let entity_id = ent_id entity
-  return $ AST.CompInsSm label (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+  label <- uniqueName (AST.fromVHDLId entity_id)
+  return $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
   where
-    label     = mkVHDLId "app"
     portmaps  = []
 
 -- | Extracts the generated entity id from the given funcdata
