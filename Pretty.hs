@@ -15,6 +15,11 @@ import FlattenTypes
 import TranslatorTypes
 import VHDLTypes
 
+-- | A version of the default pPrintList method, which uses a custom function
+--   f instead of pPrint to print elements.
+printList :: (a -> Doc) -> [a] -> Doc
+printList f = brackets . fsep . punctuate comma . map f
+
 instance Pretty HsFunction where
   pPrint (HsFunction name args res) =
     text name <> char ' ' <> parens (hsep $ punctuate comma args') <> text " -> " <> res'
@@ -37,7 +42,9 @@ instance Pretty id => Pretty (FlatFunction' id) where
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
     $+$ (text "Apps: ") $$ nest 10 (vcat (map pPrint apps))
     $+$ (text "Conds: ") $$ nest 10 (pPrint conds)
-    $+$ text "Signals: " $$ nest 10 (pPrint sigs)
+    $+$ text "Signals: " $$ nest 10 (printList ppsig sigs)
+    where
+      ppsig (id, info) = pPrint id <> pPrint info
 
 instance Pretty id => Pretty (FApp id) where
   pPrint (FApp func args res) =
