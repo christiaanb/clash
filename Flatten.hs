@@ -7,6 +7,7 @@ import qualified Name
 import qualified Maybe
 import qualified DataCon
 import qualified CoreUtils
+import qualified Data.Traversable as Traversable
 import Control.Applicative
 import Outputable ( showSDoc, ppr )
 import qualified Control.Monad.State as State
@@ -27,24 +28,10 @@ genSignals ::
   Type.Type
   -> FlattenState (SignalMap UnnamedSignal)
 
-genSignals ty = do
-  typeMapToUseMap SigInternal tymap
-  where
-    -- First generate a map with the right structure containing the types
-    tymap = mkHsValueMap ty
-
-typeMapToUseMap ::
-  SigUse
-  -> HsValueMap Type.Type
-  -> FlattenState (SignalMap UnnamedSignal)
-
-typeMapToUseMap use (Single ty) = do
-  id <- genSignalId use ty
-  return $ Single id
-
-typeMapToUseMap use (Tuple tymaps) = do
-  usemaps <- State.mapM (typeMapToUseMap use) tymaps
-  return $ Tuple usemaps
+genSignals ty =
+  -- First generate a map with the right structure containing the types, and
+  -- generate signals for each of them.
+  Traversable.mapM (\ty -> genSignalId SigInternal ty) (mkHsValueMap ty)
 
 -- | Flatten a haskell function
 flattenFunction ::
