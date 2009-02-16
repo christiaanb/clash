@@ -37,6 +37,7 @@ import HsValueMap
 import Pretty
 import Flatten
 import FlattenTypes
+import VHDLTypes
 import qualified VHDL
 
 main = 
@@ -211,13 +212,20 @@ type PortMap = HsValueMap (String, AST.TypeMark)
 -- | A consise representation of a builtin function
 data BuiltIn = BuiltIn String [PortMap] PortMap
 
+-- | Map a port specification of a builtin function to a VHDL Signal to put in
+--   a VHDLSignalMap
+toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
+toVHDLSignalMap = fmap (\(name, ty) -> (VHDL.mkVHDLId name, ty))
+
 -- | Translate a concise representation of a builtin function to something
 --   that can be put into FuncMap directly.
 addBuiltIn :: BuiltIn -> VHDLState ()
 addBuiltIn (BuiltIn name args res) = do
     addFunc hsfunc
+    setEntity hsfunc entity
   where
     hsfunc = HsFunction name (map useAsPort args) (useAsPort res)
+    entity = Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res) Nothing
 
 builtin_funcs = 
   [ 
