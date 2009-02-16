@@ -75,9 +75,17 @@ data CondDef sigid = CondDef {
   condRes :: sigid
 } deriving (Show, Eq)
 
+-- | How is a given signal used in the resulting VHDL?
+data SigUse = 
+  SigPort         -- | Use as a port
+  | SigInternal   -- | Use as an internal signal
+  | SigState      -- | Use as an internal state
+  | SigSubState   -- | Do not use, state variable is used in a subcircuit
+
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
   sigName :: Maybe String,
+  sigUse  :: SigUse,
   sigTy   :: Type.Type
 }
 
@@ -121,10 +129,10 @@ addCondDef c = do
   State.put (apps, c:conds, sigs, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
-genSignalId :: Type.Type -> FlattenState UnnamedSignal 
-genSignalId ty = do
+genSignalId :: SigUse -> Type.Type -> FlattenState UnnamedSignal 
+genSignalId use ty = do
   (apps, conds, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal
-  let s = (n, SignalInfo Nothing ty)
+  let s = (n, SignalInfo Nothing use ty)
   State.put (apps, conds, s:sigs, n+1)
   return n

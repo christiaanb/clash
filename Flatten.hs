@@ -28,21 +28,22 @@ genSignals ::
   -> FlattenState (SignalMap UnnamedSignal)
 
 genSignals ty = do
-  typeMapToUseMap tymap
+  typeMapToUseMap SigInternal tymap
   where
     -- First generate a map with the right structure containing the types
     tymap = mkHsValueMap ty
 
 typeMapToUseMap ::
-  HsValueMap Type.Type
+  SigUse
+  -> HsValueMap Type.Type
   -> FlattenState (SignalMap UnnamedSignal)
 
-typeMapToUseMap (Single ty) = do
-  id <- genSignalId ty
+typeMapToUseMap use (Single ty) = do
+  id <- genSignalId use ty
   return $ Single id
 
-typeMapToUseMap (Tuple tymaps) = do
-  usemaps <- State.mapM typeMapToUseMap tymaps
+typeMapToUseMap use (Tuple tymaps) = do
+  usemaps <- State.mapM (typeMapToUseMap use) tymaps
   return $ Tuple usemaps
 
 -- | Flatten a haskell function
