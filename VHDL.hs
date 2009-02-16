@@ -111,7 +111,7 @@ createArchitecture hsfunc fdata =
       -- res
       let sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
       -- Create component instantiations for all function applications
-      insts <- mapM mkCompInsSm apps
+      insts <- mapM (mkCompInsSm sigs) apps
       let insts' = map AST.CSISm insts
       let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts'
       setArchitecture hsfunc arch
@@ -127,10 +127,11 @@ mkSigDec info =
 
 -- | Transforms a flat function application to a VHDL component instantiation.
 mkCompInsSm ::
-  FApp UnnamedSignal            -- | The application to look at.
+  [(UnnamedSignal, SignalInfo)] -- | The signals in the current architecture
+  -> FApp UnnamedSignal         -- | The application to look at.
   -> VHDLState AST.CompInsSm    -- | The corresponding VHDL component instantiation.
 
-mkCompInsSm app = do
+mkCompInsSm sigs app = do
   let hsfunc = appFunc app
   fdata_maybe <- getFunc hsfunc
   let fdata = Maybe.fromMaybe
@@ -141,9 +142,45 @@ mkCompInsSm app = do
         (funcEntity fdata)
   let entity_id = ent_id entity
   label <- uniqueName (AST.fromVHDLId entity_id)
+  let portmaps = mkAssocElems sigs app entity
   return $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+
+mkAssocElems :: 
+  [(UnnamedSignal, SignalInfo)] -- | The signals in the current architecture
+  -> FApp UnnamedSignal         -- | The application to look at.
+  -> Entity                     -- | The entity to map against.
+  -> [AST.AssocElem]            -- | The resulting port maps
+
+mkAssocElems sigmap app entity =
+    -- Create the actual AssocElems
+    zipWith mkAssocElem ports sigs
   where
-    portmaps  = []
+    -- Turn the ports and signals from a map into a flat list. This works,
+    -- since the maps must have an identical form by definition. TODO: Check
+    -- the similar form?
+    arg_ports = concat (map Foldable.toList (ent_args entity))
+    res_ports = Foldable.toList (ent_res entity)
+    arg_sigs  = (concat (map Foldable.toList (appArgs app)))
+    res_sigs  = Foldable.toList (appRes app)
+    -- Extract the id part from the (id, type) tuple
+    ports     = (map fst (arg_ports ++ res_ports)) 
+    -- Translate signal numbers into names
+    sigs      = (map (lookupSigName sigmap) (arg_sigs ++ res_sigs))
+
+-- | Look up a signal in the signal name map
+lookupSigName :: [(UnnamedSignal, SignalInfo)] -> UnnamedSignal -> String
+lookupSigName sigs sig = name
+  where
+    info = Maybe.fromMaybe
+      (error $ "Unknown signal " ++ (show sig) ++ " used? This should not happen!")
+      (lookup sig sigs)
+    name = Maybe.fromMaybe
+      (error $ "Unnamed signal " ++ (show sig) ++ " used? This should not happen!")
+      (sigName info)
+
+-- | Create an VHDL port -> signal association
+mkAssocElem :: AST.VHDLId -> String -> AST.AssocElem
+mkAssocElem port signal = Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLId signal))) 
 
 -- | Extracts the generated entity id from the given funcdata
 getEntityId :: FuncData -> Maybe AST.VHDLId
