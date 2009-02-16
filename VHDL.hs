@@ -3,7 +3,6 @@
 --
 module VHDL where
 
-import Data.Traversable
 import qualified Data.Foldable as Foldable
 import qualified Maybe
 
@@ -97,23 +96,22 @@ createArchitecture hsfunc fdata =
     -- Skip (builtin) functions without a FlatFunction
     Nothing -> do return ()
     -- Create an architecture for all other functions
-    Just flatfunc ->
-      let 
-        sigs      = flat_sigs flatfunc
-        args      = flat_args flatfunc
-        res       = flat_res  flatfunc
-        apps      = flat_apps flatfunc
-        entity_id = Maybe.fromMaybe
+    Just flatfunc -> do
+      let sigs = flat_sigs flatfunc
+      let args = flat_args flatfunc
+      let res  = flat_res  flatfunc
+      let apps = flat_apps flatfunc
+      let entity_id = Maybe.fromMaybe
                       (error $ "Building architecture without an entity? This should not happen!")
                       (getEntityId fdata)
-        -- Create signal declarations for all signals that are not in args and
-        -- res
-        sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
-        -- Create component instantiations for all function applications
-        insts    = map (AST.CSISm . mkCompInsSm) apps
-        arch     = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts
-      in
-        setArchitecture hsfunc arch
+      -- Create signal declarations for all signals that are not in args and
+      -- res
+      let sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
+      -- Create component instantiations for all function applications
+      insts <- mapM mkCompInsSm apps
+      let insts' = map AST.CSISm insts
+      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts'
+      setArchitecture hsfunc arch
 
 mkSigDec :: SignalInfo -> AST.SigDec
 mkSigDec info =
@@ -126,11 +124,11 @@ mkSigDec info =
 
 -- | Transforms a flat function application to a VHDL component instantiation.
 mkCompInsSm ::
-  FApp UnnamedSignal  -- | The application to look at.
-  -> AST.CompInsSm    -- | The corresponding VHDL component instantiation.
+  FApp UnnamedSignal            -- | The application to look at.
+  -> VHDLState AST.CompInsSm    -- | The corresponding VHDL component instantiation.
 
-mkCompInsSm app =
-  AST.CompInsSm label (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+mkCompInsSm app = do
+  return $ AST.CompInsSm label (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
   where
     entity_id = mkVHDLId "foo"
     label     = mkVHDLId "app"
