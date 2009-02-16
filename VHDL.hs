@@ -5,6 +5,7 @@ module VHDL where
 
 import qualified Data.Foldable as Foldable
 import qualified Maybe
+import qualified Control.Monad as Monad
 
 import qualified Type
 import qualified Name
@@ -16,6 +17,7 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 import VHDLTypes
 import FlattenTypes
 import TranslatorTypes
+import Pretty
 
 -- | Create an entity for a given function
 createEntity ::
@@ -38,7 +40,8 @@ createEntity hsfunc fdata =
         args'   = map (fmap (mkMap sigs)) args
         res'    = fmap (mkMap sigs) res
         ent_decl' = createEntityAST hsfunc args' res'
-        entity' = Entity args' res' (Just ent_decl')
+        AST.EntityDec entity_id _ = ent_decl' 
+        entity' = Entity entity_id args' res' (Just ent_decl')
       in
         setEntity hsfunc entity'
   where
@@ -128,9 +131,17 @@ mkCompInsSm ::
   -> VHDLState AST.CompInsSm    -- | The corresponding VHDL component instantiation.
 
 mkCompInsSm app = do
+  let hsfunc = appFunc app
+  fdata_maybe <- getFunc hsfunc
+  let fdata = Maybe.fromMaybe
+        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' that is not in the session? This should not happen!")
+        fdata_maybe
+  let entity = Maybe.fromMaybe
+        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without entity declaration? This should not happen!")
+        (funcEntity fdata)
+  let entity_id = ent_id entity
   return $ AST.CompInsSm label (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
   where
-    entity_id = mkVHDLId "foo"
     label     = mkVHDLId "app"
     portmaps  = []
 

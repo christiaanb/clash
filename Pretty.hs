@@ -74,8 +74,9 @@ instance Pretty FuncData where
       pparch (Just _) = text "VHDL architecture present"
 
 instance Pretty Entity where
-  pPrint (Entity args res decl) =
-    text "Args: " $$ nest 10 (pPrint args)
+  pPrint (Entity id args res decl) =
+    text "Entity id: " $$ nest 10 (pPrint id)
+    $+$ text "Args: " $$ nest 10 (pPrint args)
     $+$ text "Result: " $$ nest 10 (pPrint res)
     $+$ ppdecl decl
     where
