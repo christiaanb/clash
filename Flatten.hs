@@ -8,6 +8,7 @@ import qualified Maybe
 import qualified DataCon
 import qualified CoreUtils
 import qualified Data.Traversable as Traversable
+import qualified Data.Foldable as Foldable
 import Control.Applicative
 import Outputable ( showSDoc, ppr )
 import qualified Control.Monad.State as State
@@ -33,6 +34,14 @@ genSignals ty =
   -- generate signals for each of them.
   Traversable.mapM (\ty -> genSignalId SigInternal ty) (mkHsValueMap ty)
 
+-- | Marks a signal as the given SigUse, if its id is in the list of id's
+--   given.
+markSignal :: SigUse -> [UnnamedSignal] -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
+markSignal use ids (id, info) =
+  (id, info')
+  where
+    info' = if id `elem` ids then info { sigUse = use} else info
+
 -- | Flatten a haskell function
 flattenFunction ::
   HsFunction                      -- ^ The function to flatten
@@ -41,12 +50,14 @@ flattenFunction ::
 
 flattenFunction _ (Rec _) = error "Recursive binders not supported"
 flattenFunction hsfunc bind@(NonRec var expr) =
-  FlatFunction args res apps conds sigs
+  FlatFunction args res apps conds sigs'
   where
     init_state        = ([], [], [], 0)
     (fres, end_state) = State.runState (flattenExpr [] expr) init_state
     (args, res)       = fres
+    portlist          = concat (map Foldable.toList (res:args))
     (apps, conds, sigs, _)  = end_state
+    sigs'             = fmap (markSignal SigPort portlist) sigs
 
 flattenExpr ::
   BindMap
