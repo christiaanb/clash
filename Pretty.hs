@@ -84,7 +84,7 @@ instance Pretty FuncData where
 
 instance Pretty Entity where
   pPrint (Entity id args res decl) =
-    text "Entity id: " $$ nest 10 (pPrint id)
+    text "Entity: " $$ nest 10 (pPrint id)
     $+$ text "Args: " $$ nest 10 (pPrint args)
     $+$ text "Result: " $$ nest 10 (pPrint res)
     $+$ ppdecl decl
