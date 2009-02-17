@@ -72,13 +72,7 @@ main =
       modFuncs nameFlatFunction
       modFuncs VHDL.createEntity
       modFuncs VHDL.createArchitecture
-      -- Extract the library units generated from all the functions in the
-      -- session.
-      funcs <- getFuncs
-      let units = concat $ map VHDL.getLibraryUnits funcs
-      return $ AST.DesignFile 
-        []
-        units
+      VHDL.getDesignFile
 
 findBind :: [CoreBind] -> String -> Maybe CoreBind
 findBind binds lookfor =

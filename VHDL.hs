@@ -20,6 +20,16 @@ import FlattenTypes
 import TranslatorTypes
 import Pretty
 
+getDesignFile :: VHDLState AST.DesignFile
+getDesignFile = do
+  -- Extract the library units generated from all the functions in the
+  -- session.
+  funcs <- getFuncs
+  let units = concat $ map getLibraryUnits funcs
+  return $ AST.DesignFile 
+    []
+    units
+  
 -- | Create an entity for a given function
 createEntity ::
   HsFunction        -- | The function signature
