@@ -59,9 +59,13 @@ createEntity hsfunc fdata =
       in
         setEntity hsfunc entity'
   where
-    mkMap :: Eq id => [(id, SignalInfo)] -> id -> (AST.VHDLId, AST.TypeMark)
+    mkMap :: Eq id => [(id, SignalInfo)] -> id -> Maybe (AST.VHDLId, AST.TypeMark)
     mkMap sigmap id =
-      (mkVHDLId nm, vhdl_ty ty)
+      if isPortSigUse $ sigUse info
+        then
+          Just (mkVHDLId nm, vhdl_ty ty)
+        else
+          Nothing
       where
         info = Maybe.fromMaybe
           (error $ "Signal not found in the name map? This should not happen!")
@@ -87,7 +91,7 @@ createEntityAST hsfunc args res =
             ++ clk_port
     mapToPorts :: AST.Mode -> VHDLSignalMap -> [AST.IfaceSigDec] 
     mapToPorts mode m =
-      map (mkIfaceSigDec mode) (Foldable.toList m)
+      Maybe.catMaybes $ map (mkIfaceSigDec mode) (Foldable.toList m)
     -- Add a clk port if we have state
     clk_port = if hasState hsfunc
       then
@@ -98,10 +102,11 @@ createEntityAST hsfunc args res =
 -- | Create a port declaration
 mkIfaceSigDec ::
   AST.Mode                         -- | The mode for the port (In / Out)
-  -> (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
-  -> AST.IfaceSigDec               -- | The resulting port declaration
+  -> Maybe (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
+  -> Maybe AST.IfaceSigDec               -- | The resulting port declaration
 
-mkIfaceSigDec mode (id, ty) = AST.IfaceSigDec id mode ty
+mkIfaceSigDec mode (Just (id, ty)) = Just $ AST.IfaceSigDec id mode ty
+mkIfaceSigDec _ Nothing = Nothing
 
 -- | Generate a VHDL entity name for the given hsfunc
 mkEntityId hsfunc =
@@ -197,7 +202,7 @@ mkAssocElems ::
 
 mkAssocElems sigmap app entity =
     -- Create the actual AssocElems
-    zipWith mkAssocElem ports sigs
+    Maybe.catMaybes $ zipWith mkAssocElem ports sigs
   where
     -- Turn the ports and signals from a map into a flat list. This works,
     -- since the maps must have an identical form by definition. TODO: Check
@@ -207,7 +212,7 @@ mkAssocElems sigmap app entity =
     arg_sigs  = (concat (map Foldable.toList (appArgs app)))
     res_sigs  = Foldable.toList (appRes app)
     -- Extract the id part from the (id, type) tuple
-    ports     = (map fst (arg_ports ++ res_ports)) 
+    ports     = (map (fmap fst) (arg_ports ++ res_ports)) 
     -- Translate signal numbers into names
     sigs      = (map (lookupSigName sigmap) (arg_sigs ++ res_sigs))
 
@@ -223,8 +228,9 @@ lookupSigName sigs sig = name
       (sigName info)
 
 -- | Create an VHDL port -> signal association
-mkAssocElem :: AST.VHDLId -> String -> AST.AssocElem
-mkAssocElem port signal = Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLId signal))) 
+mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
+mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLId signal))) 
+mkAssocElem Nothing _ = Nothing
 
 -- | Extracts the generated entity id from the given funcdata
 getEntityId :: FuncData -> Maybe AST.VHDLId

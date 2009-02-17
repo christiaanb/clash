@@ -209,7 +209,7 @@ data BuiltIn = BuiltIn String [PortMap] PortMap
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap
 toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
-toVHDLSignalMap = fmap (\(name, ty) -> (VHDL.mkVHDLId name, ty))
+toVHDLSignalMap = fmap (\(name, ty) -> Just (VHDL.mkVHDLId name, ty))
 
 -- | Translate a concise representation of a builtin function to something
 --   that can be put into FuncMap directly.
