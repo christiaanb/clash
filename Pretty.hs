@@ -61,9 +61,11 @@ instance Pretty SignalInfo where
       ppname (Just name) = text ":" <> text name
 
 instance Pretty SigUse where
-  pPrint SigPort     = text "P"
+  pPrint SigPortIn   = text "PI"
+  pPrint SigPortOut  = text "PO"
   pPrint SigInternal = text "I"
-  pPrint SigState    = text "S"
+  pPrint (SigStateOld n) = text "SO:" <> int n
+  pPrint (SigStateNew n) = text "SN:" <> int n
   pPrint SigSubState = text "s"
 
 instance Pretty VHDLSession where

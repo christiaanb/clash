@@ -5,6 +5,7 @@ import qualified Var
 import qualified Type
 import qualified Name
 import qualified Maybe
+import qualified Control.Arrow as Arrow
 import qualified DataCon
 import qualified CoreUtils
 import qualified Data.Traversable as Traversable
@@ -36,11 +37,14 @@ genSignals ty =
 
 -- | Marks a signal as the given SigUse, if its id is in the list of id's
 --   given.
-markSignal :: SigUse -> [UnnamedSignal] -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
-markSignal use ids (id, info) =
+markSignals :: SigUse -> [UnnamedSignal] -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
+markSignals use ids (id, info) =
   (id, info')
   where
     info' = if id `elem` ids then info { sigUse = use} else info
+
+markSignal :: SigUse -> UnnamedSignal -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
+markSignal use id = markSignals use [id]
 
 -- | Flatten a haskell function
 flattenFunction ::
@@ -50,14 +54,22 @@ flattenFunction ::
 
 flattenFunction _ (Rec _) = error "Recursive binders not supported"
 flattenFunction hsfunc bind@(NonRec var expr) =
-  FlatFunction args res apps conds sigs'
+  FlatFunction args res apps conds sigs''''
   where
     init_state        = ([], [], [], 0)
     (fres, end_state) = State.runState (flattenExpr [] expr) init_state
-    (args, res)       = fres
-    portlist          = concat (map Foldable.toList (res:args))
     (apps, conds, sigs, _)  = end_state
-    sigs'             = fmap (markSignal SigPort portlist) sigs
+    (args, res)       = fres
+    arg_ports         = concat (map Foldable.toList args)
+    res_ports         = Foldable.toList res
+    -- Mark args and result signals as input and output ports resp.
+    sigs'             = fmap (markSignals SigPortIn arg_ports) sigs
+    sigs''            = fmap (markSignals SigPortOut res_ports) sigs'
+    -- Mark args and result states as old and new state resp.
+    args_states       = concat $ zipWith stateList (hsFuncArgs hsfunc) args
+    sigs'''           = foldl (\s (num, id) -> map (markSignal (SigStateOld num) id) s) sigs'' args_states
+    res_states        = stateList (hsFuncRes hsfunc) res
+    sigs''''          = foldl (\s (num, id) -> map (markSignal (SigStateNew num) id) s) sigs''' res_states
 
 flattenExpr ::
   BindMap
@@ -193,18 +205,28 @@ appToHsFunction ty f args =
     hsargs = map (useAsPort . mkHsValueMap . CoreUtils.exprType) args
     hsres  = useAsPort (mkHsValueMap ty)
 
--- | Translates signal id's to SignalInfo for any signals used as state.
-findState ::
-  [(UnnamedSignal, SignalInfo)] -- | A map of id to info
-  -> UnnamedSignal              -- | The signal id to look at
-  -> HsValueUse                 -- | How is this signal used?
-  -> Maybe (Int, SignalInfo)    -- | The state num and SignalInfo, if appropriate
+-- | Filters non-state signals and returns the state number and signal id for
+--   state values.
+filterState ::
+  UnnamedSignal                  -- | The signal id to look at
+  -> HsValueUse                  -- | How is this signal used?
+  -> Maybe (Int, UnnamedSignal ) -- | The state num and signal id, if this
+                                 --   signal was used as state
 
-findState sigs id (State num) = 
-  Just (num, Maybe.fromJust $ lookup id sigs)
-findState _ _ _ = Nothing
+filterState id (State num) = 
+  Just (num, id)
+filterState _ _ = Nothing
 
+-- | Returns a list of the state number and signal id of all used-as-state
+--   signals in the given maps.
+stateList ::
+  HsUseMap
+  -> (SignalMap UnnamedSignal)
+  -> [(Int, UnnamedSignal)]
 
+stateList uses signals =
+    Maybe.catMaybes $ Foldable.toList $ zipValueMapsWith filterState signals uses
+  
 -- | Returns pairs of signals that should be mapped to state in this function.
 getOwnStates ::
   HsFunction                      -- | The function to look at
@@ -221,11 +243,12 @@ getOwnStates hsfunc flatfunc =
     , old_num == new_num]
   where
     sigs = flat_sigs flatfunc
-    -- Translate args and res to lists of (statenum, SignalInfo)
-    args = zipWith (zipValueMapsWith $ findState sigs) (flat_args flatfunc) (hsFuncArgs hsfunc)
-    args_states = Maybe.catMaybes $ concat $ map Foldable.toList $ args
-    res = zipValueMapsWith (findState sigs) (flat_res flatfunc) (hsFuncRes hsfunc)
-    res_states = Maybe.catMaybes $ Foldable.toList res
+    -- Translate args and res to lists of (statenum, sigid)
+    args = concat $ zipWith stateList (hsFuncArgs hsfunc) (flat_args flatfunc)
+    res = stateList (hsFuncRes hsfunc) (flat_res flatfunc)
+    -- Replace the second tuple element with the corresponding SignalInfo
+    args_states = map (Arrow.second $ signalInfo sigs) args
+    res_states = map (Arrow.second $ signalInfo sigs) res
 
     
 -- vim: set ts=8 sw=2 sts=2 expandtab:

@@ -1,5 +1,6 @@
 module FlattenTypes where
 
+import qualified Maybe
 import Data.Traversable
 import qualified Data.Foldable as Foldable
 import qualified Control.Monad.State as State
@@ -88,10 +89,12 @@ data CondDef sigid = CondDef {
 
 -- | How is a given signal used in the resulting VHDL?
 data SigUse = 
-  SigPort         -- | Use as a port
-  | SigInternal   -- | Use as an internal signal
-  | SigState      -- | Use as an internal state
-  | SigSubState   -- | Do not use, state variable is used in a subcircuit
+  SigPortIn          -- | Use as an input port
+  | SigPortOut       -- | Use as an input port
+  | SigInternal      -- | Use as an internal signal
+  | SigStateOld Int  -- | Use as the current internal state
+  | SigStateNew Int  -- | Use as the new internal state
+  | SigSubState      -- | Do not use, state variable is used in a subcircuit
 
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
@@ -108,6 +111,11 @@ data FlatFunction' sigid = FlatFunction {
   flat_conds  :: [CondDef sigid],
   flat_sigs   :: [(sigid, SignalInfo)]
 }
+
+-- | Lookup a given signal id in a signal map, and return the associated
+--   SignalInfo. Errors out if the signal was not found.
+signalInfo :: Eq sigid => [(sigid, SignalInfo)] -> sigid -> SignalInfo
+signalInfo sigs id = Maybe.fromJust $ lookup id sigs
 
 -- | A flat function that does not have its signals named
 type FlatFunction = FlatFunction' UnnamedSignal
