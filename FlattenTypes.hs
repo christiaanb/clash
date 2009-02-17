@@ -96,6 +96,23 @@ data SigUse =
   | SigStateNew Int  -- | Use as the new internal state
   | SigSubState      -- | Do not use, state variable is used in a subcircuit
 
+-- | Is this a port signal use?
+isPortSigUse :: SigUse -> Bool
+isPortSigUse SigPortIn = True
+isPortSigUse SigPortOut = True
+isPortSigUse _ = False
+
+-- | Is this a state signal use? Returns false for substate.
+isStateSigUse :: SigUse -> Bool
+isStateSigUse (SigStateOld _) = True
+isStateSigUse (SigStateNew _) = True
+isStateSigUse _ = False
+
+-- | Is this an internal signal use?
+isInternalSigUse :: SigUse -> Bool
+isInternalSigUse SigInternal = True
+isInternalSigUse _ = False
+
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
   sigName :: Maybe String,
