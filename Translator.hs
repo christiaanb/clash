@@ -54,7 +54,7 @@ main =
           --core <- GHC.compileToCoreSimplified "Adders.hs"
           core <- GHC.compileToCoreSimplified "Adders.hs"
           --liftIO $ printBinds (cm_binds core)
-          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["sfull_adder"]
+          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["dff"]
           liftIO $ putStr $ prettyShow binds
           -- Turn bind into VHDL
           let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)

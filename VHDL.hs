@@ -15,6 +15,7 @@ import Outputable ( showSDoc, ppr )
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 import VHDLTypes
+import Flatten
 import FlattenTypes
 import TranslatorTypes
 import Pretty
@@ -112,18 +113,37 @@ createArchitecture hsfunc fdata =
       let sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
       -- Create component instantiations for all function applications
       insts <- mapM (mkCompInsSm sigs) apps
+      let procs = map mkStateProcSm (getOwnStates hsfunc flatfunc)
       let insts' = map AST.CSISm insts
-      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) insts'
+      let procs' = map AST.CSPSm procs
+      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (insts' ++ procs')
       setArchitecture hsfunc arch
+
+mkStateProcSm :: (Int, SignalInfo, SignalInfo) -> AST.ProcSm
+mkStateProcSm (num, old, new) =
+  AST.ProcSm label [clk] [statement]
+  where
+    label       = mkVHDLId $ "state_" ++ (show num)
+    clk         = mkVHDLId "clk"
+    rising_edge = AST.NSimple $ mkVHDLId "rising_edge"
+    wform       = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple $ getSignalId new) Nothing]
+    assign      = AST.SigAssign (AST.NSimple $ getSignalId old) wform
+    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
+    statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
 mkSigDec :: SignalInfo -> AST.SigDec
 mkSigDec info =
-    AST.SigDec (mkVHDLId name) (vhdl_ty ty) Nothing
+    AST.SigDec (getSignalId info) (vhdl_ty ty) Nothing
   where
-    name = Maybe.fromMaybe
+    ty = sigTy info
+
+-- | Creates a VHDL Id from a named SignalInfo. Errors out if the SignalInfo
+--   is not named.
+getSignalId :: SignalInfo -> AST.VHDLId
+getSignalId info =
+    mkVHDLId $ Maybe.fromMaybe
       (error $ "Unnamed signal? This should not happen!")
       (sigName info)
-    ty = sigTy info
 
 -- | Transforms a flat function application to a VHDL component instantiation.
 mkCompInsSm ::

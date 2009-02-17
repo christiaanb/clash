@@ -193,4 +193,39 @@ appToHsFunction ty f args =
     hsargs = map (useAsPort . mkHsValueMap . CoreUtils.exprType) args
     hsres  = useAsPort (mkHsValueMap ty)
 
+-- | Translates signal id's to SignalInfo for any signals used as state.
+findState ::
+  [(UnnamedSignal, SignalInfo)] -- | A map of id to info
+  -> UnnamedSignal              -- | The signal id to look at
+  -> HsValueUse                 -- | How is this signal used?
+  -> Maybe (Int, SignalInfo)    -- | The state num and SignalInfo, if appropriate
+
+findState sigs id (State num) = 
+  Just (num, Maybe.fromJust $ lookup id sigs)
+findState _ _ _ = Nothing
+
+
+-- | Returns pairs of signals that should be mapped to state in this function.
+getOwnStates ::
+  HsFunction                      -- | The function to look at
+  -> FlatFunction                 -- | The function to look at
+  -> [(Int, SignalInfo, SignalInfo)]   
+        -- | The state signals. The first is the state number, the second the
+        --   signal to assign the current state to, the last is the signal
+        --   that holds the new state.
+
+getOwnStates hsfunc flatfunc =
+  [(old_num, old_info, new_info) 
+    | (old_num, old_info) <- args_states
+    , (new_num, new_info) <- res_states
+    , old_num == new_num]
+  where
+    sigs = flat_sigs flatfunc
+    -- Translate args and res to lists of (statenum, SignalInfo)
+    args = zipWith (zipValueMapsWith $ findState sigs) (flat_args flatfunc) (hsFuncArgs hsfunc)
+    args_states = Maybe.catMaybes $ concat $ map Foldable.toList $ args
+    res = zipValueMapsWith (findState sigs) (flat_res flatfunc) (hsFuncRes hsfunc)
+    res_states = Maybe.catMaybes $ Foldable.toList res
+
+    
 -- vim: set ts=8 sw=2 sts=2 expandtab:
