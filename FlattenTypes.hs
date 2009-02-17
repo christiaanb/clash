@@ -1,6 +1,7 @@
 module FlattenTypes where
 
 import Data.Traversable
+import qualified Data.Foldable as Foldable
 import qualified Control.Monad.State as State
 
 import CoreSyn
@@ -27,6 +28,11 @@ data HsValueUse =
                          --   HighOrder values. 
   }
   deriving (Show, Eq, Ord)
+
+-- | Is this HsValueUse a state use?
+isStateUse :: HsValueUse -> Bool
+isStateUse (State _) = True
+isStateUse _         = False
 
 -- | A map from a Haskell value to the use of each single value
 type HsUseMap = HsValueMap HsValueUse
@@ -59,6 +65,11 @@ data HsFunction = HsFunction {
   hsFuncArgs :: [HsUseMap],
   hsFuncRes  :: HsUseMap
 } deriving (Show, Eq, Ord)
+
+hasState :: HsFunction -> Bool
+hasState hsfunc = 
+  any (Foldable.any isStateUse) (hsFuncArgs hsfunc)
+  || Foldable.any isStateUse (hsFuncRes hsfunc)
 
 -- | A flattened function application
 data FApp sigid = FApp {

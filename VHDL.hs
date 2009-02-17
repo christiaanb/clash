@@ -58,7 +58,7 @@ createEntity hsfunc fdata =
           (sigName info)
         ty = sigTy info
 
--- | Create the VHDL AST for an entity
+  -- | Create the VHDL AST for an entity
 createEntityAST ::
   HsFunction            -- | The signature of the function we're working with
   -> [VHDLSignalMap]    -- | The entity's arguments
@@ -71,9 +71,16 @@ createEntityAST hsfunc args res =
     vhdl_id = mkEntityId hsfunc
     ports = concatMap (mapToPorts AST.In) args
             ++ mapToPorts AST.Out res
+            ++ clk_port
     mapToPorts :: AST.Mode -> VHDLSignalMap -> [AST.IfaceSigDec] 
     mapToPorts mode m =
       map (mkIfaceSigDec mode) (Foldable.toList m)
+    -- Add a clk port if we have state
+    clk_port = if hasState hsfunc
+      then
+        [AST.IfaceSigDec (mkVHDLId "clk") AST.In VHDL.std_logic_ty]
+      else
+        []
 
 -- | Create a port declaration
 mkIfaceSigDec ::
@@ -229,6 +236,10 @@ getLibraryUnits (hsfunc, fdata) =
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark
 bit_ty = AST.unsafeVHDLBasicId "Bit"
+
+-- | The VHDL std_logic
+std_logic_ty :: AST.TypeMark
+std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
 
 -- Translate a Haskell type to a VHDL type
 vhdl_ty :: Type.Type -> AST.TypeMark
