@@ -130,7 +130,7 @@ createArchitecture hsfunc fdata =
                       (getEntityId fdata)
       -- Create signal declarations for all signals that are not in args and
       -- res
-      let sig_decs = [mkSigDec info | (id, info) <- sigs, (all (id `Foldable.notElem`) (res:args)) ]
+      let sig_decs = Maybe.catMaybes $ map (mkSigDec . snd) sigs
       -- Create component instantiations for all function applications
       insts <- mapM (mkCompInsSm sigs) apps
       let procs = map mkStateProcSm (getOwnStates hsfunc flatfunc)
@@ -151,9 +151,13 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
-mkSigDec :: SignalInfo -> AST.SigDec
+mkSigDec :: SignalInfo -> Maybe AST.SigDec
 mkSigDec info =
-    AST.SigDec (getSignalId info) (vhdl_ty ty) Nothing
+  let use = sigUse info in
+  if isInternalSigUse use || isStateSigUse use then
+    Just $ AST.SigDec (getSignalId info) (vhdl_ty ty) Nothing
+  else
+    Nothing
   where
     ty = sigTy info
 
