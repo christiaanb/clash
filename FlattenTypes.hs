@@ -16,11 +16,14 @@ type SignalId = Int
 -- | A map of a Haskell value to signal ids
 type SignalMap = HsValueMap SignalId
 
+-- | A state identifier
+type StateId = Int
+
 -- | How is a given (single) value in a function's type (ie, argument or
 -- return value) used?
 data HsValueUse = 
   Port           -- ^ Use it as a port (input or output)
-  | State Int    -- ^ Use it as state (input or output). The int is used to
+  | State StateId -- ^ Use it as state (input or output). The int is used to
                  --   match input state to output state.
   | HighOrder {  -- ^ Use it as a high order function input
     hoName :: String,  -- ^ Which function is passed in?
@@ -92,8 +95,8 @@ data SigUse =
   SigPortIn          -- | Use as an input port
   | SigPortOut       -- | Use as an input port
   | SigInternal      -- | Use as an internal signal
-  | SigStateOld Int  -- | Use as the current internal state
-  | SigStateNew Int  -- | Use as the new internal state
+  | SigStateOld StateId  -- | Use as the current internal state
+  | SigStateNew StateId  -- | Use as the new internal state
   | SigSubState      -- | Do not use, state variable is used in a subcircuit
 
 -- | Is this a port signal use?

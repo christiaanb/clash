@@ -144,7 +144,7 @@ createArchitecture hsfunc fdata =
       let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (insts' ++ procs')
       setArchitecture hsfunc arch
 
-mkStateProcSm :: (Int, SignalInfo, SignalInfo) -> AST.ProcSm
+mkStateProcSm :: (StateId, SignalInfo, SignalInfo) -> AST.ProcSm
 mkStateProcSm (num, old, new) =
   AST.ProcSm label [clk] [statement]
   where

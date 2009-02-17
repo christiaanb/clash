@@ -210,7 +210,7 @@ appToHsFunction ty f args =
 filterState ::
   SignalId                       -- | The signal id to look at
   -> HsValueUse                  -- | How is this signal used?
-  -> Maybe (Int, SignalId )      -- | The state num and signal id, if this
+  -> Maybe (StateId, SignalId )  -- | The state num and signal id, if this
                                  --   signal was used as state
 
 filterState id (State num) = 
@@ -222,7 +222,7 @@ filterState _ _ = Nothing
 stateList ::
   HsUseMap
   -> (SignalMap)
-  -> [(Int, SignalId)]
+  -> [(StateId, SignalId)]
 
 stateList uses signals =
     Maybe.catMaybes $ Foldable.toList $ zipValueMapsWith filterState signals uses
@@ -231,7 +231,7 @@ stateList uses signals =
 getOwnStates ::
   HsFunction                      -- | The function to look at
   -> FlatFunction                 -- | The function to look at
-  -> [(Int, SignalInfo, SignalInfo)]   
+  -> [(StateId, SignalInfo, SignalInfo)]   
         -- | The state signals. The first is the state number, the second the
         --   signal to assign the current state to, the last is the signal
         --   that holds the new state.
