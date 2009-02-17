@@ -54,11 +54,11 @@ flattenFunction ::
 
 flattenFunction _ (Rec _) = error "Recursive binders not supported"
 flattenFunction hsfunc bind@(NonRec var expr) =
-  FlatFunction args res apps conds sigs''''
+  FlatFunction args res defs sigs''''
   where
-    init_state        = ([], [], [], 0)
+    init_state        = ([], [], 0)
     (fres, end_state) = State.runState (flattenExpr [] expr) init_state
-    (apps, conds, sigs, _)  = end_state
+    (defs, sigs, _)   = end_state
     (args, res)       = fres
     arg_ports         = concat (map Foldable.toList args)
     res_ports         = Foldable.toList res
@@ -132,7 +132,7 @@ flattenExpr binds app@(App _ _) = do
         appArgs = arg_ress,
         appRes  = res
       }
-      addApp app
+      addDef app
       return ([], res)
     -- | Check a flattened expression to see if it is valid to use as a
     --   function argument. The first argument is the original expression for

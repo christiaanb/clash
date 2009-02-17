@@ -75,20 +75,31 @@ hasState hsfunc =
   any (Foldable.any isStateUse) (hsFuncArgs hsfunc)
   || Foldable.any isStateUse (hsFuncRes hsfunc)
 
--- | A flattened function application
-data FApp = FApp {
-  appFunc :: HsFunction,
-  appArgs :: [SignalMap],
-  appRes  :: SignalMap
-} deriving (Show, Eq)
+-- | Something that defines a signal
+data SigDef =
+  -- | A flattened function application
+  FApp {
+    appFunc :: HsFunction,
+    appArgs :: [SignalMap],
+    appRes  :: SignalMap
+  }
+  -- | A conditional signal definition
+  | CondDef {
+    cond    :: SignalId,
+    high    :: SignalId,
+    low     :: SignalId,
+    condRes :: SignalId
+  }
+  -- | Unconditional signal definition
+  | UncondDef {
+    defSrc :: SignalId,
+    defDst :: SignalId
+  } deriving (Show, Eq)
 
--- | A conditional signal definition
-data CondDef = CondDef {
-  cond    :: SignalId,
-  high    :: SignalId,
-  low     :: SignalId,
-  condRes :: SignalId
-} deriving (Show, Eq)
+-- Returns the function used by the given SigDef, if any
+usedHsFunc :: SigDef -> Maybe HsFunction
+usedHsFunc (FApp hsfunc _ _) = Just hsfunc
+usedHsFunc _ = Nothing
 
 -- | How is a given signal used in the resulting VHDL?
 data SigUse = 
@@ -127,8 +138,7 @@ data SignalInfo = SignalInfo {
 data FlatFunction = FlatFunction {
   flat_args   :: [SignalMap],
   flat_res    :: SignalMap,
-  flat_apps   :: [FApp],
-  flat_conds  :: [CondDef],
+  flat_defs   :: [SigDef],
   flat_sigs   :: [(SignalId, SignalInfo)]
 }
 
@@ -150,25 +160,19 @@ type BindMap = [(
   )]
 
 -- | The state during the flattening of a single function
-type FlattenState = State.State ([FApp], [CondDef], [(SignalId, SignalInfo)], SignalId)
+type FlattenState = State.State ([SigDef], [(SignalId, SignalInfo)], SignalId)
 
 -- | Add an application to the current FlattenState
-addApp :: (FApp) -> FlattenState ()
-addApp a = do
-  (apps, conds, sigs, n) <- State.get
-  State.put (a:apps, conds, sigs, n)
-
--- | Add a conditional definition to the current FlattenState
-addCondDef :: (CondDef) -> FlattenState ()
-addCondDef c = do
-  (apps, conds, sigs, n) <- State.get
-  State.put (apps, c:conds, sigs, n)
+addDef :: SigDef -> FlattenState ()
+addDef d = do
+  (defs, sigs, n) <- State.get
+  State.put (d:defs, sigs, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
 genSignalId :: SigUse -> Type.Type -> FlattenState SignalId 
 genSignalId use ty = do
-  (apps, conds, sigs, n) <- State.get
+  (defs, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal
   let s = (n, SignalInfo Nothing use ty)
-  State.put (apps, conds, s:sigs, n+1)
+  State.put (defs, s:sigs, n+1)
   return n

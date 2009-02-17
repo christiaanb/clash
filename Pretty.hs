@@ -37,21 +37,19 @@ instance Pretty HsValueUse where
   pPrint (HighOrder _ _) = text "Higher Order"
 
 instance Pretty FlatFunction where
-  pPrint (FlatFunction args res apps conds sigs) =
+  pPrint (FlatFunction args res defs sigs) =
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
-    $+$ (text "Apps: ") $$ nest 10 (vcat (map pPrint apps))
-    $+$ (text "Conds: ") $$ nest 10 (pPrint conds)
+    $+$ (text "Defs: ") $$ nest 10 (pPrint defs)
     $+$ text "Signals: " $$ nest 10 (printList ppsig sigs)
     where
       ppsig (id, info) = pPrint id <> pPrint info
 
-instance Pretty FApp where
+instance Pretty SigDef where
   pPrint (FApp func args res) =
     pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
-
-instance Pretty CondDef where
-  pPrint _ = text "TODO"
+  pPrint (CondDef _ _ _ _) = text "TODO"
+  pPrint (UncondDef src dst) = text "TODO"
 
 instance Pretty SignalInfo where
   pPrint (SignalInfo name use ty) =

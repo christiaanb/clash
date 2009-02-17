@@ -129,19 +129,18 @@ createArchitecture hsfunc fdata =
       let sigs = flat_sigs flatfunc
       let args = flat_args flatfunc
       let res  = flat_res  flatfunc
-      let apps = flat_apps flatfunc
+      let defs = flat_defs flatfunc
       let entity_id = Maybe.fromMaybe
                       (error $ "Building architecture without an entity? This should not happen!")
                       (getEntityId fdata)
       -- Create signal declarations for all signals that are not in args and
       -- res
       let sig_decs = Maybe.catMaybes $ map (mkSigDec . snd) sigs
-      -- Create component instantiations for all function applications
-      insts <- mapM (mkCompInsSm sigs) apps
+      -- Create concurrent statements for all signal definitions
+      statements <- mapM (mkConcSm sigs) defs
       let procs = map mkStateProcSm (getOwnStates hsfunc flatfunc)
-      let insts' = map AST.CSISm insts
       let procs' = map AST.CSPSm procs
-      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (insts' ++ procs')
+      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
       setArchitecture hsfunc arch
 
 mkStateProcSm :: (StateId, SignalInfo, SignalInfo) -> AST.ProcSm
@@ -174,14 +173,13 @@ getSignalId info =
       (error $ "Unnamed signal? This should not happen!")
       (sigName info)
 
--- | Transforms a flat function application to a VHDL component instantiation.
-mkCompInsSm ::
+-- | Transforms a signal definition into a VHDL concurrent statement
+mkConcSm ::
   [(SignalId, SignalInfo)] -- | The signals in the current architecture
-  -> FApp                       -- | The application to look at.
-  -> VHDLState AST.CompInsSm    -- | The corresponding VHDL component instantiation.
+  -> SigDef                -- | The signal definition
+  -> VHDLState AST.ConcSm    -- | The corresponding VHDL component instantiation.
 
-mkCompInsSm sigs app = do
-  let hsfunc = appFunc app
+mkConcSm sigs (FApp hsfunc args res) = do
   fdata_maybe <- getFunc hsfunc
   let fdata = Maybe.fromMaybe
         (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' that is not in the session? This should not happen!")
@@ -191,16 +189,17 @@ mkCompInsSm sigs app = do
         (funcEntity fdata)
   let entity_id = ent_id entity
   label <- uniqueName (AST.fromVHDLId entity_id)
-  let portmaps = mkAssocElems sigs app entity
-  return $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+  let portmaps = mkAssocElems sigs args res entity
+  return $ AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 mkAssocElems :: 
-  [(SignalId, SignalInfo)] -- | The signals in the current architecture
-  -> FApp                       -- | The application to look at.
+  [(SignalId, SignalInfo)]      -- | The signals in the current architecture
+  -> [SignalMap]                -- | The signals that are applied to function
+  -> SignalMap                  -- | the signals in which to store the function result
   -> Entity                     -- | The entity to map against.
   -> [AST.AssocElem]            -- | The resulting port maps
 
-mkAssocElems sigmap app entity =
+mkAssocElems sigmap args res entity =
     -- Create the actual AssocElems
     Maybe.catMaybes $ zipWith mkAssocElem ports sigs
   where
@@ -209,8 +208,8 @@ mkAssocElems sigmap app entity =
     -- the similar form?
     arg_ports = concat (map Foldable.toList (ent_args entity))
     res_ports = Foldable.toList (ent_res entity)
-    arg_sigs  = (concat (map Foldable.toList (appArgs app)))
-    res_sigs  = Foldable.toList (appRes app)
+    arg_sigs  = (concat (map Foldable.toList args))
+    res_sigs  = Foldable.toList res
     -- Extract the id part from the (id, type) tuple
     ports     = (map (fmap fst) (arg_ports ++ res_ports)) 
     -- Translate signal numbers into names
