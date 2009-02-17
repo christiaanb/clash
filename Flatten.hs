@@ -28,7 +28,7 @@ dataConAppArgs dc args =
 
 genSignals ::
   Type.Type
-  -> FlattenState (SignalMap UnnamedSignal)
+  -> FlattenState SignalMap
 
 genSignals ty =
   -- First generate a map with the right structure containing the types, and
@@ -37,13 +37,13 @@ genSignals ty =
 
 -- | Marks a signal as the given SigUse, if its id is in the list of id's
 --   given.
-markSignals :: SigUse -> [UnnamedSignal] -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
+markSignals :: SigUse -> [SignalId] -> (SignalId, SignalInfo) -> (SignalId, SignalInfo)
 markSignals use ids (id, info) =
   (id, info')
   where
     info' = if id `elem` ids then info { sigUse = use} else info
 
-markSignal :: SigUse -> UnnamedSignal -> (UnnamedSignal, SignalInfo) -> (UnnamedSignal, SignalInfo)
+markSignal :: SigUse -> SignalId -> (SignalId, SignalInfo) -> (SignalId, SignalInfo)
 markSignal use id = markSignals use [id]
 
 -- | Flatten a haskell function
@@ -74,7 +74,7 @@ flattenFunction hsfunc bind@(NonRec var expr) =
 flattenExpr ::
   BindMap
   -> CoreExpr
-  -> FlattenState ([SignalMap UnnamedSignal], (SignalMap UnnamedSignal))
+  -> FlattenState ([SignalMap], SignalMap)
 
 flattenExpr binds lam@(Lam b expr) = do
   -- Find the type of the binder
@@ -165,7 +165,7 @@ flattenExpr binds expr@(Case (Var v) b _ alts) =
       -> Var.Var                -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> CoreAlt                -- The single alternative
-      -> FlattenState ( [SignalMap UnnamedSignal], SignalMap UnnamedSignal)
+      -> FlattenState ( [SignalMap], SignalMap)
                                            -- See expandExpr
     flattenSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
       if not (DataCon.isTupleCon datacon) 
@@ -208,9 +208,9 @@ appToHsFunction ty f args =
 -- | Filters non-state signals and returns the state number and signal id for
 --   state values.
 filterState ::
-  UnnamedSignal                  -- | The signal id to look at
+  SignalId                       -- | The signal id to look at
   -> HsValueUse                  -- | How is this signal used?
-  -> Maybe (Int, UnnamedSignal ) -- | The state num and signal id, if this
+  -> Maybe (Int, SignalId )      -- | The state num and signal id, if this
                                  --   signal was used as state
 
 filterState id (State num) = 
@@ -221,8 +221,8 @@ filterState _ _ = Nothing
 --   signals in the given maps.
 stateList ::
   HsUseMap
-  -> (SignalMap UnnamedSignal)
-  -> [(Int, UnnamedSignal)]
+  -> (SignalMap)
+  -> [(Int, SignalId)]
 
 stateList uses signals =
     Maybe.catMaybes $ Foldable.toList $ zipValueMapsWith filterState signals uses

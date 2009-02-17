@@ -176,8 +176,8 @@ getSignalId info =
 
 -- | Transforms a flat function application to a VHDL component instantiation.
 mkCompInsSm ::
-  [(UnnamedSignal, SignalInfo)] -- | The signals in the current architecture
-  -> FApp UnnamedSignal         -- | The application to look at.
+  [(SignalId, SignalInfo)] -- | The signals in the current architecture
+  -> FApp                       -- | The application to look at.
   -> VHDLState AST.CompInsSm    -- | The corresponding VHDL component instantiation.
 
 mkCompInsSm sigs app = do
@@ -195,8 +195,8 @@ mkCompInsSm sigs app = do
   return $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 mkAssocElems :: 
-  [(UnnamedSignal, SignalInfo)] -- | The signals in the current architecture
-  -> FApp UnnamedSignal         -- | The application to look at.
+  [(SignalId, SignalInfo)] -- | The signals in the current architecture
+  -> FApp                       -- | The application to look at.
   -> Entity                     -- | The entity to map against.
   -> [AST.AssocElem]            -- | The resulting port maps
 
@@ -217,7 +217,7 @@ mkAssocElems sigmap app entity =
     sigs      = (map (lookupSigName sigmap) (arg_sigs ++ res_sigs))
 
 -- | Look up a signal in the signal name map
-lookupSigName :: [(UnnamedSignal, SignalInfo)] -> UnnamedSignal -> String
+lookupSigName :: [(SignalId, SignalInfo)] -> SignalId -> String
 lookupSigName sigs sig = name
   where
     info = Maybe.fromMaybe

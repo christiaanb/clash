@@ -6,10 +6,11 @@ module VHDLTypes where
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 import FlattenTypes
+import HsValueMap
 
 -- | A mapping from a haskell structure to the corresponding VHDL port
 --   signature, or Nothing for values that do not translate to a port.
-type VHDLSignalMap = SignalMap (Maybe (AST.VHDLId, AST.TypeMark))
+type VHDLSignalMap = HsValueMap (Maybe (AST.VHDLId, AST.TypeMark))
 
 -- A description of a VHDL entity. Contains both the entity itself as well as
 -- info on how to map a haskell value (argument / result) on to the entity's

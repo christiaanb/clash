@@ -11,10 +11,10 @@ import qualified Type
 import HsValueMap
 
 -- | A signal identifier
-type UnnamedSignal = Int
+type SignalId = Int
 
 -- | A map of a Haskell value to signal ids
-type SignalMap sigid = HsValueMap sigid
+type SignalMap = HsValueMap SignalId
 
 -- | How is a given (single) value in a function's type (ie, argument or
 -- return value) used?
@@ -73,18 +73,18 @@ hasState hsfunc =
   || Foldable.any isStateUse (hsFuncRes hsfunc)
 
 -- | A flattened function application
-data FApp sigid = FApp {
+data FApp = FApp {
   appFunc :: HsFunction,
-  appArgs :: [SignalMap sigid],
-  appRes  :: SignalMap sigid
+  appArgs :: [SignalMap],
+  appRes  :: SignalMap
 } deriving (Show, Eq)
 
 -- | A conditional signal definition
-data CondDef sigid = CondDef {
-  cond    :: sigid,
-  high    :: sigid,
-  low     :: sigid,
-  condRes :: sigid
+data CondDef = CondDef {
+  cond    :: SignalId,
+  high    :: SignalId,
+  low     :: SignalId,
+  condRes :: SignalId
 } deriving (Show, Eq)
 
 -- | How is a given signal used in the resulting VHDL?
@@ -121,51 +121,48 @@ data SignalInfo = SignalInfo {
 }
 
 -- | A flattened function
-data FlatFunction' sigid = FlatFunction {
-  flat_args   :: [SignalMap sigid],
-  flat_res    :: SignalMap sigid,
-  flat_apps   :: [FApp sigid],
-  flat_conds  :: [CondDef sigid],
-  flat_sigs   :: [(sigid, SignalInfo)]
+data FlatFunction = FlatFunction {
+  flat_args   :: [SignalMap],
+  flat_res    :: SignalMap,
+  flat_apps   :: [FApp],
+  flat_conds  :: [CondDef],
+  flat_sigs   :: [(SignalId, SignalInfo)]
 }
 
 -- | Lookup a given signal id in a signal map, and return the associated
 --   SignalInfo. Errors out if the signal was not found.
-signalInfo :: Eq sigid => [(sigid, SignalInfo)] -> sigid -> SignalInfo
+signalInfo :: [(SignalId, SignalInfo)] -> SignalId -> SignalInfo
 signalInfo sigs id = Maybe.fromJust $ lookup id sigs
-
--- | A flat function that does not have its signals named
-type FlatFunction = FlatFunction' UnnamedSignal
 
 -- | A list of binds in effect at a particular point of evaluation
 type BindMap = [(
   CoreBndr,            -- ^ The bind name
   Either               -- ^ The bind value which is either
-    (SignalMap UnnamedSignal)
+    (SignalMap)
                        -- ^ a signal
     (
       HsValueUse,      -- ^ or a HighOrder function
-      [UnnamedSignal]  -- ^ With these signals already applied to it
+      [SignalId]       -- ^ With these signals already applied to it
     )
   )]
 
 -- | The state during the flattening of a single function
-type FlattenState = State.State ([FApp UnnamedSignal], [CondDef UnnamedSignal], [(UnnamedSignal, SignalInfo)], UnnamedSignal)
+type FlattenState = State.State ([FApp], [CondDef], [(SignalId, SignalInfo)], SignalId)
 
 -- | Add an application to the current FlattenState
-addApp :: (FApp UnnamedSignal) -> FlattenState ()
+addApp :: (FApp) -> FlattenState ()
 addApp a = do
   (apps, conds, sigs, n) <- State.get
   State.put (a:apps, conds, sigs, n)
 
 -- | Add a conditional definition to the current FlattenState
-addCondDef :: (CondDef UnnamedSignal) -> FlattenState ()
+addCondDef :: (CondDef) -> FlattenState ()
 addCondDef c = do
   (apps, conds, sigs, n) <- State.get
   State.put (apps, c:conds, sigs, n)
 
 -- | Generates a new signal id, which is unique within the current flattening.
-genSignalId :: SigUse -> Type.Type -> FlattenState UnnamedSignal 
+genSignalId :: SigUse -> Type.Type -> FlattenState SignalId 
 genSignalId use ty = do
   (apps, conds, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal

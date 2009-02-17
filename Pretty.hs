@@ -36,7 +36,7 @@ instance Pretty HsValueUse where
   pPrint (State n)       = char 'C' <> int n
   pPrint (HighOrder _ _) = text "Higher Order"
 
-instance Pretty id => Pretty (FlatFunction' id) where
+instance Pretty FlatFunction where
   pPrint (FlatFunction args res apps conds sigs) =
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
@@ -46,11 +46,11 @@ instance Pretty id => Pretty (FlatFunction' id) where
     where
       ppsig (id, info) = pPrint id <> pPrint info
 
-instance Pretty id => Pretty (FApp id) where
+instance Pretty FApp where
   pPrint (FApp func args res) =
     pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
 
-instance Pretty id => Pretty (CondDef id) where
+instance Pretty CondDef where
   pPrint _ = text "TODO"
 
 instance Pretty SignalInfo where
