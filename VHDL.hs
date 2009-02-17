@@ -26,8 +26,11 @@ getDesignFile = do
   -- session.
   funcs <- getFuncs
   let units = concat $ map getLibraryUnits funcs
+  let context = [
+        AST.Library $ mkVHDLId "IEEE",
+        AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
   return $ AST.DesignFile 
-    []
+    context
     units
   
 -- | Create an entity for a given function
