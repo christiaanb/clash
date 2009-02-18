@@ -1,13 +1,16 @@
 module Pretty (prettyShow) where
 
 import qualified Data.Map as Map
+import qualified Var
 import qualified CoreSyn
+import qualified TypeRep
 import qualified Module
 import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
 import Outputable ( showSDoc, ppr, Outputable, OutputableBndr)
 
 import qualified ForSyDe.Backend.Ppr
+import qualified ForSyDe.Backend.VHDL.Ppr
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 import HsValueMap
@@ -99,7 +102,7 @@ instance Pretty Entity where
       ppdecl Nothing = text "VHDL entity not present"
       ppdecl (Just _) = text "VHDL entity present"
 
-instance (OutputableBndr b) => Pretty (CoreSyn.Bind b) where
+instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.NonRec b expr) =
     text "NonRec: " $$ nest 10 (prettyBind (b, expr))
   pPrint (CoreSyn.Rec binds) =
@@ -108,9 +111,21 @@ instance (OutputableBndr b) => Pretty (CoreSyn.Bind b) where
 instance Pretty AST.VHDLId where
   pPrint id = ForSyDe.Backend.Ppr.ppr id
 
-prettyBind :: (Outputable b, Outputable e) => (b, e) -> Doc
+prettyBind :: (Show b, Show e) => (b, e) -> Doc
 prettyBind (b, expr) =
   text b' <> text " = " <> text expr'
   where
-    b' = showSDoc $ ppr b
-    expr' = showSDoc $ ppr expr
+    b' = show b
+    expr' = show expr
+
+-- Derive Show for core expressions and binders, so we can see the actual
+-- structure.
+deriving instance (Show b) => Show (CoreSyn.Expr b)
+deriving instance (Show b) => Show (CoreSyn.Bind b)
+
+-- Implement dummy shows for Note and Type, so we can at least use show on
+-- expressions.
+instance Show CoreSyn.Note where
+  show n = "<note>"
+instance Show TypeRep.Type where
+  show t = "_type:(" ++ (showSDoc $ ppr t) ++ ")"
