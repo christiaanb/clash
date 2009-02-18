@@ -49,6 +49,15 @@ main = do
   -- Write VHDL to file
   writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
 
+-- | Show the core structure of the given binds in the given file.
+listBind :: String -> String -> IO ()
+listBind filename name = do
+  core <- loadModule filename
+  let binds = findBinds core [name]
+  putStr "\n"
+  putStr $ prettyShow binds
+  putStr "\n\n"
+
 -- | Translate the binds with the given names from the given core module to
 --   VHDL
 moduleToVHDL :: HscTypes.CoreModule -> [String] -> IO AST.DesignFile
