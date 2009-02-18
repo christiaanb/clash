@@ -54,23 +54,71 @@ flattenFunction ::
 
 flattenFunction _ (Rec _) = error "Recursive binders not supported"
 flattenFunction hsfunc bind@(NonRec var expr) =
-  FlatFunction args res defs sigs''''
+  FlatFunction args res defs sigs
   where
     init_state        = ([], [], 0)
-    (fres, end_state) = State.runState (flattenExpr [] expr) init_state
+    (fres, end_state) = State.runState (flattenTopExpr hsfunc expr) init_state
     (defs, sigs, _)   = end_state
     (args, res)       = fres
-    arg_ports         = concat (map Foldable.toList args)
-    res_ports         = Foldable.toList res
-    -- Mark args and result signals as input and output ports resp.
-    sigs'             = fmap (markSignals SigPortIn arg_ports) sigs
-    sigs''            = fmap (markSignals SigPortOut res_ports) sigs'
-    -- Mark args and result states as old and new state resp.
-    args_states       = concat $ zipWith stateList (hsFuncArgs hsfunc) args
-    sigs'''           = foldl (\s (num, id) -> map (markSignal (SigStateOld num) id) s) sigs'' args_states
-    res_states        = stateList (hsFuncRes hsfunc) res
-    sigs''''          = foldl (\s (num, id) -> map (markSignal (SigStateNew num) id) s) sigs''' res_states
 
+flattenTopExpr ::
+  HsFunction
+  -> CoreExpr
+  -> FlattenState ([SignalMap], SignalMap)
+
+flattenTopExpr hsfunc expr = do
+  -- Flatten the expression
+  (args, res) <- flattenExpr [] expr
+  
+  -- Join the signal ids and uses together
+  let zipped_args = zipWith zipValueMaps args (hsFuncArgs hsfunc)
+  let zipped_res = zipValueMaps res (hsFuncRes hsfunc)
+  -- Set the signal uses for each argument / result, possibly updating
+  -- argument or result signals.
+  args' <- mapM (Traversable.mapM $ hsUseToSigUse args_use) zipped_args
+  res' <- Traversable.mapM (hsUseToSigUse res_use) zipped_res
+  return (args', res')
+  where
+    args_use Port = SigPortIn
+    args_use (State n) = SigStateOld n
+    res_use Port = SigPortOut
+    res_use (State n) = SigStateNew n
+
+
+hsUseToSigUse :: 
+  (HsValueUse -> SigUse)      -- ^ A function to actually map the use value
+  -> (SignalId, HsValueUse)   -- ^ The signal to look at and its use
+  -> FlattenState SignalId    -- ^ The resulting signal. This is probably the
+                              --   same as the input, but it could be different.
+hsUseToSigUse f (id, use) = do
+  info <- getSignalInfo id
+  id' <- case sigUse info of 
+    -- Internal signals can be marked as different uses freely.
+    SigInternal -> do
+      return id
+    -- Signals that already have another use, must be duplicated before
+    -- marking. This prevents signals mapping to the same input or output
+    -- port or state variables and ports overlapping, etc.
+    otherwise -> do
+      duplicateSignal id
+  setSignalInfo id' (info { sigUse = f use})
+  return id'
+
+-- | Duplicate the given signal, assigning its value to the new signal.
+--   Returns the new signal id.
+duplicateSignal :: SignalId -> FlattenState SignalId
+duplicateSignal id = do
+  -- Find the type of the original signal
+  info <- getSignalInfo id
+  let ty = sigTy info
+  -- Generate a new signal (which is SigInternal for now, that will be
+  -- sorted out later on).
+  id' <- genSignalId SigInternal ty
+  -- Assign the old signal to the new signal
+  addDef $ UncondDef id id'
+  -- Replace the signal with the new signal
+  return id'
+        
 flattenExpr ::
   BindMap
   -> CoreExpr
