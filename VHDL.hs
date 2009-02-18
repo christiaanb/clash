@@ -192,6 +192,14 @@ mkConcSm sigs (FApp hsfunc args res) = do
   let portmaps = mkAssocElems sigs args res entity
   return $ AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
+mkConcSm sigs (UncondDef src dst) = do
+  let src_name  = AST.NSimple (getSignalId $ signalInfo sigs src)
+  let src_expr  = AST.PrimName src_name
+  let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
+  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
+  let assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+  return $ AST.CSSASm assign
+
 mkAssocElems :: 
   [(SignalId, SignalInfo)]      -- | The signals in the current architecture
   -> [SignalMap]                -- | The signals that are applied to function
