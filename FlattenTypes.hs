@@ -183,3 +183,9 @@ getSignalInfo :: SignalId -> FlattenState SignalInfo
 getSignalInfo id = do
   (defs, sigs, n) <- State.get
   return $ signalInfo sigs id
+
+setSignalInfo :: SignalId -> SignalInfo -> FlattenState ()
+setSignalInfo id' info' = do
+  (defs, sigs, n) <- State.get
+  let sigs' = map (\(id, info) -> (id, if id == id' then info' else info)) sigs
+  State.put (defs, sigs', n)
