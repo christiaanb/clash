@@ -176,3 +176,10 @@ genSignalId use ty = do
   let s = (n, SignalInfo Nothing use ty)
   State.put (defs, s:sigs, n+1)
   return n
+
+-- | Returns the SignalInfo for the given signal. Errors if the signal is not
+--   known in the session.
+getSignalInfo :: SignalId -> FlattenState SignalInfo
+getSignalInfo id = do
+  (defs, sigs, n) <- State.get
+  return $ signalInfo sigs id
