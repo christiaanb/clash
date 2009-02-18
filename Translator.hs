@@ -45,7 +45,7 @@ main = do
   -- Load the module
   core <- loadModule "Adders.hs"
   -- Translate to VHDL
-  vhdl <- moduleToVHDL core ["dff"]
+  vhdl <- moduleToVHDL core ["shifter"]
   -- Write VHDL to file
   writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
 

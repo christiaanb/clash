@@ -39,6 +39,14 @@ dff d s = (s', q)
     q = s
     s' = d
 
+type ShifterState = (Bit, Bit, Bit, Bit)
+shifter :: Bit -> ShifterState -> (ShifterState, Bit)
+shifter a s =
+  (s', o)
+  where
+    s' = (a, b, c, d)
+    (b, c, d, o) = s
+
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
 no_carry_adder :: (Bit, Bit) -> Bit
