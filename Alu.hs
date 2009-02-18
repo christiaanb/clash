@@ -5,13 +5,15 @@ import qualified Sim
 main = Sim.simulate exec program initial_state
 mainIO = Sim.simulateIO exec initial_state
 
+dontcare = Low
+
 program = [
             -- (addr, we, op)
             (High, Low, High), -- z = r1 and t (0) ; t = r1 (1)
             (Low, Low, Low), -- z = r0 or t (1); t = r0 (0)
-            (Low, High, DontCare), -- r0 = z (1)
+            (Low, High, dontcare), -- r0 = z (1)
             (High, Low, High), -- z = r1 and t (0); t = r1 (1)
-            (High, High, DontCare) -- r1 = z (0)
+            (High, High, dontcare) -- r1 = z (0)
           ]
 
 initial_state = (Regs Low High, Low, Low)
@@ -34,7 +36,7 @@ register_bank (High, Low, _) s = -- Read r1
   (s, r1 s)
 
 register_bank (addr, High, d) s = -- Write
-  (s', DontCare)
+  (s', dontcare)
   where
     Regs r0 r1 = s
     r0' = if addr == Low then d else r0
@@ -57,7 +59,7 @@ exec (addr, Low, op) s =
   (s', ())
   where
     (reg_s, t, z) = s
-    (reg_s', t') = register_bank (addr, Low, DontCare) reg_s
+    (reg_s', t') = register_bank (addr, Low, dontcare) reg_s
     z' = alu op t' t
     s' = (reg_s', t', z')
 
