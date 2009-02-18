@@ -20,7 +20,7 @@ type SignalMap = HsValueMap SignalId
 type StateId = Int
 
 -- | How is a given (single) value in a function's type (ie, argument or
--- return value) used?
+--   return value) used?
 data HsValueUse = 
   Port           -- ^ Use it as a port (input or output)
   | State StateId -- ^ Use it as state (input or output). The int is used to
