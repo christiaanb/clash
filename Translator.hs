@@ -1,5 +1,5 @@
 module Translator where
-import GHC
+import GHC hiding (loadModule)
 import CoreSyn
 import qualified CoreUtils
 import qualified Var
@@ -13,6 +13,7 @@ import Name
 import qualified Data.Map as Map
 import Data.Generics
 import NameEnv ( lookupNameEnv )
+import qualified HscTypes
 import HscTypes ( cm_binds, cm_types )
 import MonadUtils ( liftIO )
 import Outputable ( showSDoc, ppr )
@@ -40,28 +41,27 @@ import FlattenTypes
 import VHDLTypes
 import qualified VHDL
 
-main = 
-    do
-      defaultErrorHandler defaultDynFlags $ do
-        runGhc (Just libdir) $ do
-          dflags <- getSessionDynFlags
-          setSessionDynFlags dflags
-          --target <- guessTarget "adder.hs" Nothing
-          --liftIO (print (showSDoc (ppr (target))))
-          --liftIO $ printTarget target
-          --setTargets [target]
-          --load LoadAllTargets
-          --core <- GHC.compileToCoreSimplified "Adders.hs"
-          core <- GHC.compileToCoreSimplified "Adders.hs"
-          --liftIO $ printBinds (cm_binds core)
-          let binds = Maybe.mapMaybe (findBind (cm_binds core)) ["sfull_adder"]
-          liftIO $ putStr $ prettyShow binds
-          -- Turn bind into VHDL
-          let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)
-          liftIO $ putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
-          liftIO $ ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl "../vhdl/vhdl/output.vhdl"
-          liftIO $ putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
-          return ()
+main = do
+  -- Load the module
+  core <- loadModule "Adders.hs"
+  -- Translate to VHDL
+  vhdl <- moduleToVHDL core ["sfull_adder"]
+  -- Write VHDL to file
+  writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
+
+-- | Translate the binds with the given names from the given core module to
+--   VHDL
+moduleToVHDL :: HscTypes.CoreModule -> [String] -> IO AST.DesignFile
+moduleToVHDL core names = do
+  --liftIO $ putStr $ prettyShow (cm_binds core)
+  let binds = findBinds core names
+  --putStr $ prettyShow binds
+  -- Turn bind into VHDL
+  let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)
+  putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
+  putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
+  return vhdl
+
   where
     -- Turns the given bind into VHDL
     mkVHDL binds = do
@@ -74,6 +74,31 @@ main =
       modFuncs VHDL.createArchitecture
       VHDL.getDesignFile
 
+-- | Write the given design file to the given file
+writeVHDL :: AST.DesignFile -> String -> IO ()
+writeVHDL = ForSyDe.Backend.VHDL.FileIO.writeDesignFile
+
+-- | Loads the given file and turns it into a core module.
+loadModule :: String -> IO HscTypes.CoreModule
+loadModule filename =
+  defaultErrorHandler defaultDynFlags $ do
+    runGhc (Just libdir) $ do
+      dflags <- getSessionDynFlags
+      setSessionDynFlags dflags
+      --target <- guessTarget "adder.hs" Nothing
+      --liftIO (print (showSDoc (ppr (target))))
+      --liftIO $ printTarget target
+      --setTargets [target]
+      --load LoadAllTargets
+      --core <- GHC.compileToCoreSimplified "Adders.hs"
+      core <- GHC.compileToCoreSimplified filename
+      return core
+
+-- | Extracts the named binds from the given module.
+findBinds :: HscTypes.CoreModule -> [String] -> [CoreBind]
+findBinds core names = Maybe.mapMaybe (findBind (cm_binds core)) names
+
+-- | Extract a named bind from the given list of binds
 findBind :: [CoreBind] -> String -> Maybe CoreBind
 findBind binds lookfor =
   -- This ignores Recs and compares the name of the bind with lookfor,
