@@ -60,6 +60,7 @@ listBind filename name = do
   let binds = findBinds core [name]
   putStr "\n"
   putStr $ prettyShow binds
+  putStr $ showSDoc $ ppr binds
   putStr "\n\n"
 
 -- | Translate the binds with the given names from the given core module to
