@@ -138,7 +138,8 @@ isInternalSigUse _ = False
 data SignalInfo = SignalInfo {
   sigName :: Maybe String,
   sigUse  :: SigUse,
-  sigTy   :: Type.Type
+  sigTy   :: Type.Type,
+  nameHints :: [String]
 }
 
 -- | A flattened function
@@ -183,9 +184,17 @@ genSignalId :: SigUse -> Type.Type -> FlattenState SignalId
 genSignalId use ty = do
   (defs, sigs, n) <- State.get
   -- Generate a new numbered but unnamed signal
-  let s = (n, SignalInfo Nothing use ty)
+  let s = (n, SignalInfo Nothing use ty [])
   State.put (defs, s:sigs, n+1)
   return n
+
+-- | Add a name hint to the given signal
+addNameHint :: SignalId -> String -> FlattenState ()
+addNameHint id hint = do
+  info <- getSignalInfo id
+  let hints = nameHints info
+  let hints' = (hint:hints)
+  setSignalInfo id (info {nameHints = hints'})
 
 -- | Returns the SignalInfo for the given signal. Errors if the signal is not
 --   known in the session.

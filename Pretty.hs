@@ -79,7 +79,7 @@ instance Pretty SignalExpr where
     parens $ pPrint a <> text " = " <> pPrint b
 
 instance Pretty SignalInfo where
-  pPrint (SignalInfo name use ty) =
+  pPrint (SignalInfo name use ty hints) =
     text ":" <> (pPrint use) <> (ppname name)
     where
       ppname Nothing = empty
