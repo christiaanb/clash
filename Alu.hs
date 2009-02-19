@@ -51,6 +51,10 @@ alu :: AluOp -> Bit -> Bit -> Bit
 alu High a b = a `hwand` b
 alu Low a b = a `hwor` b
 
+salu :: AluOp -> Bit -> Bit -> () -> ((), Bit)
+salu High a b s = (s, a `hwand` b)
+salu Low a b s = (s, a `hwor` b)
+
 type ExecState = (RegisterBankState, Bit, Bit)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, ())
 
