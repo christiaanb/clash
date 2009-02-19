@@ -227,7 +227,9 @@ nameFlatFunction hsfunc fdata =
   where
     nameSignal :: (SignalId, SignalInfo) -> (SignalId, SignalInfo)
     nameSignal (id, info) =
-      let name = "sig_" ++ (show id) in
+      let hints = nameHints info in
+      let parts = ("sig" : hints) ++ [show id] in
+      let name = concat $ List.intersperse "_" parts in
       (id, info {sigName = Just name})
 
 -- | Splits a tuple type into a list of element types, or Nothing if the type
