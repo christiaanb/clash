@@ -51,8 +51,17 @@ instance Pretty FlatFunction where
 instance Pretty SigDef where
   pPrint (FApp func args res) =
     pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
-  pPrint (CondDef _ _ _ _) = text "TODO"
-  pPrint (UncondDef src dst) = text "TODO"
+  pPrint (CondDef cond true false res) = 
+    pPrint cond <> text " ? " <> pPrint true <> text " : " <> pPrint false <> text " -> " <> pPrint res
+  pPrint (UncondDef src dst) =
+    ppsrc src <> text " -> " <> pPrint dst
+    where
+      ppsrc (Left id) = pPrint id
+      ppsrc (Right expr) = pPrint expr
+
+instance Pretty SignalExpr where
+  pPrint (EqLit id lit) =
+    parens $ pPrint id <> text " = " <> text lit
 
 instance Pretty SignalInfo where
   pPrint (SignalInfo name use ty) =

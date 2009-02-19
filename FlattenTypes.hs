@@ -92,9 +92,14 @@ data SigDef =
   }
   -- | Unconditional signal definition
   | UncondDef {
-    defSrc :: SignalId,
+    defSrc :: Either SignalId SignalExpr,
     defDst :: SignalId
   } deriving (Show, Eq)
+
+-- | An expression on signals
+data SignalExpr = 
+  EqLit SignalId String -- ^ Is the given signal equal to the given (VHDL) literal
+  deriving (Show, Eq)
 
 -- Returns the function used by the given SigDef, if any
 usedHsFunc :: SigDef -> Maybe HsFunction
@@ -150,6 +155,10 @@ signalInfo sigs id = Maybe.fromJust $ lookup id sigs
 -- | A list of binds in effect at a particular point of evaluation
 type BindMap = [(
   CoreBndr,            -- ^ The bind name
+  BindValue            -- ^ The value bound to it
+  )]
+
+type BindValue =
   Either               -- ^ The bind value which is either
     (SignalMap)
                        -- ^ a signal
@@ -157,7 +166,6 @@ type BindMap = [(
       HsValueUse,      -- ^ or a HighOrder function
       [SignalId]       -- ^ With these signals already applied to it
     )
-  )]
 
 -- | The state during the flattening of a single function
 type FlattenState = State.State ([SigDef], [(SignalId, SignalInfo)], SignalId)

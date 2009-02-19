@@ -43,9 +43,9 @@ import qualified VHDL
 
 main = do
   -- Load the module
-  core <- loadModule "Adders.hs"
+  core <- loadModule "Alu.hs"
   -- Translate to VHDL
-  vhdl <- moduleToVHDL core ["shifter"]
+  vhdl <- moduleToVHDL core ["salu"]
   -- Write VHDL to file
   writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
 

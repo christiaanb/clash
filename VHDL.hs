@@ -8,6 +8,7 @@ import qualified Maybe
 import qualified Control.Monad as Monad
 
 import qualified Type
+import qualified TysWiredIn
 import qualified Name
 import qualified TyCon
 import Outputable ( showSDoc, ppr )
@@ -193,12 +194,34 @@ mkConcSm sigs (FApp hsfunc args res) = do
   return $ AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 mkConcSm sigs (UncondDef src dst) = do
-  let src_name  = AST.NSimple (getSignalId $ signalInfo sigs src)
-  let src_expr  = AST.PrimName src_name
+  let src_expr  = vhdl_expr src
   let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
   let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
   let assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
   return $ AST.CSSASm assign
+  where
+    vhdl_expr (Left id) = mkIdExpr sigs id
+    vhdl_expr (Right expr) =
+      case expr of
+        (EqLit id lit) ->
+          (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
+
+mkConcSm sigs (CondDef cond true false dst) = do
+  let cond_expr  = mkIdExpr sigs cond
+  let true_expr  = mkIdExpr sigs true
+  let false_expr  = mkIdExpr sigs false
+  let false_wform = AST.Wform [AST.WformElem false_expr Nothing]
+  let true_wform = AST.Wform [AST.WformElem true_expr Nothing]
+  let whenelse = AST.WhenElse true_wform cond_expr
+  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
+  let assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
+  return $ AST.CSSASm assign
+
+-- | Turn a SignalId into a VHDL Expr
+mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
+mkIdExpr sigs id =
+  let src_name  = AST.NSimple (getSignalId $ signalInfo sigs id) in
+  AST.PrimName src_name
 
 mkAssocElems :: 
   [(SignalId, SignalInfo)]      -- | The signals in the current architecture
@@ -267,6 +290,10 @@ getLibraryUnits (hsfunc, fdata) =
 bit_ty :: AST.TypeMark
 bit_ty = AST.unsafeVHDLBasicId "Bit"
 
+-- | The VHDL Boolean type
+bool_ty :: AST.TypeMark
+bool_ty = AST.unsafeVHDLBasicId "Boolean"
+
 -- | The VHDL std_logic
 std_logic_ty :: AST.TypeMark
 std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
@@ -280,14 +307,18 @@ vhdl_ty ty = Maybe.fromMaybe
 -- Translate a Haskell type to a VHDL type
 vhdl_ty_maybe :: Type.Type -> Maybe AST.TypeMark
 vhdl_ty_maybe ty =
-  case Type.splitTyConApp_maybe ty of
-    Just (tycon, args) ->
-      let name = TyCon.tyConName tycon in
-        -- TODO: Do something more robust than string matching
-        case Name.getOccString name of
-          "Bit"      -> Just bit_ty
-          otherwise  -> Nothing
-    otherwise -> Nothing
+  if Type.coreEqType ty TysWiredIn.boolTy
+    then
+      Just bool_ty
+    else
+      case Type.splitTyConApp_maybe ty of
+        Just (tycon, args) ->
+          let name = TyCon.tyConName tycon in
+            -- TODO: Do something more robust than string matching
+            case Name.getOccString name of
+              "Bit"      -> Just bit_ty
+              otherwise  -> Nothing
+        otherwise -> Nothing
 
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId

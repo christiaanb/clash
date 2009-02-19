@@ -7,7 +7,9 @@ import qualified Name
 import qualified Maybe
 import qualified Control.Arrow as Arrow
 import qualified DataCon
+import qualified TyCon
 import qualified CoreUtils
+import qualified TysWiredIn
 import qualified Data.Traversable as Traversable
 import qualified Data.Foldable as Foldable
 import Control.Applicative
@@ -104,18 +106,24 @@ hsUseToSigUse f (id, use) = do
   setSignalInfo id' (info { sigUse = f use})
   return id'
 
--- | Duplicate the given signal, assigning its value to the new signal.
---   Returns the new signal id.
-duplicateSignal :: SignalId -> FlattenState SignalId
-duplicateSignal id = do
+-- | Creates a new internal signal with the same type as the given signal
+copySignal :: SignalId -> FlattenState SignalId
+copySignal id = do
   -- Find the type of the original signal
   info <- getSignalInfo id
   let ty = sigTy info
   -- Generate a new signal (which is SigInternal for now, that will be
   -- sorted out later on).
-  id' <- genSignalId SigInternal ty
+  genSignalId SigInternal ty
+
+-- | Duplicate the given signal, assigning its value to the new signal.
+--   Returns the new signal id.
+duplicateSignal :: SignalId -> FlattenState SignalId
+duplicateSignal id = do
+  -- Create a new signal
+  id' <- copySignal id
   -- Assign the old signal to the new signal
-  addDef $ UncondDef id id'
+  addDef $ UncondDef (Left id) id'
   -- Replace the signal with the new signal
   return id'
         
@@ -204,36 +212,98 @@ flattenExpr binds l@(Let (Rec _) _) = error $ "Recursive let definitions not sup
 
 flattenExpr binds expr@(Case (Var v) b _ alts) =
   case alts of
-    [alt] -> flattenSingleAltCaseExpr binds v b alt
-    otherwise -> error $ "Multiple alternative case expression not supported: " ++ (showSDoc $ ppr expr)
+    [alt] -> flattenSingleAltCaseExpr binds var b alt
+    otherwise -> flattenMultipleAltCaseExpr binds var b alts
   where
+    var = Maybe.fromMaybe 
+      (error $ "Case expression uses unknown scrutinee " ++ Name.getOccString v)
+      (lookup v binds)
+
     flattenSingleAltCaseExpr ::
       BindMap
                                 -- A list of bindings in effect
-      -> Var.Var                -- The scrutinee
+      -> BindValue              -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> CoreAlt                -- The single alternative
-      -> FlattenState ( [SignalMap], SignalMap)
-                                           -- See expandExpr
-    flattenSingleAltCaseExpr binds v b alt@(DataAlt datacon, bind_vars, expr) =
-      if not (DataCon.isTupleCon datacon) 
+      -> FlattenState ( [SignalMap], SignalMap) -- See expandExpr
+
+    flattenSingleAltCaseExpr binds var b alt@(DataAlt datacon, bind_vars, expr) =
+      if DataCon.isTupleCon datacon
         then
-          error $ "Dataconstructors other than tuple constructors not supported in case pattern of alternative: " ++ (showSDoc $ ppr alt)
-        else
           let
-            -- Lookup the scrutinee (which must be a variable bound to a tuple) in
+            -- Unpack the scrutinee (which must be a variable bound to a tuple) in
             -- the existing bindings list and get the portname map for each of
             -- it's elements.
-            Left (Tuple tuple_sigs) = Maybe.fromMaybe 
-              (error $ "Case expression uses unknown scrutinee " ++ Name.getOccString v)
-              (lookup v binds)
+            Left (Tuple tuple_sigs) = var
             -- TODO include b in the binds list
             -- Merge our existing binds with the new binds.
             binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
           in
             -- Expand the expression with the new binds list
             flattenExpr binds' expr
+        else
+          if null bind_vars
+            then
+              -- DataAlts without arguments don't need processing
+              -- (flattenMultipleAltCaseExpr will have done this already).
+              flattenExpr binds expr
+            else
+              error $ "Dataconstructors other than tuple constructors cannot have binder arguments in case pattern of alternative: " ++ (showSDoc $ ppr alt)
     flattenSingleAltCaseExpr _ _ _ alt = error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr alt)
+
+    flattenMultipleAltCaseExpr ::
+      BindMap
+                                -- A list of bindings in effect
+      -> BindValue              -- The scrutinee
+      -> CoreBndr               -- The binder to bind the scrutinee to
+      -> [CoreAlt]              -- The alternatives
+      -> FlattenState ( [SignalMap], SignalMap) -- See expandExpr
+
+    flattenMultipleAltCaseExpr binds var b (a:a':alts) = do
+      (args, res) <- flattenSingleAltCaseExpr binds var b a
+      (args', res') <- flattenMultipleAltCaseExpr binds var b (a':alts)
+      case a of
+        (DataAlt datacon, bind_vars, expr) -> do
+          let tycon = DataCon.dataConTyCon datacon
+          let tyname = TyCon.tyConName tycon
+          case Name.getOccString tyname of
+            -- TODO: Do something more robust than string matching
+            "Bit"      -> do
+              -- The scrutinee must be a single signal
+              let Left (Single sig) = var
+              let dcname = DataCon.dataConName datacon
+              let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
+              -- Create a signal that contains a boolean
+              boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
+              let expr = EqLit sig lit
+              addDef (UncondDef (Right expr) boolsigid)
+              -- Create conditional assignments of either args/res or
+              -- args'/res based on boolsigid, and return the result.
+              our_args <- zipWithM (mkConditionals boolsigid) args args'
+              our_res  <- mkConditionals boolsigid res res'
+              return (our_args, our_res)
+            otherwise ->
+              error $ "Type " ++ (Name.getOccString tyname) ++ " not supported in multiple alternative case expressions."
+        otherwise ->
+          error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr a)
+      where
+        -- Select either the first or second signal map depending on the value
+        -- of the first argument (True == first map, False == second map)
+        mkConditionals :: SignalId -> SignalMap -> SignalMap -> FlattenState SignalMap
+        mkConditionals boolsigid true false = do
+          let zipped = zipValueMaps true false
+          Traversable.mapM (mkConditional boolsigid) zipped
+
+        mkConditional :: SignalId -> (SignalId, SignalId) -> FlattenState SignalId
+        mkConditional boolsigid (true, false) = do
+          -- Create a new signal (true and false should be identically typed,
+          -- so it doesn't matter which one we copy).
+          res <- copySignal true
+          addDef (CondDef boolsigid true false res)
+          return res
+
+    flattenMultipleAltCaseExpr binds var b (a:alts) =
+      flattenSingleAltCaseExpr binds var b a
 
 
       
