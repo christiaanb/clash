@@ -47,7 +47,7 @@ instance Pretty FlatFunction where
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
     $+$ (text "Defs: ") $$ nest 10 (ppdefs defs)
-    $+$ text "Signals: " $$ nest 10 (printList ppsig sigs)
+    $+$ text "Signals: " $$ nest 10 (ppsigs sigs)
     where
       ppsig (id, info) = pPrint id <> pPrint info
       ppdefs defs = vcat (map pPrint sorted)
@@ -57,6 +57,9 @@ instance Pretty FlatFunction where
           sigDefDst (FApp _ _ dst) = head $ Foldable.toList dst
           sigDefDst (CondDef _ _ _ dst) = dst
           sigDefDst (UncondDef _ dst) = dst
+      ppsigs sigs = vcat (map pPrint sorted)
+        where
+          sorted = List.sortBy (\a b -> compare (fst a) (fst b)) sigs
 
 
 instance Pretty SigDef where
