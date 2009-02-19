@@ -42,10 +42,14 @@ import VHDLTypes
 import qualified VHDL
 
 main = do
+  makeVHDL "Alu.hs" "salu"
+
+makeVHDL :: String -> String -> IO ()
+makeVHDL filename name = do
   -- Load the module
-  core <- loadModule "Alu.hs"
+  core <- loadModule filename
   -- Translate to VHDL
-  vhdl <- moduleToVHDL core ["salu"]
+  vhdl <- moduleToVHDL core [name]
   -- Write VHDL to file
   writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
 
