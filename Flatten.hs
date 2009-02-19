@@ -1,6 +1,6 @@
 module Flatten where
 import CoreSyn
-import Control.Monad
+import qualified Control.Monad as Monad
 import qualified Var
 import qualified Type
 import qualified Name
@@ -138,6 +138,9 @@ flattenExpr binds lam@(Lam b expr) = do
   let (arg_ty, _) = Type.splitFunTy (CoreUtils.exprType lam)
   -- Create signal names for the binder
   defs <- genSignals arg_ty
+  -- Add name hints to the generated signals
+  let binder_name = Name.getOccString b
+  Traversable.mapM (addNameHint binder_name) defs
   let binds' = (b, Left defs):binds
   (args, res) <- flattenExpr binds' expr
   return (defs : args, res)
@@ -156,9 +159,11 @@ flattenExpr binds var@(Var id) =
     IdInfo.DataConWorkId datacon -> do
       lit <- dataConToLiteral datacon
       let ty = CoreUtils.exprType var
-      id <- genSignalId SigInternal ty
-      addDef (UncondDef (Right $ Literal lit) id)
-      return ([], Single id)
+      sig_id <- genSignalId SigInternal ty
+      -- Add a name hint to the signal
+      addNameHint (Name.getOccString id) sig_id
+      addDef (UncondDef (Right $ Literal lit) sig_id)
+      return ([], Single sig_id)
     otherwise ->
       error $ "Ids other than local vars and dataconstructors not supported: " ++ (showSDoc $ ppr id)
 
@@ -184,6 +189,8 @@ flattenExpr binds app@(App _ _) = do
         let (argtys, resty) = Type.splitFunTys $ CoreUtils.exprType app
         args <- mapM genSignals argtys
         res <- genSignals resty
+        mapM (Traversable.mapM (addNameHint "NC")) args
+        Traversable.mapM (addNameHint "NC") res
         return (args, res)
       else if fname == "==" then do
         -- Flatten the last two arguments (this skips the type arguments)
@@ -203,6 +210,8 @@ flattenExpr binds app@(App _ _) = do
     mkEqComparison (a, b) = do
       -- Generate a signal to hold our result
       res <- genSignalId SigInternal TysWiredIn.boolTy
+      -- Add a name hint to the signal
+      addNameHint ("s" ++ show a ++ "_eq_s" ++ show b) res
       addDef (UncondDef (Right $ Eq a b) res)
       return res
 
@@ -224,6 +233,9 @@ flattenExpr binds app@(App _ _) = do
       let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
       -- Generate signals for our result
       res <- genSignals ty
+      -- Add name hints to the generated signals
+      let resname = Name.getOccString f ++ "_res"
+      Traversable.mapM (addNameHint resname) res
       -- Create the function application
       let app = FApp {
         appFunc = func,
@@ -246,8 +258,11 @@ flattenExpr binds l@(Let (NonRec b bexpr) expr) = do
   if not (null b_args)
     then
       error $ "Higher order functions not supported in let expression: " ++ (showSDoc $ ppr l)
-    else
-      let binds' = (b, Left b_res) : binds in
+    else do
+      let binds' = (b, Left b_res) : binds
+      -- Add name hints to the generated signals
+      let binder_name = Name.getOccString b
+      Traversable.mapM (addNameHint binder_name) b_res
       flattenExpr binds' expr
 
 flattenExpr binds l@(Let (Rec _) _) = error $ "Recursive let definitions not supported: " ++ (showSDoc $ ppr l)
@@ -272,17 +287,18 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
 
     flattenSingleAltCaseExpr binds scrut b alt@(DataAlt datacon, bind_vars, expr) =
       if DataCon.isTupleCon datacon
-        then
-          let
-            -- Unpack the scrutinee (which must be a variable bound to a tuple) in
-            -- the existing bindings list and get the portname map for each of
-            -- it's elements.
-            Tuple tuple_sigs = scrut
-            -- Merge our existing binds with the new binds.
-            binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
-          in
-            -- Expand the expression with the new binds list
-            flattenExpr binds' expr
+        then do
+          -- Unpack the scrutinee (which must be a variable bound to a tuple) in
+          -- the existing bindings list and get the portname map for each of
+          -- it's elements.
+          let Tuple tuple_sigs = scrut
+          -- Add name hints to the returned signals
+          let binder_name = Name.getOccString b
+          Monad.zipWithM (\name  sigs -> Traversable.mapM (addNameHint $ Name.getOccString name) sigs) bind_vars tuple_sigs
+          -- Merge our existing binds with the new binds.
+          let binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
+          -- Expand the expression with the new binds list
+          flattenExpr binds' expr
         else
           if null bind_vars
             then
@@ -320,11 +336,13 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
               let Single sig = scrut
               -- Create a signal that contains a boolean
               boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
+              addNameHint ("s" ++ show sig ++ "_eq_" ++ lit) boolsigid
               let expr = EqLit sig lit
               addDef (UncondDef (Right expr) boolsigid)
               -- Create conditional assignments of either args/res or
               -- args'/res based on boolsigid, and return the result.
-              our_args <- zipWithM (mkConditionals boolsigid) args args'
+              -- TODO: It seems this adds the name hint twice?
+              our_args <- Monad.zipWithM (mkConditionals boolsigid) args args'
               our_res  <- mkConditionals boolsigid res res'
               return (our_args, our_res)
         otherwise ->

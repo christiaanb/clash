@@ -189,8 +189,8 @@ genSignalId use ty = do
   return n
 
 -- | Add a name hint to the given signal
-addNameHint :: SignalId -> String -> FlattenState ()
-addNameHint id hint = do
+addNameHint :: String -> SignalId -> FlattenState ()
+addNameHint hint id = do
   info <- getSignalInfo id
   let hints = nameHints info
   let hints' = (hint:hints)
