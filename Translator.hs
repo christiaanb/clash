@@ -1,5 +1,5 @@
 module Translator where
-import GHC hiding (loadModule)
+import GHC hiding (loadModule, sigName)
 import CoreSyn
 import qualified CoreUtils
 import qualified Var
@@ -221,9 +221,14 @@ nameFlatFunction hsfunc fdata =
     -- Name the signals in all other functions
     Just flatfunc ->
       let s = flat_sigs flatfunc in
-      let s' = map (\(id, (SignalInfo Nothing use ty hints)) -> (id, SignalInfo (Just $ "sig_" ++ (show id)) use ty hints)) s in
+      let s' = map nameSignal s in
       let flatfunc' = flatfunc { flat_sigs = s' } in
       setFlatFunc hsfunc flatfunc'
+  where
+    nameSignal :: (SignalId, SignalInfo) -> (SignalId, SignalInfo)
+    nameSignal (id, info) =
+      let name = "sig_" ++ (show id) in
+      (id, info {sigName = Just name})
 
 -- | Splits a tuple type into a list of element types, or Nothing if the type
 --   is not a tuple type.
