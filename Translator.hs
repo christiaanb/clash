@@ -51,7 +51,8 @@ makeVHDL filename name = do
   -- Translate to VHDL
   vhdl <- moduleToVHDL core [name]
   -- Write VHDL to file
-  writeVHDL vhdl "../vhdl/vhdl/output.vhdl"
+  mapM (writeVHDL "../vhdl/vhdl/") vhdl
+  return ()
 
 -- | Show the core structure of the given binds in the given file.
 listBind :: String -> String -> IO ()
@@ -65,14 +66,14 @@ listBind filename name = do
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL
-moduleToVHDL :: HscTypes.CoreModule -> [String] -> IO AST.DesignFile
+moduleToVHDL :: HscTypes.CoreModule -> [String] -> IO [AST.DesignFile]
 moduleToVHDL core names = do
   --liftIO $ putStr $ prettyShow (cm_binds core)
   let binds = findBinds core names
   --putStr $ prettyShow binds
   -- Turn bind into VHDL
   let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)
-  putStr $ render $ ForSyDe.Backend.Ppr.ppr vhdl
+  mapM (putStr . render . ForSyDe.Backend.Ppr.ppr) vhdl
   putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
 
@@ -86,11 +87,17 @@ moduleToVHDL core names = do
       modFuncs nameFlatFunction
       modFuncs VHDL.createEntity
       modFuncs VHDL.createArchitecture
-      VHDL.getDesignFile
+      VHDL.getDesignFiles
 
--- | Write the given design file to the given file
-writeVHDL :: AST.DesignFile -> String -> IO ()
-writeVHDL = ForSyDe.Backend.VHDL.FileIO.writeDesignFile
+-- | Write the given design file to a file inside the given dir
+--   The first library unit in the designfile must be an entity, whose name
+--   will be used as a filename.
+writeVHDL :: String -> AST.DesignFile -> IO ()
+writeVHDL dir vhdl = do
+  let AST.DesignFile _ (u:us) = vhdl
+  let AST.LUEntity (AST.EntityDec id _) = u
+  let fname = dir ++ AST.fromVHDLId id ++ ".vhdl"
+  ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl fname
 
 -- | Loads the given file and turns it into a core module.
 loadModule :: String -> IO HscTypes.CoreModule

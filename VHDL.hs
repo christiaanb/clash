@@ -21,18 +21,16 @@ import FlattenTypes
 import TranslatorTypes
 import Pretty
 
-getDesignFile :: VHDLState AST.DesignFile
-getDesignFile = do
+getDesignFiles :: VHDLState [AST.DesignFile]
+getDesignFiles = do
   -- Extract the library units generated from all the functions in the
   -- session.
   funcs <- getFuncs
-  let units = concat $ map getLibraryUnits funcs
+  let units = Maybe.mapMaybe getLibraryUnits funcs
   let context = [
         AST.Library $ mkVHDLId "IEEE",
         AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
-  return $ AST.DesignFile 
-    context
-    units
+  return $ map (\(ent, arch) -> AST.DesignFile context [ent, arch]) units
   
 -- | Create an entity for a given function
 createEntity ::
@@ -277,18 +275,19 @@ getEntityId fdata =
 
 getLibraryUnits ::
   (HsFunction, FuncData)      -- | A function from the session
-  -> [AST.LibraryUnit]        -- | The library units it generates
+  -> Maybe (AST.LibraryUnit, AST.LibraryUnit) -- | The entity and architecture for the function
 
 getLibraryUnits (hsfunc, fdata) =
   case funcEntity fdata of 
-    Nothing -> []
-    Just ent -> case ent_decl ent of
-      Nothing -> []
-      Just decl -> [AST.LUEntity decl]
-  ++
-  case funcArch fdata of
-    Nothing -> []
-    Just arch -> [AST.LUArch arch]
+    Nothing -> Nothing
+    Just ent -> 
+      case ent_decl ent of
+      Nothing -> Nothing
+      Just decl ->
+        case funcArch fdata of
+          Nothing -> Nothing
+          Just arch ->
+            Just (AST.LUEntity decl, AST.LUArch arch)
 
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark
