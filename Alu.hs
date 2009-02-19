@@ -61,11 +61,11 @@ salu High a b s = (s, a `hwand` b)
 salu Low a b s = (s, a `hwor` b)
 
 type ExecState = (RegisterBankState, Bit, Bit)
-exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, ())
+exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, (Bit))
 
 -- Read & Exec
 exec (addr, Low, op) s =
-  (s', ())
+  (s', z')
   where
     (reg_s, t, z) = s
     (reg_s', t') = register_bank (addr, Low, dontcare) reg_s
@@ -74,7 +74,7 @@ exec (addr, Low, op) s =
 
 -- Write
 exec (addr, High, op) s =
-  (s', ())
+  (s', dontcare)
   where
     (reg_s, t, z) = s
     (reg_s', _) = register_bank (addr, High, z) reg_s
