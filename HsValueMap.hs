@@ -57,15 +57,16 @@ mkHsValueMap ty =
 
 -- | Creates a map of pairs from two maps. The maps must have the same
 --   structure.
-zipValueMaps :: HsValueMap a -> HsValueMap b -> HsValueMap (a, b)
+zipValueMaps :: (Show a, Show b) => HsValueMap a -> HsValueMap b -> HsValueMap (a, b)
 zipValueMaps = zipValueMapsWith (\a b -> (a, b))
 
 -- | Creates a map of two maps using the given combination function.
-zipValueMapsWith :: (a -> b -> c) -> HsValueMap a -> HsValueMap b -> HsValueMap c
+zipValueMapsWith :: (Show a, Show b) => (a -> b -> c) -> HsValueMap a -> HsValueMap b -> HsValueMap c
 zipValueMapsWith f (Tuple as) (Tuple bs) =
   Tuple $ zipWith (zipValueMapsWith f) as bs
 zipValueMapsWith f (Single a) (Single b) =
   Single $ f a b
-zipValueMapWith _ _ _ =
-  error $ "Trying to zip unsimilarly formed trees!"
+zipValueMapsWith _ a b =
+  --Tuple []
+  error $ "Trying to zip unsimilarly formed trees!\n" ++ (show a) ++ "\nand\n" ++ (show b)
 
