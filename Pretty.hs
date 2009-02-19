@@ -36,7 +36,7 @@ instance Pretty x => Pretty (HsValueMap x) where
 
 instance Pretty HsValueUse where
   pPrint Port            = char 'P'
-  pPrint (State n)       = char 'C' <> int n
+  pPrint (State n)       = char 'S' <> int n
   pPrint (HighOrder _ _) = text "Higher Order"
 
 instance Pretty FlatFunction where
@@ -62,6 +62,10 @@ instance Pretty SigDef where
 instance Pretty SignalExpr where
   pPrint (EqLit id lit) =
     parens $ pPrint id <> text " = " <> text lit
+  pPrint (Literal lit) =
+    text lit
+  pPrint (Eq a b) =
+    parens $ pPrint a <> text " = " <> pPrint b
 
 instance Pretty SignalInfo where
   pPrint (SignalInfo name use ty) =

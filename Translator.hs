@@ -42,7 +42,7 @@ import VHDLTypes
 import qualified VHDL
 
 main = do
-  makeVHDL "Alu.hs" "salu"
+  makeVHDL "Alu.hs" "register_bank"
 
 makeVHDL :: String -> String -> IO ()
 makeVHDL filename name = do

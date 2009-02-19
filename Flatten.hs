@@ -10,6 +10,7 @@ import qualified DataCon
 import qualified TyCon
 import qualified CoreUtils
 import qualified TysWiredIn
+import qualified IdInfo
 import qualified Data.Traversable as Traversable
 import qualified Data.Foldable as Foldable
 import Control.Applicative
@@ -141,14 +142,25 @@ flattenExpr binds lam@(Lam b expr) = do
   (args, res) <- flattenExpr binds' expr
   return (defs : args, res)
 
-flattenExpr binds (Var id) =
-  case bind of
-    Left sig_use -> return ([], sig_use)
-    Right _ -> error "Higher order functions not supported."
-  where
-    bind = Maybe.fromMaybe
-      (error $ "Argument " ++ Name.getOccString id ++ " is unknown")
-      (lookup id binds)
+flattenExpr binds var@(Var id) =
+  case Var.globalIdVarDetails id of
+    IdInfo.NotGlobalId ->
+      let 
+        bind = Maybe.fromMaybe
+          (error $ "Local value " ++ Name.getOccString id ++ " is unknown")
+          (lookup id binds) 
+      in
+        case bind of
+          Left sig_use -> return ([], sig_use)
+          Right _ -> error "Higher order functions not supported."
+    IdInfo.DataConWorkId datacon -> do
+      lit <- dataConToLiteral datacon
+      let ty = CoreUtils.exprType var
+      id <- genSignalId SigInternal ty
+      addDef (UncondDef (Right $ Literal lit) id)
+      return ([], Single id)
+    otherwise ->
+      error $ "Ids other than local vars and dataconstructors not supported: " ++ (showSDoc $ ppr id)
 
 flattenExpr binds app@(App _ _) = do
   -- Is this a data constructor application?
@@ -162,8 +174,38 @@ flattenExpr binds app@(App _ _) = do
     otherwise ->
       -- Normal function application
       let ((Var f), args) = collectArgs app in
-      flattenApplicationExpr binds (CoreUtils.exprType app) f args
+      let fname = Name.getOccString f in
+      if fname == "fst" || fname == "snd" then do
+        (args', Tuple [a, b]) <- flattenExpr binds (last args)
+        return (args', if fname == "fst" then a else b)
+      else if fname == "patError" then do
+        -- This is essentially don't care, since the program will error out
+        -- here. We'll just define undriven signals here.
+        let (argtys, resty) = Type.splitFunTys $ CoreUtils.exprType app
+        args <- mapM genSignals argtys
+        res <- genSignals resty
+        return (args, res)
+      else if fname == "==" then do
+        -- Flatten the last two arguments (this skips the type arguments)
+        ([], a) <- flattenExpr binds (last $ init args)
+        ([], b) <- flattenExpr binds (last args)
+        res <- mkEqComparisons a b
+        return ([], res)
+      else
+        flattenApplicationExpr binds (CoreUtils.exprType app) f args
   where
+    mkEqComparisons :: SignalMap -> SignalMap -> FlattenState SignalMap
+    mkEqComparisons a b = do
+      let zipped = zipValueMaps a b
+      Traversable.mapM mkEqComparison zipped
+
+    mkEqComparison :: (SignalId, SignalId) -> FlattenState SignalId
+    mkEqComparison (a, b) = do
+      -- Generate a signal to hold our result
+      res <- genSignalId SigInternal TysWiredIn.boolTy
+      addDef (UncondDef (Right $ Eq a b) res)
+      return res
+
     flattenBuildTupleExpr binds args = do
       -- Flatten each of our args
       flat_args <- (State.mapM (flattenExpr binds) args)
@@ -210,31 +252,30 @@ flattenExpr binds l@(Let (NonRec b bexpr) expr) = do
 
 flattenExpr binds l@(Let (Rec _) _) = error $ "Recursive let definitions not supported: " ++ (showSDoc $ ppr l)
 
-flattenExpr binds expr@(Case (Var v) b _ alts) =
+flattenExpr binds expr@(Case scrut b _ alts) = do
+  -- TODO: Special casing for higher order functions
+  -- Flatten the scrutinee
+  (_, res) <- flattenExpr binds scrut
   case alts of
-    [alt] -> flattenSingleAltCaseExpr binds var b alt
-    otherwise -> flattenMultipleAltCaseExpr binds var b alts
+    [alt] -> flattenSingleAltCaseExpr binds res b alt
+    otherwise -> flattenMultipleAltCaseExpr binds res b alts
   where
-    var = Maybe.fromMaybe 
-      (error $ "Case expression uses unknown scrutinee " ++ Name.getOccString v)
-      (lookup v binds)
-
     flattenSingleAltCaseExpr ::
       BindMap
                                 -- A list of bindings in effect
-      -> BindValue              -- The scrutinee
+      -> SignalMap              -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> CoreAlt                -- The single alternative
       -> FlattenState ( [SignalMap], SignalMap) -- See expandExpr
 
-    flattenSingleAltCaseExpr binds var b alt@(DataAlt datacon, bind_vars, expr) =
+    flattenSingleAltCaseExpr binds scrut b alt@(DataAlt datacon, bind_vars, expr) =
       if DataCon.isTupleCon datacon
         then
           let
             -- Unpack the scrutinee (which must be a variable bound to a tuple) in
             -- the existing bindings list and get the portname map for each of
             -- it's elements.
-            Left (Tuple tuple_sigs) = var
+            Tuple tuple_sigs = scrut
             -- TODO include b in the binds list
             -- Merge our existing binds with the new binds.
             binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
@@ -254,36 +295,28 @@ flattenExpr binds expr@(Case (Var v) b _ alts) =
     flattenMultipleAltCaseExpr ::
       BindMap
                                 -- A list of bindings in effect
-      -> BindValue              -- The scrutinee
+      -> SignalMap              -- The scrutinee
       -> CoreBndr               -- The binder to bind the scrutinee to
       -> [CoreAlt]              -- The alternatives
       -> FlattenState ( [SignalMap], SignalMap) -- See expandExpr
 
-    flattenMultipleAltCaseExpr binds var b (a:a':alts) = do
-      (args, res) <- flattenSingleAltCaseExpr binds var b a
-      (args', res') <- flattenMultipleAltCaseExpr binds var b (a':alts)
+    flattenMultipleAltCaseExpr binds scrut b (a:a':alts) = do
+      (args, res) <- flattenSingleAltCaseExpr binds scrut b a
+      (args', res') <- flattenMultipleAltCaseExpr binds scrut b (a':alts)
       case a of
         (DataAlt datacon, bind_vars, expr) -> do
-          let tycon = DataCon.dataConTyCon datacon
-          let tyname = TyCon.tyConName tycon
-          case Name.getOccString tyname of
-            -- TODO: Do something more robust than string matching
-            "Bit"      -> do
-              -- The scrutinee must be a single signal
-              let Left (Single sig) = var
-              let dcname = DataCon.dataConName datacon
-              let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
-              -- Create a signal that contains a boolean
-              boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
-              let expr = EqLit sig lit
-              addDef (UncondDef (Right expr) boolsigid)
-              -- Create conditional assignments of either args/res or
-              -- args'/res based on boolsigid, and return the result.
-              our_args <- zipWithM (mkConditionals boolsigid) args args'
-              our_res  <- mkConditionals boolsigid res res'
-              return (our_args, our_res)
-            otherwise ->
-              error $ "Type " ++ (Name.getOccString tyname) ++ " not supported in multiple alternative case expressions."
+          lit <- dataConToLiteral datacon
+          -- The scrutinee must be a single signal
+          let Single sig = scrut
+          -- Create a signal that contains a boolean
+          boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
+          let expr = EqLit sig lit
+          addDef (UncondDef (Right expr) boolsigid)
+          -- Create conditional assignments of either args/res or
+          -- args'/res based on boolsigid, and return the result.
+          our_args <- zipWithM (mkConditionals boolsigid) args args'
+          our_res  <- mkConditionals boolsigid res res'
+          return (our_args, our_res)
         otherwise ->
           error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr a)
       where
@@ -302,13 +335,30 @@ flattenExpr binds expr@(Case (Var v) b _ alts) =
           addDef (CondDef boolsigid true false res)
           return res
 
-    flattenMultipleAltCaseExpr binds var b (a:alts) =
-      flattenSingleAltCaseExpr binds var b a
+    flattenMultipleAltCaseExpr binds scrut b (a:alts) =
+      flattenSingleAltCaseExpr binds scrut b a
 
+flattenExpr _ expr = do
+  error $ "Unsupported expression: " ++ (showSDoc $ ppr expr)
 
-      
-flattenExpr _ _ = do
-  return ([], Tuple [])
+-- | Translates a dataconstructor without arguments to the corresponding
+--   literal.
+dataConToLiteral :: DataCon.DataCon -> FlattenState String
+dataConToLiteral datacon = do
+  let tycon = DataCon.dataConTyCon datacon
+  let tyname = TyCon.tyConName tycon
+  case Name.getOccString tyname of
+    -- TODO: Do something more robust than string matching
+    "Bit"      -> do
+      let dcname = DataCon.dataConName datacon
+      let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
+      return lit
+    "Bool" -> do
+      let dcname = DataCon.dataConName datacon
+      let lit = case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
+      return lit
+    otherwise ->
+      error $ "Literals of type " ++ (Name.getOccString tyname) ++ " not supported."
 
 appToHsFunction ::
   Type.Type       -- ^ The return type

@@ -205,6 +205,10 @@ mkConcSm sigs (UncondDef src dst) = do
       case expr of
         (EqLit id lit) ->
           (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
+        (Literal lit) ->
+          AST.PrimLit lit
+        (Eq a b) ->
+          (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
 
 mkConcSm sigs (CondDef cond true false dst) = do
   let cond_expr  = mkIdExpr sigs cond

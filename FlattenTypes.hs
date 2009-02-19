@@ -99,6 +99,8 @@ data SigDef =
 -- | An expression on signals
 data SignalExpr = 
   EqLit SignalId String -- ^ Is the given signal equal to the given (VHDL) literal
+  | Literal String -- ^ A literal value
+  | Eq SignalId SignalId -- ^ A comparison between to signals
   deriving (Show, Eq)
 
 -- Returns the function used by the given SigDef, if any
