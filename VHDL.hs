@@ -326,4 +326,8 @@ vhdl_ty_maybe ty =
 
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
-mkVHDLId = AST.unsafeVHDLBasicId
+mkVHDLId s = 
+  AST.unsafeVHDLBasicId s'
+  where
+    -- Strip invalid characters.
+    s' = filter (`elem` ['a'..'z'] ++ ['0'..'9'] ++ ['_']) s
