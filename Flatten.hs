@@ -147,7 +147,7 @@ flattenExpr binds (Var id) =
     Right _ -> error "Higher order functions not supported."
   where
     bind = Maybe.fromMaybe
-      (error $ "Argument " ++ Name.getOccString id ++ "is unknown")
+      (error $ "Argument " ++ Name.getOccString id ++ " is unknown")
       (lookup id binds)
 
 flattenExpr binds app@(App _ _) = do
