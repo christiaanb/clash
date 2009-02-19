@@ -330,4 +330,4 @@ mkVHDLId s =
   AST.unsafeVHDLBasicId s'
   where
     -- Strip invalid characters.
-    s' = filter (`elem` ['a'..'z'] ++ ['0'..'9'] ++ ['_']) s
+    s' = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.") s
