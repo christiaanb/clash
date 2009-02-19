@@ -16,13 +16,14 @@ program = [
             (High, High, dontcare) -- r1 = z (0)
           ]
 
-initial_state = (Regs Low High, Low, Low)
+--initial_state = (Regs Low High, Low, Low)
+initial_state = ((Low, High), Low, Low)
 
 -- Register bank
 
 type RegAddr = Bit
---type RegisterBankState = (Bit, Bit)
-data RegisterBankState = Regs { r0, r1 :: Bit} deriving (Show)
+type RegisterBankState = (Bit, Bit)
+--data RegisterBankState = Regs { r0, r1 :: Bit} deriving (Show)
 
 register_bank :: 
   (RegAddr, Bit, Bit) -> -- (addr, we, d)
@@ -30,18 +31,22 @@ register_bank ::
   (RegisterBankState, Bit) -- (s', o)
 
 register_bank (Low, Low, _) s = -- Read r0
-  (s, r0 s)
+  --(s, r0 s)
+  (s, fst s)
 
 register_bank (High, Low, _) s = -- Read r1
-  (s, r1 s)
+  --(s, r1 s)
+  (s, snd s)
 
 register_bank (addr, High, d) s = -- Write
   (s', dontcare)
   where
-    Regs r0 r1 = s
+    --Regs r0 r1 = s
+    (r0, r1) = s
     r0' = if addr == Low then d else r0
     r1' = if addr == High then d else r1
-    s' = Regs r0' r1'
+    --s' = Regs r0' r1'
+    s' = (r0', r1')
 
 -- ALU
 
