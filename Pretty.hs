@@ -1,6 +1,9 @@
 module Pretty (prettyShow) where
 
 import qualified Data.Map as Map
+import qualified Data.Foldable as Foldable
+import qualified List
+
 import qualified Var
 import qualified CoreSyn
 import qualified TypeRep
@@ -43,10 +46,18 @@ instance Pretty FlatFunction where
   pPrint (FlatFunction args res defs sigs) =
     (text "Args: ") $$ nest 10 (pPrint args)
     $+$ (text "Result: ") $$ nest 10 (pPrint res)
-    $+$ (text "Defs: ") $$ nest 10 (pPrint defs)
+    $+$ (text "Defs: ") $$ nest 10 (ppdefs defs)
     $+$ text "Signals: " $$ nest 10 (printList ppsig sigs)
     where
       ppsig (id, info) = pPrint id <> pPrint info
+      ppdefs defs = vcat (map pPrint sorted)
+        where 
+          -- Roughly sort the entries (inaccurate for Fapps)
+          sorted = List.sortBy (\a b -> compare (sigDefDst a) (sigDefDst b)) defs
+          sigDefDst (FApp _ _ dst) = head $ Foldable.toList dst
+          sigDefDst (CondDef _ _ _ dst) = dst
+          sigDefDst (UncondDef _ dst) = dst
+
 
 instance Pretty SigDef where
   pPrint (FApp func args res) =
