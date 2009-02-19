@@ -5,7 +5,7 @@ import qualified Sim
 main = Sim.simulate exec program initial_state
 mainIO = Sim.simulateIO exec initial_state
 
-dontcare = Low
+dontcare = DontCare
 
 program = [
             -- (addr, we, op)
@@ -43,8 +43,8 @@ register_bank (addr, High, d) s = -- Write
   where
     --Regs r0 r1 = s
     (r0, r1) = s
-    r0' = if addr == Low then d else r0
-    r1' = if addr == High then d else r1
+    r0' = case addr of Low -> d; High -> r0; otherwise -> dontcare
+    r1' = case addr of High -> d; Low -> r1; otherwise -> dontcare
     --s' = Regs r0' r1'
     s' = (r0', r1')
 

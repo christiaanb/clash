@@ -257,8 +257,10 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
   -- Flatten the scrutinee
   (_, res) <- flattenExpr binds scrut
   case alts of
+    -- TODO include b in the binds list
     [alt] -> flattenSingleAltCaseExpr binds res b alt
-    otherwise -> flattenMultipleAltCaseExpr binds res b alts
+    -- Reverse the alternatives, so the __DEFAULT alternative ends up last
+    otherwise -> flattenMultipleAltCaseExpr binds res b (reverse alts)
   where
     flattenSingleAltCaseExpr ::
       BindMap
@@ -276,7 +278,6 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
             -- the existing bindings list and get the portname map for each of
             -- it's elements.
             Tuple tuple_sigs = scrut
-            -- TODO include b in the binds list
             -- Merge our existing binds with the new binds.
             binds' = (zip bind_vars (map Left tuple_sigs)) ++ binds 
           in
@@ -290,6 +291,10 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
               flattenExpr binds expr
             else
               error $ "Dataconstructors other than tuple constructors cannot have binder arguments in case pattern of alternative: " ++ (showSDoc $ ppr alt)
+
+    flattenSingleAltCaseExpr binds _ _ alt@(DEFAULT, [], expr) =
+      flattenExpr binds expr
+      
     flattenSingleAltCaseExpr _ _ _ alt = error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr alt)
 
     flattenMultipleAltCaseExpr ::
@@ -305,18 +310,23 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
       (args', res') <- flattenMultipleAltCaseExpr binds scrut b (a':alts)
       case a of
         (DataAlt datacon, bind_vars, expr) -> do
-          lit <- dataConToLiteral datacon
-          -- The scrutinee must be a single signal
-          let Single sig = scrut
-          -- Create a signal that contains a boolean
-          boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
-          let expr = EqLit sig lit
-          addDef (UncondDef (Right expr) boolsigid)
-          -- Create conditional assignments of either args/res or
-          -- args'/res based on boolsigid, and return the result.
-          our_args <- zipWithM (mkConditionals boolsigid) args args'
-          our_res  <- mkConditionals boolsigid res res'
-          return (our_args, our_res)
+          if isDontCare datacon 
+            then do
+              -- Completely skip the dontcare cases
+              return (args', res')
+            else do
+              lit <- dataConToLiteral datacon
+              -- The scrutinee must be a single signal
+              let Single sig = scrut
+              -- Create a signal that contains a boolean
+              boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
+              let expr = EqLit sig lit
+              addDef (UncondDef (Right expr) boolsigid)
+              -- Create conditional assignments of either args/res or
+              -- args'/res based on boolsigid, and return the result.
+              our_args <- zipWithM (mkConditionals boolsigid) args args'
+              our_res  <- mkConditionals boolsigid res res'
+              return (our_args, our_res)
         otherwise ->
           error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr a)
       where
@@ -341,6 +351,20 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
 flattenExpr _ expr = do
   error $ "Unsupported expression: " ++ (showSDoc $ ppr expr)
 
+-- | Is the given data constructor a dontcare?
+isDontCare :: DataCon.DataCon -> Bool
+isDontCare datacon =
+  case Name.getOccString tyname of
+    -- TODO: Do something more robust than string matching
+    "Bit" ->
+      Name.getOccString dcname  == "DontCare"
+    otherwise ->
+      False
+  where
+    tycon = DataCon.dataConTyCon datacon
+    tyname = TyCon.tyConName tycon
+    dcname = DataCon.dataConName datacon
+
 -- | Translates a dataconstructor without arguments to the corresponding
 --   literal.
 dataConToLiteral :: DataCon.DataCon -> FlattenState String
@@ -351,7 +375,7 @@ dataConToLiteral datacon = do
     -- TODO: Do something more robust than string matching
     "Bit"      -> do
       let dcname = DataCon.dataConName datacon
-      let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
+      let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"; "DontCare" -> "'-'"
       return lit
     "Bool" -> do
       let dcname = DataCon.dataConName datacon

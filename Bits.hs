@@ -38,7 +38,7 @@ displaysig High = "1"
 displaysig Low  = "0"
 
 -- The plain Bit type
-data Bit = High | Low -- | DontCare
+data Bit = High | Low | DontCare
   deriving (Show, Eq, Read)
 
 -- A function to prettyprint a bitvector

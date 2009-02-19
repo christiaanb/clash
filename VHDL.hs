@@ -320,7 +320,7 @@ vhdl_ty_maybe ty =
           let name = TyCon.tyConName tycon in
             -- TODO: Do something more robust than string matching
             case Name.getOccString name of
-              "Bit"      -> Just bit_ty
+              "Bit"      -> Just std_logic_ty
               otherwise  -> Nothing
         otherwise -> Nothing
 
