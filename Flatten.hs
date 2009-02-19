@@ -157,13 +157,18 @@ flattenExpr binds var@(Var id) =
           Left sig_use -> return ([], sig_use)
           Right _ -> error "Higher order functions not supported."
     IdInfo.DataConWorkId datacon -> do
-      lit <- dataConToLiteral datacon
-      let ty = CoreUtils.exprType var
-      sig_id <- genSignalId SigInternal ty
-      -- Add a name hint to the signal
-      addNameHint (Name.getOccString id) sig_id
-      addDef (UncondDef (Right $ Literal lit) sig_id)
-      return ([], Single sig_id)
+      if DataCon.isTupleCon datacon && (null $ DataCon.dataConAllTyVars datacon)
+        then do
+          -- Empty tuple construction
+          return ([], Tuple [])
+        else do
+          lit <- dataConToLiteral datacon
+          let ty = CoreUtils.exprType var
+          sig_id <- genSignalId SigInternal ty
+          -- Add a name hint to the signal
+          addNameHint (Name.getOccString id) sig_id
+          addDef (UncondDef (Right $ Literal lit) sig_id)
+          return ([], Single sig_id)
     otherwise ->
       error $ "Ids other than local vars and dataconstructors not supported: " ++ (showSDoc $ ppr id)
 
