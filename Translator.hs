@@ -61,6 +61,7 @@ listBind filename name = do
   let binds = findBinds core [name]
   putStr "\n"
   putStr $ prettyShow binds
+  putStr "\n\n"
   putStr $ showSDoc $ ppr binds
   putStr "\n\n"
 
