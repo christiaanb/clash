@@ -56,28 +56,16 @@ alu :: AluOp -> Bit -> Bit -> Bit
 alu High a b = a `hwand` b
 alu Low a b = a `hwor` b
 
-salu :: AluOp -> Bit -> Bit -> () -> ((), Bit)
-salu High a b s = (s, a `hwand` b)
-salu Low a b s = (s, a `hwor` b)
-
 type ExecState = (RegisterBankState, Bit, Bit)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, (Bit))
 
 -- Read & Exec
-exec (addr, Low, op) s =
+exec (addr, we, op) s =
   (s', z')
   where
     (reg_s, t, z) = s
-    (reg_s', t') = register_bank (addr, Low, dontcare) reg_s
+    (reg_s', t') = register_bank (addr, we, z) reg_s
     z' = alu op t' t
     s' = (reg_s', t', z')
-
--- Write
-exec (addr, High, op) s =
-  (s', dontcare)
-  where
-    (reg_s, t, z) = s
-    (reg_s', _) = register_bank (addr, High, z) reg_s
-    s' = (reg_s', t, z)
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
