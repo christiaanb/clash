@@ -16,6 +16,10 @@ show_add f = do print ("Sum:   " ++ (displaysigs s)); print ("Carry: " ++ (displ
     b = [Low, Low, Low, High]
     (s, c) = f (a, b)
 
+mux2 :: Bit -> (Bit, Bit) -> Bit
+mux2 Low (a, b) = a
+mux2 High (a, b) = b
+
 -- Not really an adder, but this is nice minimal hardware description
 wire :: Bit -> Bit
 wire a = a
