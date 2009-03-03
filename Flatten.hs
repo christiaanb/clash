@@ -331,25 +331,20 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
       (args', res') <- flattenMultipleAltCaseExpr binds scrut b (a':alts)
       case a of
         (DataAlt datacon, bind_vars, expr) -> do
-          if isDontCare datacon 
-            then do
-              -- Completely skip the dontcare cases
-              return (args', res')
-            else do
-              lit <- dataConToLiteral datacon
-              -- The scrutinee must be a single signal
-              let Single sig = scrut
-              -- Create a signal that contains a boolean
-              boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
-              addNameHint ("s" ++ show sig ++ "_eq_" ++ lit) boolsigid
-              let expr = EqLit sig lit
-              addDef (UncondDef (Right expr) boolsigid)
-              -- Create conditional assignments of either args/res or
-              -- args'/res based on boolsigid, and return the result.
-              -- TODO: It seems this adds the name hint twice?
-              our_args <- Monad.zipWithM (mkConditionals boolsigid) args args'
-              our_res  <- mkConditionals boolsigid res res'
-              return (our_args, our_res)
+          lit <- dataConToLiteral datacon
+          -- The scrutinee must be a single signal
+          let Single sig = scrut
+          -- Create a signal that contains a boolean
+          boolsigid <- genSignalId SigInternal TysWiredIn.boolTy
+          addNameHint ("s" ++ show sig ++ "_eq_" ++ lit) boolsigid
+          let expr = EqLit sig lit
+          addDef (UncondDef (Right expr) boolsigid)
+          -- Create conditional assignments of either args/res or
+          -- args'/res based on boolsigid, and return the result.
+          -- TODO: It seems this adds the name hint twice?
+          our_args <- Monad.zipWithM (mkConditionals boolsigid) args args'
+          our_res  <- mkConditionals boolsigid res res'
+          return (our_args, our_res)
         otherwise ->
           error $ "Case patterns other than data constructors not supported in case alternative: " ++ (showSDoc $ ppr a)
       where
@@ -374,20 +369,6 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
 flattenExpr _ expr = do
   error $ "Unsupported expression: " ++ (showSDoc $ ppr expr)
 
--- | Is the given data constructor a dontcare?
-isDontCare :: DataCon.DataCon -> Bool
-isDontCare datacon =
-  case Name.getOccString tyname of
-    -- TODO: Do something more robust than string matching
-    "Bit" ->
-      Name.getOccString dcname  == "DontCare"
-    otherwise ->
-      False
-  where
-    tycon = DataCon.dataConTyCon datacon
-    tyname = TyCon.tyConName tycon
-    dcname = DataCon.dataConName datacon
-
 -- | Translates a dataconstructor without arguments to the corresponding
 --   literal.
 dataConToLiteral :: DataCon.DataCon -> FlattenState String
@@ -398,7 +379,7 @@ dataConToLiteral datacon = do
     -- TODO: Do something more robust than string matching
     "Bit"      -> do
       let dcname = DataCon.dataConName datacon
-      let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"; "DontCare" -> "'-'"
+      let lit = case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
       return lit
     "Bool" -> do
       let dcname = DataCon.dataConName datacon
