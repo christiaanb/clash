@@ -1,4 +1,8 @@
+-- Needed for the Show deriving for Core types
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Pretty (prettyShow) where
+
 
 import qualified Data.Map as Map
 import qualified Data.Foldable as Foldable
