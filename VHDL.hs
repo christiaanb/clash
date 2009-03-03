@@ -137,11 +137,26 @@ createArchitecture hsfunc fdata =
       let sig_decs = Maybe.catMaybes $ map (mkSigDec . snd) sigs
       -- Create concurrent statements for all signal definitions
       statements <- mapM (mkConcSm sigs) defs
-      let procs = map mkStateProcSm (getOwnStates hsfunc flatfunc)
+      let procs = map mkStateProcSm (makeStatePairs flatfunc)
       let procs' = map AST.CSPSm procs
       let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
       setArchitecture hsfunc arch
 
+-- | Looks up all pairs of old state, new state signals, together with
+--   the state id they represent.
+makeStatePairs :: FlatFunction -> [(StateId, SignalInfo, SignalInfo)]
+makeStatePairs flatfunc =
+  [(Maybe.fromJust $ oldStateId $ sigUse old_info, old_info, new_info) 
+    | old_info <- map snd (flat_sigs flatfunc)
+    , new_info <- map snd (flat_sigs flatfunc)
+	-- old_info must be an old state (and, because of the next equality,
+	-- new_info must be a new state).
+	, Maybe.isJust $ oldStateId $ sigUse old_info
+	-- And the state numbers must match
+    , (oldStateId $ sigUse old_info) == (newStateId $ sigUse new_info)]
+
+    -- Replace the second tuple element with the corresponding SignalInfo
+    --args_states = map (Arrow.second $ signalInfo sigs) args
 mkStateProcSm :: (StateId, SignalInfo, SignalInfo) -> AST.ProcSm
 mkStateProcSm (num, old, new) =
   AST.ProcSm label [clk] [statement]
