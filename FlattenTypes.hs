@@ -193,8 +193,12 @@ addNameHint :: String -> SignalId -> FlattenState ()
 addNameHint hint id = do
   info <- getSignalInfo id
   let hints = nameHints info
-  let hints' = (hint:hints)
-  setSignalInfo id (info {nameHints = hints'})
+  if hint `elem` hints
+    then do
+      return ()
+    else do
+      let hints' = (hint:hints)
+      setSignalInfo id (info {nameHints = hints'})
 
 -- | Returns the SignalInfo for the given signal. Errors if the signal is not
 --   known in the session.
