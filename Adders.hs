@@ -59,6 +59,7 @@ no_carry_adder (a, b) = a `hwxor` b
 -- Combinatoric stateless half adder
 -- A -> B -> (S, C)
 half_adder :: (Bit, Bit) -> (Bit, Bit)
+{-# NOINLINE half_adder #-}
 half_adder (a, b) = 
   ( a `hwxor` b, a `hwand` b )
 
