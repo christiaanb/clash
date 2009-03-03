@@ -102,12 +102,25 @@ is_FApp d = case d of
   (FApp _ _ _) -> True
   _ -> False
 
+-- | Which signals are used by the given SigDef?
+sigDefUses :: SigDef -> [SignalId]
+sigDefUses (UncondDef (Left id) _) = [id]
+sigDefUses (UncondDef (Right expr) _) = sigExprUses expr
+sigDefUses (CondDef cond true false _) = [cond, true, false]
+sigDefUses (FApp _ args _) = concat $ map Foldable.toList args
+
 -- | An expression on signals
 data SignalExpr = 
   EqLit SignalId String -- ^ Is the given signal equal to the given (VHDL) literal
   | Literal String -- ^ A literal value
   | Eq SignalId SignalId -- ^ A comparison between to signals
   deriving (Show, Eq)
+
+-- | Which signals are used by the given SignalExpr?
+sigExprUses :: SignalExpr -> [SignalId]
+sigExprUses (EqLit id _) = [id]
+sigExprUses (Literal _) = []
+sigExprUses (Eq a b) = [a, b]
 
 -- Returns the function used by the given SigDef, if any
 usedHsFunc :: SigDef -> Maybe HsFunction
@@ -139,6 +152,14 @@ isStateSigUse _ = False
 isInternalSigUse :: SigUse -> Bool
 isInternalSigUse SigInternal = True
 isInternalSigUse _ = False
+
+oldStateId :: SigUse -> Maybe StateId
+oldStateId (SigStateOld id) = Just id
+oldStateId _ = Nothing
+
+newStateId :: SigUse -> Maybe StateId
+newStateId (SigStateNew id) = Just id
+newStateId _ = Nothing
 
 -- | Information on a signal definition
 data SignalInfo = SignalInfo {
