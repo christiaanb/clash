@@ -96,6 +96,12 @@ data SigDef =
     defDst :: SignalId
   } deriving (Show, Eq)
 
+-- | Is the given SigDef a FApp?
+is_FApp :: SigDef -> Bool
+is_FApp d = case d of  
+  (FApp _ _ _) -> True
+  _ -> False
+
 -- | An expression on signals
 data SignalExpr = 
   EqLit SignalId String -- ^ Is the given signal equal to the given (VHDL) literal
