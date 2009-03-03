@@ -218,3 +218,5 @@ setSignalInfo id' info' = do
   (defs, sigs, n) <- State.get
   let sigs' = map (\(id, info) -> (id, if id == id' then info' else info)) sigs
   State.put (defs, sigs', n)
+
+-- vim: set ts=8 sw=2 sts=2 expandtab:
