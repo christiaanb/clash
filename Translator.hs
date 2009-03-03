@@ -1,5 +1,6 @@
 module Translator where
 import qualified Directory
+import qualified List
 import GHC hiding (loadModule, sigName)
 import CoreSyn
 import qualified CoreUtils
@@ -10,6 +11,7 @@ import qualified DataCon
 import qualified Maybe
 import qualified Module
 import qualified Control.Monad.State as State
+import qualified Data.Foldable as Foldable
 import Name
 import qualified Data.Map as Map
 import Data.Generics
@@ -186,20 +188,83 @@ propagateState ::
   -> FlatFunction
 
 propagateState hsfunc flatfunc =
-    flatfunc {flat_defs = apps'} 
+    flatfunc {flat_defs = apps', flat_sigs = sigs'} 
   where
     apps = filter is_FApp (flat_defs flatfunc)
-    apps' = map (propagateState' ()) apps
+    (olds, news) = unzip $ getStateSignals hsfunc flatfunc
+    states' = zip olds news
+    -- Find all signals used by all sigdefs
+    uses = concatMap sigDefUses (flat_defs flatfunc)
+    -- Find all signals that are used more than once (is there a
+    -- prettier way to do this?)
+    multiple_uses = uses List.\\ (List.nub uses)
+    -- Find the states whose "old state" signal is used only once
+    single_use_states = filter ((`notElem` multiple_uses) . fst) states'
+    -- See if these single use states can be propagated
+    (substate_sigss, apps') = unzip $ map (propagateState' single_use_states) apps
+    substate_sigs = concat substate_sigss
+    -- Mark any propagated state signals as SigSubState
+    sigs' = map 
+      (\(id, info) -> (id, if id `elem` substate_sigs then info {sigUse = SigSubState} else info))
+      (flat_sigs flatfunc)
 
 -- | Propagate the state into a single function application.
 propagateState' ::
-  ()
+  [(SignalId, SignalId)]
+                      -- ^ TODO
   -> SigDef           -- ^ The function application to process. Must be
                       --   a FApp constructor.
-  -> SigDef           -- ^ The resulting application.
+  -> ([SignalId], SigDef) 
+                      -- ^ Any signal ids that should become substates,
+                      --   and the resulting application.
 
-propagateState' _ d = d
+propagateState' states app =
+    (our_old ++ our_new, app {appFunc = hsfunc'})
+  where
+    hsfunc = appFunc app
+    args = appArgs app
+    res = appRes app
+    our_states = filter our_state states
+    -- A state signal belongs in this function if the old state is
+    -- passed in, and the new state returned
+    our_state (old, new) =
+      any (old `Foldable.elem`) args
+      && new `Foldable.elem` res
+    (our_old, our_new) = unzip our_states
+    -- Mark the result
+    zipped_res = zipValueMaps res (hsFuncRes hsfunc)
+    res' = fmap (mark_state (zip our_new [0..])) zipped_res
+    -- Mark the args
+    zipped_args = zipWith zipValueMaps args (hsFuncArgs hsfunc)
+    args' = map (fmap (mark_state (zip our_old [0..]))) zipped_args
+    hsfunc' = hsfunc {hsFuncArgs = args', hsFuncRes = res'}
 
+    mark_state :: [(SignalId, StateId)] -> (SignalId, HsValueUse) -> HsValueUse
+    mark_state states (id, use) =
+      case lookup id states of
+        Nothing -> use
+        Just state_id -> State state_id
+
+-- | Returns pairs of signals that should be mapped to state in this function.
+getStateSignals ::
+  HsFunction                      -- | The function to look at
+  -> FlatFunction                 -- | The function to look at
+  -> [(SignalId, SignalId)]   
+        -- | TODO The state signals. The first is the state number, the second the
+        --   signal to assign the current state to, the last is the signal
+        --   that holds the new state.
+
+getStateSignals hsfunc flatfunc =
+  [(old_id, new_id) 
+    | (old_num, old_id) <- args
+    , (new_num, new_id) <- res
+    , old_num == new_num]
+  where
+    sigs = flat_sigs flatfunc
+    -- Translate args and res to lists of (statenum, sigid)
+    args = concat $ zipWith stateList (hsFuncArgs hsfunc) (flat_args flatfunc)
+    res = stateList (hsFuncRes hsfunc) (flat_res flatfunc)
+    
 -- | Find the given function, flatten it and add it to the session. Then
 --   (recursively) do the same for any functions used.
 resolvFunc ::
