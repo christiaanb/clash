@@ -1,4 +1,5 @@
 module Translator where
+import qualified Directory
 import GHC hiding (loadModule, sigName)
 import CoreSyn
 import qualified CoreUtils
@@ -51,7 +52,8 @@ makeVHDL filename name stateful = do
   -- Translate to VHDL
   vhdl <- moduleToVHDL core [(name, stateful)]
   -- Write VHDL to file
-  mapM (writeVHDL "../vhdl/vhdl/") vhdl
+  let dir = "../vhdl/vhdl/" ++ name ++ "/"
+  mapM (writeVHDL dir) vhdl
   return ()
 
 -- | Show the core structure of the given binds in the given file.
@@ -97,9 +99,14 @@ moduleToVHDL core list = do
 --   will be used as a filename.
 writeVHDL :: String -> AST.DesignFile -> IO ()
 writeVHDL dir vhdl = do
+  -- Create the dir if needed
+  exists <- Directory.doesDirectoryExist dir
+  Monad.unless exists $ Directory.createDirectory dir
+  -- Find the filename
   let AST.DesignFile _ (u:us) = vhdl
   let AST.LUEntity (AST.EntityDec id _) = u
   let fname = dir ++ AST.fromVHDLId id ++ ".vhdl"
+  -- Write the file
   ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl fname
 
 -- | Loads the given file and turns it into a core module.
