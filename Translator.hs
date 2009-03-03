@@ -42,14 +42,14 @@ import VHDLTypes
 import qualified VHDL
 
 main = do
-  makeVHDL "Alu.hs" "register_bank"
+  makeVHDL "Alu.hs" "register_bank" True
 
-makeVHDL :: String -> String -> IO ()
-makeVHDL filename name = do
+makeVHDL :: String -> String -> Bool -> IO ()
+makeVHDL filename name stateful = do
   -- Load the module
   core <- loadModule filename
   -- Translate to VHDL
-  vhdl <- moduleToVHDL core [name]
+  vhdl <- moduleToVHDL core [(name, stateful)]
   -- Write VHDL to file
   mapM (writeVHDL "../vhdl/vhdl/") vhdl
   return ()
@@ -66,25 +66,27 @@ listBind filename name = do
   putStr "\n\n"
 
 -- | Translate the binds with the given names from the given core module to
---   VHDL
-moduleToVHDL :: HscTypes.CoreModule -> [String] -> IO [AST.DesignFile]
-moduleToVHDL core names = do
+--   VHDL. The Bool in the tuple makes the function stateful (True) or
+--   stateless (False).
+moduleToVHDL :: HscTypes.CoreModule -> [(String, Bool)] -> IO [AST.DesignFile]
+moduleToVHDL core list = do
+  let (names, statefuls) = unzip list
   --liftIO $ putStr $ prettyShow (cm_binds core)
   let binds = findBinds core names
   --putStr $ prettyShow binds
   -- Turn bind into VHDL
-  let (vhdl, sess) = State.runState (mkVHDL binds) (VHDLSession core 0 Map.empty)
+  let (vhdl, sess) = State.runState (mkVHDL binds statefuls) (VHDLSession core 0 Map.empty)
   mapM (putStr . render . ForSyDe.Backend.Ppr.ppr) vhdl
   putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
 
   where
     -- Turns the given bind into VHDL
-    mkVHDL binds = do
+    mkVHDL binds statefuls = do
       -- Add the builtin functions
       mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
-      mapM processBind binds
+      Monad.zipWithM processBind statefuls binds
       modFuncs nameFlatFunction
       modFuncs VHDL.createEntity
       modFuncs VHDL.createArchitecture
@@ -133,14 +135,15 @@ findBind binds lookfor =
 
 -- | Processes the given bind as a top level bind.
 processBind ::
-  CoreBind                        -- The bind to process
+  Bool                       -- ^ Should this be stateful function?
+  -> CoreBind                -- ^ The bind to process
   -> VHDLState ()
 
-processBind  (Rec _) = error "Recursive binders not supported"
-processBind bind@(NonRec var expr) = do
+processBind _ (Rec _) = error "Recursive binders not supported"
+processBind stateful bind@(NonRec var expr) = do
   -- Create the function signature
   let ty = CoreUtils.exprType expr
-  let hsfunc = mkHsFunction var ty
+  let hsfunc = mkHsFunction var ty stateful
   flattenBind hsfunc bind
 
 -- | Flattens the given bind into the given signature and adds it to the
@@ -193,27 +196,37 @@ resolvFunc hsfunc = do
 mkHsFunction ::
   Var.Var         -- ^ The function defined
   -> Type         -- ^ The function type (including arguments!)
+  -> Bool         -- ^ Is this a stateful function?
   -> HsFunction   -- ^ The resulting HsFunction
 
-mkHsFunction f ty =
+mkHsFunction f ty stateful=
   HsFunction hsname hsargs hsres
   where
     hsname  = getOccString f
     (arg_tys, res_ty) = Type.splitFunTys ty
-    -- The last argument must be state
-    state_ty = last arg_tys
-    state    = useAsState (mkHsValueMap state_ty)
-    -- All but the last argument are inports
-    inports = map (useAsPort . mkHsValueMap)(init arg_tys)
-    hsargs   = inports ++ [state]
-    hsres    = case splitTupleType res_ty of
-      -- Result type must be a two tuple (state, ports)
-      Just [outstate_ty, outport_ty] -> if Type.coreEqType state_ty outstate_ty
-        then
-          Tuple [state, useAsPort (mkHsValueMap outport_ty)]
-        else
-          error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
-      otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
+    (hsargs, hsres) = 
+      if stateful 
+      then
+        let
+          -- The last argument must be state
+          state_ty = last arg_tys
+          state    = useAsState (mkHsValueMap state_ty)
+          -- All but the last argument are inports
+          inports = map (useAsPort . mkHsValueMap)(init arg_tys)
+          hsargs   = inports ++ [state]
+          hsres    = case splitTupleType res_ty of
+            -- Result type must be a two tuple (state, ports)
+            Just [outstate_ty, outport_ty] -> if Type.coreEqType state_ty outstate_ty
+              then
+                Tuple [state, useAsPort (mkHsValueMap outport_ty)]
+              else
+                error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
+            otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
+        in
+          (hsargs, hsres)
+      else
+        -- Just use everything as a port
+        (map (useAsPort . mkHsValueMap) arg_tys, useAsPort $ mkHsValueMap res_ty)
 
 -- | Adds signal names to the given FlatFunction
 nameFlatFunction ::
