@@ -442,28 +442,4 @@ stateList ::
 stateList uses signals =
     Maybe.catMaybes $ Foldable.toList $ zipValueMapsWith filterState signals uses
   
--- | Returns pairs of signals that should be mapped to state in this function.
-getOwnStates ::
-  HsFunction                      -- | The function to look at
-  -> FlatFunction                 -- | The function to look at
-  -> [(StateId, SignalInfo, SignalInfo)]   
-        -- | The state signals. The first is the state number, the second the
-        --   signal to assign the current state to, the last is the signal
-        --   that holds the new state.
-
-getOwnStates hsfunc flatfunc =
-  [(old_num, old_info, new_info) 
-    | (old_num, old_info) <- args_states
-    , (new_num, new_info) <- res_states
-    , old_num == new_num]
-  where
-    sigs = flat_sigs flatfunc
-    -- Translate args and res to lists of (statenum, sigid)
-    args = concat $ zipWith stateList (hsFuncArgs hsfunc) (flat_args flatfunc)
-    res = stateList (hsFuncRes hsfunc) (flat_res flatfunc)
-    -- Replace the second tuple element with the corresponding SignalInfo
-    args_states = map (Arrow.second $ signalInfo sigs) args
-    res_states = map (Arrow.second $ signalInfo sigs) res
-
-    
 -- vim: set ts=8 sw=2 sts=2 expandtab:
