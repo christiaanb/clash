@@ -164,13 +164,41 @@ flattenBind ::
 flattenBind _ (Rec _) = error "Recursive binders not supported"
 
 flattenBind hsfunc bind@(NonRec var expr) = do
+  -- Add the function to the session
+  addFunc hsfunc
   -- Flatten the function
   let flatfunc = flattenFunction hsfunc bind
-  addFunc hsfunc
-  setFlatFunc hsfunc flatfunc
-  let used_hsfuncs = Maybe.mapMaybe usedHsFunc (flat_defs flatfunc)
+  -- Propagate state variables
+  let flatfunc' = propagateState hsfunc flatfunc
+  -- Store the flat function in the session
+  setFlatFunc hsfunc flatfunc'
+  -- Flatten any functions used
+  let used_hsfuncs = Maybe.mapMaybe usedHsFunc (flat_defs flatfunc')
   State.mapM resolvFunc used_hsfuncs
   return ()
+
+-- | Decide which incoming state variables will become state in the
+--   given function, and which will be propagate to other applied
+--   functions.
+propagateState ::
+  HsFunction
+  -> FlatFunction
+  -> FlatFunction
+
+propagateState hsfunc flatfunc =
+    flatfunc {flat_defs = apps'} 
+  where
+    apps = filter is_FApp (flat_defs flatfunc)
+    apps' = map (propagateState' ()) apps
+
+-- | Propagate the state into a single function application.
+propagateState' ::
+  ()
+  -> SigDef           -- ^ The function application to process. Must be
+                      --   a FApp constructor.
+  -> SigDef           -- ^ The resulting application.
+
+propagateState' _ d = d
 
 -- | Find the given function, flatten it and add it to the session. Then
 --   (recursively) do the same for any functions used.
