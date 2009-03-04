@@ -19,5 +19,6 @@ data Entity = Entity {
   ent_id     :: AST.VHDLId,           -- The id of the entity
   ent_args   :: [VHDLSignalMap],      -- A mapping of each function argument to port names
   ent_res    :: VHDLSignalMap,        -- A mapping of the function result to port names
-  ent_decl   :: Maybe AST.EntityDec   -- The actual entity declaration. Can be empty for builtin functions.
+  ent_decl   :: Maybe AST.EntityDec,  -- The actual entity declaration. Can be empty for builtin functions.
+  ent_pkg_decl :: Maybe AST.PackageDec -- A package declaration with types for this entity
 }

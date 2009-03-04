@@ -387,7 +387,7 @@ addBuiltIn (BuiltIn name args res) = do
     setEntity hsfunc entity
   where
     hsfunc = HsFunction name (map useAsPort args) (useAsPort res)
-    entity = Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res) Nothing
+    entity = Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res) Nothing Nothing
 
 builtin_funcs = 
   [ 

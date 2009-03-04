@@ -1,4 +1,9 @@
+{-# LANGUAGE FlexibleContexts,GADTs,ExistentialQuantification,LiberalTypeSynonyms #-}
+
 module Bits where
+
+import qualified Data.Param.FSVec as FSVec
+import qualified Data.TypeLevel as TypeLevel
 
 --class Signal a where
 --	hwand :: a -> a -> a
@@ -52,5 +57,9 @@ type Stream a = [a]
 -- An infinite streams of highs or lows
 lows  = Low : lows
 highs = High : highs
+
+dontcare = undefined
+
+type BitVec len = FSVec.FSVec len Bit
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

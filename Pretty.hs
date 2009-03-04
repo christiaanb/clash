@@ -124,14 +124,17 @@ instance Pretty FuncData where
       pparch (Just _) = text "VHDL architecture present"
 
 instance Pretty Entity where
-  pPrint (Entity id args res decl) =
+  pPrint (Entity id args res decl pkg) =
     text "Entity: " $$ nest 10 (pPrint id)
     $+$ text "Args: " $$ nest 10 (pPrint args)
     $+$ text "Result: " $$ nest 10 (pPrint res)
     $+$ ppdecl decl
+    $+$ pppkg pkg
     where
       ppdecl Nothing = text "VHDL entity not present"
       ppdecl (Just _) = text "VHDL entity present"
+      pppkg Nothing = text "VHDL package not present"
+      pppkg (Just _) = text "VHDL package present"
 
 instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.NonRec b expr) =

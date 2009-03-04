@@ -6,6 +6,9 @@ module VHDL where
 import qualified Data.Foldable as Foldable
 import qualified Maybe
 import qualified Control.Monad as Monad
+import qualified Control.Arrow as Arrow
+import qualified Data.Traversable as Traversable
+import qualified Data.Monoid as Monoid
 
 import qualified Type
 import qualified TysWiredIn
@@ -30,7 +33,7 @@ getDesignFiles = do
   let context = [
         AST.Library $ mkVHDLId "IEEE",
         AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
-  return $ map (\(ent, arch) -> AST.DesignFile context [ent, arch]) units
+  return $ map (AST.DesignFile context) units
   
 -- | Create an entity for a given function
 createEntity ::
@@ -45,26 +48,34 @@ createEntity hsfunc fdata =
     Nothing -> do return ()
     -- Create an entity for all other functions
     Just flatfunc ->
-      
       let 
         sigs    = flat_sigs flatfunc
         args    = flat_args flatfunc
         res     = flat_res  flatfunc
-        args'   = map (fmap (mkMap sigs)) args
-        res'    = fmap (mkMap sigs) res
+        (ty_decls, args') = Traversable.traverse (Traversable.traverse (mkMap sigs)) args
+        (ty_decls', res') = Traversable.traverse (mkMap sigs) res
+        -- TODO: Unique ty_decls
         ent_decl' = createEntityAST hsfunc args' res'
+        pkg_id = mkVHDLId $ (AST.fromVHDLId entity_id) ++ "_types"
+        pkg_decl = if null ty_decls && null ty_decls'
+          then Nothing
+          else Just $ AST.PackageDec pkg_id (map AST.PDITD $ ty_decls ++ ty_decls')
         AST.EntityDec entity_id _ = ent_decl' 
-        entity' = Entity entity_id args' res' (Just ent_decl')
-      in
+        entity' = Entity entity_id args' res' (Just ent_decl') pkg_decl
+      in do
         setEntity hsfunc entity'
   where
-    mkMap :: Eq id => [(id, SignalInfo)] -> id -> Maybe (AST.VHDLId, AST.TypeMark)
+    mkMap :: 
+      [(SignalId, SignalInfo)] 
+      -> SignalId 
+      -> ([AST.TypeDec], Maybe (AST.VHDLId, AST.TypeMark))
     mkMap sigmap id =
       if isPortSigUse $ sigUse info
         then
-          Just (mkVHDLId nm, vhdl_ty ty)
+          let (decs, type_mark) = vhdl_ty ty in
+          (decs, Just (mkVHDLId nm, type_mark))
         else
-          Nothing
+          (Monoid.mempty, Nothing)
       where
         info = Maybe.fromMaybe
           (error $ "Signal not found in the name map? This should not happen!")
@@ -134,7 +145,9 @@ createArchitecture hsfunc fdata =
                       (getEntityId fdata)
       -- Create signal declarations for all signals that are not in args and
       -- res
-      let sig_decs = Maybe.catMaybes $ map (mkSigDec . snd) sigs
+      let (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
+      -- TODO: Unique ty_decls
+      -- TODO: Store ty_decls somewhere
       -- Create concurrent statements for all signal definitions
       statements <- mapM (mkConcSm sigs) defs
       let procs = map mkStateProcSm (makeStatePairs flatfunc)
@@ -169,13 +182,14 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
-mkSigDec :: SignalInfo -> Maybe AST.SigDec
+mkSigDec :: SignalInfo -> ([AST.TypeDec], Maybe AST.SigDec)
 mkSigDec info =
   let use = sigUse info in
   if isInternalSigUse use || isStateSigUse use then
-    Just $ AST.SigDec (getSignalId info) (vhdl_ty ty) Nothing
+    let (ty_decls, type_mark) = vhdl_ty ty in
+    (ty_decls, Just $ AST.SigDec (getSignalId info) type_mark Nothing)
   else
-    Nothing
+    ([], Nothing)
   where
     ty = sigTy info
 
@@ -292,7 +306,7 @@ getEntityId fdata =
 
 getLibraryUnits ::
   (HsFunction, FuncData)      -- | A function from the session
-  -> Maybe (AST.LibraryUnit, AST.LibraryUnit) -- | The entity and architecture for the function
+  -> Maybe [AST.LibraryUnit]  -- | The entity, architecture and optional package for the function
 
 getLibraryUnits (hsfunc, fdata) =
   case funcEntity fdata of 
@@ -304,7 +318,9 @@ getLibraryUnits (hsfunc, fdata) =
         case funcArch fdata of
           Nothing -> Nothing
           Just arch ->
-            Just (AST.LUEntity decl, AST.LUArch arch)
+            Just $
+              [AST.LUEntity decl, AST.LUArch arch]
+              ++ (Maybe.maybeToList (fmap AST.LUPackageDec $ ent_pkg_decl ent))
 
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark
@@ -319,24 +335,36 @@ std_logic_ty :: AST.TypeMark
 std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
 
 -- Translate a Haskell type to a VHDL type
-vhdl_ty :: Type.Type -> AST.TypeMark
+vhdl_ty :: Type.Type -> ([AST.TypeDec], AST.TypeMark)
 vhdl_ty ty = Maybe.fromMaybe
   (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
   (vhdl_ty_maybe ty)
 
--- Translate a Haskell type to a VHDL type
-vhdl_ty_maybe :: Type.Type -> Maybe AST.TypeMark
+-- Translate a Haskell type to a VHDL type, optionally generating a type
+-- declaration for the type.
+vhdl_ty_maybe :: Type.Type -> Maybe ([AST.TypeDec], AST.TypeMark)
 vhdl_ty_maybe ty =
   if Type.coreEqType ty TysWiredIn.boolTy
     then
-      Just bool_ty
+      Just ([], bool_ty)
     else
       case Type.splitTyConApp_maybe ty of
         Just (tycon, args) ->
           let name = TyCon.tyConName tycon in
             -- TODO: Do something more robust than string matching
             case Name.getOccString name of
-              "Bit"      -> Just std_logic_ty
+              "Bit"      -> Just ([], std_logic_ty)
+              "FSVec"    ->
+                let 
+                  [len, el_ty] = args 
+                  -- TODO: Find actual number
+                  ty_id = mkVHDLId ("vector_" ++ (show len))
+                  -- TODO: Use el_ty
+                  range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
+                  ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
+                  ty_dec = AST.TypeDec ty_id ty_def
+                in
+                  Just ([ty_dec], ty_id)
               otherwise  -> Nothing
         otherwise -> Nothing
 
