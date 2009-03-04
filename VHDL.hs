@@ -203,7 +203,9 @@ mkConcSm sigs (FApp hsfunc args res) = do
         (funcEntity fdata)
   let entity_id = ent_id entity
   label <- uniqueName (AST.fromVHDLId entity_id)
-  let portmaps = mkAssocElems sigs args res entity
+  -- Add a clk port if we have state
+  let clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLId "clk") "clk"
+  let portmaps = mkAssocElems sigs args res entity ++ (if hasState hsfunc then [clk_port] else [])
   return $ AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 mkConcSm sigs (UncondDef src dst) = do
