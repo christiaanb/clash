@@ -2,6 +2,8 @@ module Adders where
 import Bits
 import qualified Sim
 import Language.Haskell.Syntax
+import Data.TypeLevel
+import qualified Data.Param.FSVec as FSVec
 
 mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
@@ -24,6 +26,31 @@ mux2 High (a, b) = b
 wire :: Bit -> Bit
 wire a = a
 
+bus :: (Pos len) => BitVec len -> BitVec len
+bus v = v
+
+bus_4 :: BitVec D4 -> BitVec D4
+bus_4 v = v
+
+{-
+inv_n :: (Pos len) => BitVec len -> BitVec len
+inv_n v =
+  --FSVec.map hwnot v
+  inv_n_rec v
+
+class Inv vec where
+  inv_n_rec :: vec -> vec
+
+instance (Pos len) => Inv (BitVec len) where
+  inv_n_rec v = 
+    h FSVec.+> t
+    where
+      h = FSVec.head v
+      t = FSVec.tail v
+
+instance Inv (BitVec D0) where
+  inv_n_rec v = v
+-}
 -- Not really an adder either, but a slightly more complex example
 inv :: Bit -> Bit
 inv a = hwnot a
