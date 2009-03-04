@@ -190,7 +190,6 @@ propagateState ::
 propagateState hsfunc flatfunc =
     flatfunc {flat_defs = apps', flat_sigs = sigs'} 
   where
-    apps = filter is_FApp (flat_defs flatfunc)
     (olds, news) = unzip $ getStateSignals hsfunc flatfunc
     states' = zip olds news
     -- Find all signals used by all sigdefs
@@ -201,7 +200,7 @@ propagateState hsfunc flatfunc =
     -- Find the states whose "old state" signal is used only once
     single_use_states = filter ((`notElem` multiple_uses) . fst) states'
     -- See if these single use states can be propagated
-    (substate_sigss, apps') = unzip $ map (propagateState' single_use_states) apps
+    (substate_sigss, apps') = unzip $ map (propagateState' single_use_states) (flat_defs flatfunc)
     substate_sigs = concat substate_sigss
     -- Mark any propagated state signals as SigSubState
     sigs' = map 
@@ -212,18 +211,20 @@ propagateState hsfunc flatfunc =
 propagateState' ::
   [(SignalId, SignalId)]
                       -- ^ TODO
-  -> SigDef           -- ^ The function application to process. Must be
-                      --   a FApp constructor.
+  -> SigDef           -- ^ The SigDef to process.
   -> ([SignalId], SigDef) 
                       -- ^ Any signal ids that should become substates,
                       --   and the resulting application.
 
-propagateState' states app =
-    (our_old ++ our_new, app {appFunc = hsfunc'})
+propagateState' states def =
+    if (is_FApp def) then
+      (our_old ++ our_new, def {appFunc = hsfunc'})
+    else
+      ([], def)
   where
-    hsfunc = appFunc app
-    args = appArgs app
-    res = appRes app
+    hsfunc = appFunc def
+    args = appArgs def
+    res = appRes def
     our_states = filter our_state states
     -- A state signal belongs in this function if the old state is
     -- passed in, and the new state returned
