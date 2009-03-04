@@ -53,6 +53,7 @@ register_bank (addr, High, d) s = -- Write
 type AluOp = Bit
 
 alu :: AluOp -> Bit -> Bit -> Bit
+{-# NOINLINE alu #-}
 alu High a b = a `hwand` b
 alu Low a b = a `hwor` b
 
