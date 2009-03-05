@@ -4,6 +4,7 @@
 module VHDL where
 
 import qualified Data.Foldable as Foldable
+import qualified Data.List as List
 import qualified Maybe
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
@@ -371,7 +372,13 @@ vhdl_ty_maybe ty =
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
 mkVHDLId s = 
-  AST.unsafeVHDLBasicId s'
+  AST.unsafeVHDLBasicId $ (strip_multiscore . strip_invalid) s
   where
     -- Strip invalid characters.
-    s' = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.") s
+    strip_invalid = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.")
+    -- Strip multiple adjacent underscores
+    strip_multiscore = concat . map (\cs -> 
+        case cs of 
+          ('_':_) -> "_"
+          _ -> cs
+      ) . List.group
