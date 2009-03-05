@@ -92,7 +92,7 @@ moduleToVHDL core list = do
       -- Create entities and architectures for them
       Monad.zipWithM processBind statefuls binds
       modFuncs nameFlatFunction
-      modFuncs VHDL.createEntity
+      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcEntity = VHDL.createEntity hsfunc fdata})
       modFuncs VHDL.createArchitecture
       funcs <- getFuncs
       return $ VHDL.getDesignFiles (map snd funcs)

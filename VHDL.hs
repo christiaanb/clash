@@ -38,13 +38,12 @@ getDesignFiles funcs =
 createEntity ::
   HsFunction        -- | The function signature
   -> FuncData       -- | The function data collected so far
-  -> VHDLState ()
+  -> Maybe Entity   -- | The resulting entity
 
 createEntity hsfunc fdata = 
-  let func = flatFunc fdata in
-  case func of
+  case flatFunc fdata of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> do return ()
+    Nothing -> Nothing
     -- Create an entity for all other functions
     Just flatfunc ->
       let 
@@ -60,9 +59,8 @@ createEntity hsfunc fdata =
           then Nothing
           else Just $ AST.PackageDec pkg_id (map AST.PDITD $ ty_decls ++ ty_decls')
         AST.EntityDec entity_id _ = ent_decl' 
-        entity' = Entity entity_id args' res' (Just ent_decl') pkg_decl
-      in do
-        setEntity hsfunc entity'
+      in 
+        Just $ Entity entity_id args' res' (Just ent_decl') pkg_decl
   where
     mkMap :: 
       [(SignalId, SignalInfo)] 
