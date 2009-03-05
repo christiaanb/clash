@@ -58,8 +58,6 @@ type Stream a = [a]
 lows  = Low : lows
 highs = High : highs
 
-dontcare = undefined
-
 type BitVec len = FSVec.FSVec len Bit
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
