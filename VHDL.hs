@@ -25,16 +25,14 @@ import FlattenTypes
 import TranslatorTypes
 import Pretty
 
-getDesignFiles :: VHDLState [AST.DesignFile]
-getDesignFiles = do
-  -- Extract the library units generated from all the functions in the
-  -- session.
-  funcs <- getFuncs
-  let units = Maybe.mapMaybe getLibraryUnits funcs
-  let context = [
-        AST.Library $ mkVHDLId "IEEE",
-        AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
-  return $ map (AST.DesignFile context) units
+getDesignFiles :: [FuncData] -> [AST.DesignFile]
+getDesignFiles funcs =
+  map (AST.DesignFile context) units
+  where
+    units = filter (not.null) $ map getLibraryUnits funcs
+    context = [
+      AST.Library $ mkVHDLId "IEEE",
+      AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
   
 -- | Create an entity for a given function
 createEntity ::
@@ -306,20 +304,19 @@ getEntityId fdata =
       Just (AST.EntityDec id _) -> Just id
 
 getLibraryUnits ::
-  (HsFunction, FuncData)      -- | A function from the session
-  -> Maybe [AST.LibraryUnit]  -- | The entity, architecture and optional package for the function
+  FuncData                    -- | A function from the session
+  -> [AST.LibraryUnit]  -- | The entity, architecture and optional package for the function
 
-getLibraryUnits (hsfunc, fdata) =
+getLibraryUnits fdata =
   case funcEntity fdata of 
-    Nothing -> Nothing
+    Nothing -> []
     Just ent -> 
       case ent_decl ent of
-      Nothing -> Nothing
+      Nothing -> []
       Just decl ->
         case funcArch fdata of
-          Nothing -> Nothing
+          Nothing -> []
           Just arch ->
-            Just $
               [AST.LUEntity decl, AST.LUArch arch]
               ++ (Maybe.maybeToList (fmap AST.LUPackageDec $ ent_pkg_decl ent))
 

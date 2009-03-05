@@ -94,7 +94,8 @@ moduleToVHDL core list = do
       modFuncs nameFlatFunction
       modFuncs VHDL.createEntity
       modFuncs VHDL.createArchitecture
-      VHDL.getDesignFiles
+      funcs <- getFuncs
+      return $ VHDL.getDesignFiles (map snd funcs)
 
 -- | Write the given design file to a file inside the given dir
 --   The first library unit in the designfile must be an entity, whose name
