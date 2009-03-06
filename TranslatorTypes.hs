@@ -76,6 +76,10 @@ modFunc :: (FuncData -> FuncData) -> HsFunction -> VHDLState ()
 modFunc f hsfunc =
   modFuncMap (Map.adjust f hsfunc)
 
+-- | Get the map of functions in the session
+getFuncMap :: VHDLState FuncMap
+getFuncMap = State.gets funcs
+
 -- | Modify the function map in the session using the given function
 modFuncMap :: (FuncMap -> FuncMap) -> VHDLState ()
 modFuncMap f = do
