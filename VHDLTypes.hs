@@ -21,4 +21,4 @@ data Entity = Entity {
   ent_res    :: VHDLSignalMap,        -- A mapping of the function result to port names
   ent_decl   :: Maybe AST.EntityDec,  -- The actual entity declaration. Can be empty for builtin functions.
   ent_pkg_decl :: Maybe AST.PackageDec -- A package declaration with types for this entity
-}
+} deriving (Show);

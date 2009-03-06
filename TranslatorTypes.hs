@@ -25,7 +25,7 @@ data FuncData = FuncData {
   flatFunc     :: Maybe FlatFunction,
   funcEntity   :: Maybe Entity,
   funcArch     :: Maybe AST.ArchBody
-}
+} deriving (Show)
 
 data VHDLSession = VHDLSession {
   coreMod   :: HscTypes.CoreModule, -- The current module

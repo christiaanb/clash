@@ -9,6 +9,7 @@ import CoreSyn
 import qualified Type
 
 import HsValueMap
+import CoreShow
 
 -- | A signal identifier
 type SignalId = Int
@@ -135,6 +136,7 @@ data SigUse =
   | SigStateOld StateId  -- | Use as the current internal state
   | SigStateNew StateId  -- | Use as the new internal state
   | SigSubState      -- | Do not use, state variable is used in a subcircuit
+  deriving (Show)
 
 -- | Is this a port signal use?
 isPortSigUse :: SigUse -> Bool
@@ -167,7 +169,7 @@ data SignalInfo = SignalInfo {
   sigUse  :: SigUse,
   sigTy   :: Type.Type,
   nameHints :: [String]
-}
+} deriving (Show)
 
 -- | A flattened function
 data FlatFunction = FlatFunction {
@@ -175,7 +177,7 @@ data FlatFunction = FlatFunction {
   flat_res    :: SignalMap,
   flat_defs   :: [SigDef],
   flat_sigs   :: [(SignalId, SignalInfo)]
-}
+} deriving (Show)
 
 -- | Lookup a given signal id in a signal map, and return the associated
 --   SignalInfo. Errors out if the signal was not found.
