@@ -1,6 +1,3 @@
--- Needed for the Show deriving for Core types
-{-# LANGUAGE StandaloneDeriving #-}
-
 module Pretty (prettyShow) where
 
 
@@ -8,9 +5,7 @@ import qualified Data.Map as Map
 import qualified Data.Foldable as Foldable
 import qualified List
 
-import qualified Var
 import qualified CoreSyn
-import qualified TypeRep
 import qualified Module
 import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
@@ -24,6 +19,7 @@ import HsValueMap
 import FlattenTypes
 import TranslatorTypes
 import VHDLTypes
+import CoreShow
 
 -- | A version of the default pPrintList method, which uses a custom function
 --   f instead of pPrint to print elements.
@@ -151,15 +147,3 @@ prettyBind (b, expr) =
   where
     b' = show b
     expr' = show expr
-
--- Derive Show for core expressions and binders, so we can see the actual
--- structure.
-deriving instance (Show b) => Show (CoreSyn.Expr b)
-deriving instance (Show b) => Show (CoreSyn.Bind b)
-
--- Implement dummy shows for Note and Type, so we can at least use show on
--- expressions.
-instance Show CoreSyn.Note where
-  show n = "<note>"
-instance Show TypeRep.Type where
-  show t = "_type:(" ++ (showSDoc $ ppr t) ++ ")"
