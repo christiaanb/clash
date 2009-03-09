@@ -149,7 +149,7 @@ findBind binds lookfor =
 processBind ::
   Bool                       -- ^ Should this be stateful function?
   -> CoreBind                -- ^ The bind to process
-  -> VHDLState ()
+  -> TranslatorState ()
 
 processBind _ (Rec _) = error "Recursive binders not supported"
 processBind stateful bind@(NonRec var expr) = do
@@ -164,7 +164,7 @@ processBind stateful bind@(NonRec var expr) = do
 flattenBind ::
   HsFunction                         -- The signature to flatten into
   -> CoreBind                        -- The bind to flatten
-  -> VHDLState ()
+  -> TranslatorState ()
 
 flattenBind _ (Rec _) = error "Recursive binders not supported"
 
@@ -273,7 +273,7 @@ getStateSignals hsfunc flatfunc =
 --   (recursively) do the same for any functions used.
 resolvFunc ::
   HsFunction        -- | The function to look for
-  -> VHDLState ()
+  -> TranslatorState ()
 
 resolvFunc hsfunc = do
   -- See if the function is already known
@@ -378,7 +378,7 @@ toVHDLSignalMap = fmap (\(name, ty) -> Just (VHDL.mkVHDLId name, ty))
 
 -- | Translate a concise representation of a builtin function to something
 --   that can be put into FuncMap directly.
-addBuiltIn :: BuiltIn -> VHDLState ()
+addBuiltIn :: BuiltIn -> TranslatorState ()
 addBuiltIn (BuiltIn name args res) = do
     addFunc hsfunc
     setEntity hsfunc entity

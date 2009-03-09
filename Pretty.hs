@@ -96,7 +96,7 @@ instance Pretty SigUse where
   pPrint (SigStateNew n) = text "SN:" <> int n
   pPrint SigSubState = text "s"
 
-instance Pretty VHDLSession where
+instance Pretty TranslatorSession where
   pPrint (VHDLSession mod nameCount funcs) =
     text "Module: " $$ nest 15 (text modname)
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
