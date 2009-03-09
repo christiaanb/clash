@@ -93,7 +93,8 @@ moduleToVHDL core list = do
       Monad.zipWithM processBind statefuls binds
       modFuncMap $ Map.map (\fdata -> fdata {flatFunc = fmap nameFlatFunction (flatFunc fdata)})
       modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcEntity = VHDL.createEntity hsfunc fdata})
-      modFuncs VHDL.createArchitecture
+      funcs <- getFuncMap
+      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcArch = VHDL.createArchitecture funcs hsfunc fdata})
       funcs <- getFuncs
       return $ VHDL.getDesignFiles (map snd funcs)
 

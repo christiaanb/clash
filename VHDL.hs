@@ -124,36 +124,36 @@ mkEntityId hsfunc =
 
 -- | Create an architecture for a given function
 createArchitecture ::
-  HsFunction        -- | The function signature
-  -> FuncData       -- | The function data collected so far
-  -> VHDLState ()
+  FuncMap           -- ^ The functions in the current session
+  -> HsFunction     -- ^ The function signature
+  -> FuncData       -- ^ The function data collected so far
+  -> Maybe AST.ArchBody -- ^ The architecture for this function
 
-createArchitecture hsfunc fdata = 
-  let func = flatFunc fdata in
-  case func of
+createArchitecture funcs hsfunc fdata = 
+  case flatFunc fdata of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> do return ()
+    Nothing -> funcArch fdata
     -- Create an architecture for all other functions
-    Just flatfunc -> do
-      let sigs = flat_sigs flatfunc
-      let args = flat_args flatfunc
-      let res  = flat_res  flatfunc
-      let defs = flat_defs flatfunc
-      let entity_id = Maybe.fromMaybe
+    Just flatfunc ->
+      let
+        sigs = flat_sigs flatfunc
+        args = flat_args flatfunc
+        res  = flat_res  flatfunc
+        defs = flat_defs flatfunc
+        entity_id = Maybe.fromMaybe
                       (error $ "Building architecture without an entity? This should not happen!")
                       (getEntityId fdata)
-      -- Create signal declarations for all signals that are not in args and
-      -- res
-      let (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
-      -- TODO: Unique ty_decls
-      -- TODO: Store ty_decls somewhere
-      -- Create concurrent statements for all signal definitions
-      funcs <- getFuncMap
-      let statements = zipWith (mkConcSm funcs sigs) defs [0..]
-      let procs = map mkStateProcSm (makeStatePairs flatfunc)
-      let procs' = map AST.CSPSm procs
-      let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
-      setArchitecture hsfunc arch
+        -- Create signal declarations for all signals that are not in args and
+        -- res
+        (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
+        -- TODO: Unique ty_decls
+        -- TODO: Store ty_decls somewhere
+        -- Create concurrent statements for all signal definitions
+        statements = zipWith (mkConcSm funcs sigs) defs [0..]
+        procs = map mkStateProcSm (makeStatePairs flatfunc)
+        procs' = map AST.CSPSm procs
+      in
+        Just $ AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
 
 -- | Looks up all pairs of old state, new state signals, together with
 --   the state id they represent.
