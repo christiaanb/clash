@@ -91,7 +91,7 @@ moduleToVHDL core list = do
       mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       Monad.zipWithM processBind statefuls binds
-      modFuncs nameFlatFunction
+      modFuncMap $ Map.map (\fdata -> fdata {flatFunc = fmap nameFlatFunction (flatFunc fdata)})
       modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcEntity = VHDL.createEntity hsfunc fdata})
       modFuncs VHDL.createArchitecture
       funcs <- getFuncs
@@ -332,21 +332,15 @@ mkHsFunction f ty stateful=
 
 -- | Adds signal names to the given FlatFunction
 nameFlatFunction ::
-  HsFunction
-  -> FuncData
-  -> VHDLState ()
+  FlatFunction
+  -> FlatFunction
 
-nameFlatFunction hsfunc fdata =
-  let func = flatFunc fdata in
-  case func of
-    -- Skip (builtin) functions without a FlatFunction
-    Nothing -> do return ()
-    -- Name the signals in all other functions
-    Just flatfunc ->
-      let s = flat_sigs flatfunc in
-      let s' = map nameSignal s in
-      let flatfunc' = flatfunc { flat_sigs = s' } in
-      setFlatFunc hsfunc flatfunc'
+nameFlatFunction flatfunc =
+  -- Name the signals
+  let 
+    s = flat_sigs flatfunc
+    s' = map nameSignal s in
+  flatfunc { flat_sigs = s' }
   where
     nameSignal :: (SignalId, SignalInfo) -> (SignalId, SignalInfo)
     nameSignal (id, info) =
