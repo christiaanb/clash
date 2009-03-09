@@ -5,6 +5,7 @@ module VHDL where
 
 import qualified Data.Foldable as Foldable
 import qualified Data.List as List
+import qualified Data.Map as Map
 import qualified Maybe
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
@@ -147,7 +148,8 @@ createArchitecture hsfunc fdata =
       -- TODO: Unique ty_decls
       -- TODO: Store ty_decls somewhere
       -- Create concurrent statements for all signal definitions
-      statements <- mapM (mkConcSm sigs) defs
+      funcs <- getFuncMap
+      let statements = zipWith (mkConcSm funcs sigs) defs [0..]
       let procs = map mkStateProcSm (makeStatePairs flatfunc)
       let procs' = map AST.CSPSm procs
       let arch = AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
@@ -201,31 +203,38 @@ getSignalId info =
 
 -- | Transforms a signal definition into a VHDL concurrent statement
 mkConcSm ::
-  [(SignalId, SignalInfo)] -- | The signals in the current architecture
-  -> SigDef                -- | The signal definition
-  -> VHDLState AST.ConcSm    -- | The corresponding VHDL component instantiation.
+  FuncMap                  -- ^ The functions in the current session
+  -> [(SignalId, SignalInfo)] -- ^ The signals in the current architecture
+  -> SigDef                -- ^ The signal definition 
+  -> Int                   -- ^ A number that will be unique for all
+                           --   concurrent statements in the architecture.
+  -> AST.ConcSm            -- ^ The corresponding VHDL component instantiation.
 
-mkConcSm sigs (FApp hsfunc args res) = do
-  fdata_maybe <- getFunc hsfunc
-  let fdata = Maybe.fromMaybe
+mkConcSm funcs sigs (FApp hsfunc args res) num =
+  let 
+    fdata_maybe = Map.lookup hsfunc funcs
+    fdata = Maybe.fromMaybe
         (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' that is not in the session? This should not happen!")
         fdata_maybe
-  let entity = Maybe.fromMaybe
+    entity = Maybe.fromMaybe
         (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without entity declaration? This should not happen!")
         (funcEntity fdata)
-  let entity_id = ent_id entity
-  label <- uniqueName (AST.fromVHDLId entity_id)
-  -- Add a clk port if we have state
-  let clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLId "clk") "clk"
-  let portmaps = mkAssocElems sigs args res entity ++ (if hasState hsfunc then [clk_port] else [])
-  return $ AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+    entity_id = ent_id entity
+    label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
+    -- Add a clk port if we have state
+    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLId "clk") "clk"
+    portmaps = mkAssocElems sigs args res entity ++ (if hasState hsfunc then [clk_port] else [])
+  in
+    AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
-mkConcSm sigs (UncondDef src dst) = do
-  let src_expr  = vhdl_expr src
-  let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
-  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
-  let assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-  return $ AST.CSSASm assign
+mkConcSm _ sigs (UncondDef src dst) _ =
+  let
+    src_expr  = vhdl_expr src
+    src_wform = AST.Wform [AST.WformElem src_expr Nothing]
+    dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
+    assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+  in
+    AST.CSSASm assign
   where
     vhdl_expr (Left id) = mkIdExpr sigs id
     vhdl_expr (Right expr) =
@@ -237,16 +246,18 @@ mkConcSm sigs (UncondDef src dst) = do
         (Eq a b) ->
           (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
 
-mkConcSm sigs (CondDef cond true false dst) = do
-  let cond_expr  = mkIdExpr sigs cond
-  let true_expr  = mkIdExpr sigs true
-  let false_expr  = mkIdExpr sigs false
-  let false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-  let true_wform = AST.Wform [AST.WformElem true_expr Nothing]
-  let whenelse = AST.WhenElse true_wform cond_expr
-  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
-  let assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
-  return $ AST.CSSASm assign
+mkConcSm _ sigs (CondDef cond true false dst) _ =
+  let
+    cond_expr  = mkIdExpr sigs cond
+    true_expr  = mkIdExpr sigs true
+    false_expr  = mkIdExpr sigs false
+    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
+    true_wform = AST.Wform [AST.WformElem true_expr Nothing]
+    whenelse = AST.WhenElse true_wform cond_expr
+    dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
+    assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
+  in
+    AST.CSSASm assign
 
 -- | Turn a SignalId into a VHDL Expr
 mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
