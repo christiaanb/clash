@@ -2,10 +2,13 @@
 -- Simple module providing some types used by Translator. These are in a
 -- separate module to prevent circular dependencies in Pretty for example.
 --
+{-# LANGUAGE TemplateHaskell #-}
 module TranslatorTypes where
 
 import qualified Control.Monad.State as State
 import qualified Data.Map as Map
+import qualified Data.Accessor.Template
+import Data.Accessor
 
 import qualified HscTypes
 
@@ -22,10 +25,13 @@ type FuncMap  = Map.Map HsFunction FuncData
 
 -- | Some stuff we collect about a function along the way.
 data FuncData = FuncData {
-  flatFunc     :: Maybe FlatFunction,
-  funcEntity   :: Maybe Entity,
-  funcArch     :: Maybe AST.ArchBody
+  fdFlatFunc_ :: Maybe FlatFunction,
+  fdEntity_ :: Maybe Entity,
+  fdArch_ :: Maybe AST.ArchBody
 } deriving (Show)
+
+-- Derive accessors
+$( Data.Accessor.Template.deriveAccessors ''FuncData )
 
 data VHDLSession = VHDLSession {
   coreMod   :: HscTypes.CoreModule, -- The current module
@@ -59,17 +65,17 @@ getHsFuncs = do
 -- | Sets the FlatFunction for the given HsFunction in the current session.
 setFlatFunc :: HsFunction -> FlatFunction -> VHDLState ()
 setFlatFunc hsfunc flatfunc =
-  modFunc (\d -> d { flatFunc = Just flatfunc }) hsfunc
+  modFunc (fdFlatFunc ^= Just flatfunc) hsfunc
 
 -- | Sets the Entity for the given HsFunction in the current session.
 setEntity :: HsFunction -> Entity -> VHDLState ()
 setEntity hsfunc entity =
-  modFunc (\d -> d { funcEntity = Just entity }) hsfunc
+  modFunc (fdEntity ^= Just entity) hsfunc
 
 -- | Sets the Entity for the given HsFunction in the current session.
 setArchitecture :: HsFunction -> AST.ArchBody -> VHDLState ()
 setArchitecture hsfunc arch =
-  modFunc (\d -> d { funcArch = Just arch }) hsfunc
+  modFunc (fdArch ^= Just arch) hsfunc
 
 -- | Modify a function in the map using the given function
 modFunc :: (FuncData -> FuncData) -> HsFunction -> VHDLState ()

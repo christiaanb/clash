@@ -14,6 +14,7 @@ import qualified Control.Monad.State as State
 import qualified Data.Foldable as Foldable
 import Name
 import qualified Data.Map as Map
+import Data.Accessor
 import Data.Generics
 import NameEnv ( lookupNameEnv )
 import qualified HscTypes
@@ -91,10 +92,10 @@ moduleToVHDL core list = do
       mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       Monad.zipWithM processBind statefuls binds
-      modFuncMap $ Map.map (\fdata -> fdata {flatFunc = fmap nameFlatFunction (flatFunc fdata)})
-      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcEntity = VHDL.createEntity hsfunc fdata})
+      modFuncMap $ Map.map (fdFlatFunc ^: (fmap nameFlatFunction))
+      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdEntity ^= (VHDL.createEntity hsfunc fdata) $ fdata)
       funcs <- getFuncMap
-      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdata {funcArch = VHDL.createArchitecture funcs hsfunc fdata})
+      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdArch ^= (VHDL.createArchitecture funcs hsfunc fdata) $ fdata)
       funcs <- getFuncs
       return $ VHDL.getDesignFiles (map snd funcs)
 

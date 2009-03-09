@@ -11,6 +11,7 @@ import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
 import qualified Data.Traversable as Traversable
 import qualified Data.Monoid as Monoid
+import Data.Accessor
 
 import qualified Type
 import qualified TysWiredIn
@@ -43,9 +44,9 @@ createEntity ::
                     ---  Entity for builtin functions.
 
 createEntity hsfunc fdata = 
-  case flatFunc fdata of
+  case fdata ^. fdFlatFunc of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> funcEntity fdata
+    Nothing -> fdata ^. fdEntity
     -- Create an entity for all other functions
     Just flatfunc ->
       let 
@@ -130,9 +131,9 @@ createArchitecture ::
   -> Maybe AST.ArchBody -- ^ The architecture for this function
 
 createArchitecture funcs hsfunc fdata = 
-  case flatFunc fdata of
+  case fdata ^. fdFlatFunc of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> funcArch fdata
+    Nothing -> fdata ^. fdArch
     -- Create an architecture for all other functions
     Just flatfunc ->
       let
@@ -218,7 +219,7 @@ mkConcSm funcs sigs (FApp hsfunc args res) num =
         fdata_maybe
     entity = Maybe.fromMaybe
         (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without entity declaration? This should not happen!")
-        (funcEntity fdata)
+        (fdata ^. fdEntity)
     entity_id = ent_id entity
     label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
     -- Add a clk port if we have state
@@ -307,7 +308,7 @@ mkAssocElem Nothing _ = Nothing
 -- | Extracts the generated entity id from the given funcdata
 getEntityId :: FuncData -> Maybe AST.VHDLId
 getEntityId fdata =
-  case funcEntity fdata of
+  case fdata ^. fdEntity of
     Nothing -> Nothing
     Just e  -> case ent_decl e of
       Nothing -> Nothing
@@ -318,13 +319,13 @@ getLibraryUnits ::
   -> [AST.LibraryUnit]  -- | The entity, architecture and optional package for the function
 
 getLibraryUnits fdata =
-  case funcEntity fdata of 
+  case fdata ^. fdEntity of 
     Nothing -> []
     Just ent -> 
       case ent_decl ent of
       Nothing -> []
       Just decl ->
-        case funcArch fdata of
+        case fdata ^. fdArch of
           Nothing -> []
           Just arch ->
               [AST.LUEntity decl, AST.LUArch arch]
