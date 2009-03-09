@@ -38,12 +38,13 @@ getDesignFiles funcs =
 createEntity ::
   HsFunction        -- | The function signature
   -> FuncData       -- | The function data collected so far
-  -> Maybe Entity   -- | The resulting entity
+  -> Maybe Entity   -- | The resulting entity. Should return the existing
+                    ---  Entity for builtin functions.
 
 createEntity hsfunc fdata = 
   case flatFunc fdata of
     -- Skip (builtin) functions without a FlatFunction
-    Nothing -> Nothing
+    Nothing -> funcEntity fdata
     -- Create an entity for all other functions
     Just flatfunc ->
       let 
