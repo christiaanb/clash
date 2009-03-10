@@ -375,6 +375,7 @@ mk_fsvec_ty ty args = do
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
   let ty_dec = AST.TypeDec ty_id ty_def
+  -- TODO: Check name uniqueness
   State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
   return ty_id
 
