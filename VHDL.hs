@@ -35,14 +35,19 @@ createDesignFiles ::
 
 createDesignFiles flatfuncmap =
   -- TODO: Output types
+  (mkVHDLId "types", AST.DesignFile [] [type_package]) :
   map (Arrow.second $ AST.DesignFile context) units
+  
   where
     init_session = VHDLSession Map.empty builtin_funcs
     (units, final_session) = 
       State.runState (createLibraryUnits flatfuncmap) init_session
+    ty_decls = Map.elems (final_session ^. vsTypes)
     context = [
       AST.Library $ mkVHDLId "IEEE",
-      AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
+      AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All,
+      AST.Use $ (AST.NSimple $ mkVHDLId "work.types") AST.:.: AST.All]
+    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLId "types") (map (AST.PDITD . snd) ty_decls)
 
 createLibraryUnits ::
   FlatFuncMap
@@ -75,11 +80,6 @@ createEntity hsfunc flatfunc =
         (ty_decls', res') = Traversable.traverse (mkMap sigs) res
         -- TODO: Unique ty_decls
         ent_decl' = createEntityAST hsfunc args' res'
-        pkg_id = mkVHDLId $ (AST.fromVHDLId entity_id) ++ "_types"
-        pkg_decl = if null ty_decls && null ty_decls'
-          then Nothing
-          else Just $ AST.PackageDec pkg_id (map AST.PDITD $ ty_decls ++ ty_decls')
-        -- TODO: Output package
         AST.EntityDec entity_id _ = ent_decl' 
         signature = Entity entity_id args' res'
       in do
