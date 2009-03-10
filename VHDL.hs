@@ -36,18 +36,21 @@ createDesignFiles ::
 
 createDesignFiles flatfuncmap =
   -- TODO: Output types
-  (mkVHDLId "types", AST.DesignFile [] [type_package]) :
-  map (Arrow.second $ AST.DesignFile context) units
+  (mkVHDLId "types", AST.DesignFile ieee_context [type_package]) :
+  map (Arrow.second $ AST.DesignFile full_context) units
   
   where
     init_session = VHDLSession Map.empty builtin_funcs
     (units, final_session) = 
       State.runState (createLibraryUnits flatfuncmap) init_session
     ty_decls = Map.elems (final_session ^. vsTypes)
-    context = [
-      AST.Library $ mkVHDLId "IEEE",
-      AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All,
-      AST.Use $ (AST.NSimple $ mkVHDLId "work.types") AST.:.: AST.All]
+    ieee_context = [
+        AST.Library $ mkVHDLId "IEEE",
+        AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All
+      ]
+    full_context =
+      (AST.Use $ (AST.NSimple $ mkVHDLId "work.types") AST.:.: AST.All)
+      : ieee_context
     type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLId "types") (map (AST.PDITD . snd) ty_decls)
 
 createLibraryUnits ::
