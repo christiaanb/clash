@@ -13,6 +13,7 @@ import qualified Control.Monad.Trans.State as State
 import qualified Data.Traversable as Traversable
 import qualified Data.Monoid as Monoid
 import Data.Accessor
+import qualified Data.Accessor.MonadState as MonadState
 
 import qualified Type
 import qualified TysWiredIn
@@ -71,33 +72,25 @@ createEntity ::
   -> FlatFunction -- | The FlatFunction
   -> VHDLState AST.EntityDec -- | The resulting entity
 
-createEntity hsfunc flatfunc = 
-      let 
-        sigs    = flat_sigs flatfunc
-        args    = flat_args flatfunc
-        res     = flat_res  flatfunc
-        (ty_decls, args') = Traversable.traverse (Traversable.traverse (mkMap sigs)) args
-        (ty_decls', res') = Traversable.traverse (mkMap sigs) res
-        -- TODO: Unique ty_decls
-        ent_decl' = createEntityAST hsfunc args' res'
-        AST.EntityDec entity_id _ = ent_decl' 
-        signature = Entity entity_id args' res'
-      in do
-        modA vsSignatures (Map.insert hsfunc signature)
-        return ent_decl'
+createEntity hsfunc flatfunc = do
+      let sigs    = flat_sigs flatfunc
+      let args    = flat_args flatfunc
+      let res     = flat_res  flatfunc
+      args' <- Traversable.traverse (Traversable.traverse (mkMap sigs)) args
+      res' <- Traversable.traverse (mkMap sigs) res
+      let ent_decl' = createEntityAST hsfunc args' res'
+      let AST.EntityDec entity_id _ = ent_decl' 
+      let signature = Entity entity_id args' res'
+      modA vsSignatures (Map.insert hsfunc signature)
+      return ent_decl'
   where
     mkMap :: 
       [(SignalId, SignalInfo)] 
       -> SignalId 
-      -> ([AST.TypeDec], Maybe (AST.VHDLId, AST.TypeMark))
-    mkMap sigmap id =
-      if isPortSigUse $ sigUse info
-        then
-          let (decs, type_mark) = vhdl_ty ty in
-          (decs, Just (mkVHDLId nm, type_mark))
-        else
-          (Monoid.mempty, Nothing)
-      where
+      -> VHDLState VHDLSignalMapElement
+    -- We only need the vsTypes element from the state
+    mkMap sigmap = MonadState.lift vsTypes . (\id ->
+      let
         info = Maybe.fromMaybe
           (error $ "Signal not found in the name map? This should not happen!")
           (lookup id sigmap)
@@ -105,6 +98,14 @@ createEntity hsfunc flatfunc =
           (error $ "Signal not named? This should not happen!")
           (sigName info)
         ty = sigTy info
+      in
+        if isPortSigUse $ sigUse info
+          then do
+            type_mark <- vhdl_ty ty
+            return $ Just (mkVHDLId nm, type_mark)
+          else
+            return $ Nothing
+       )
 
   -- | Create the VHDL AST for an entity
 createEntityAST ::
@@ -156,7 +157,10 @@ createArchitecture hsfunc flatfunc = do
         (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
         (Map.lookup hsfunc signaturemap)
   let entity_id = ent_id signature
-    -- Create concurrent statements for all signal definitions
+  -- Create signal declarations for all internal and state signals
+  sig_dec_maybes <- mapM (mkSigDec' . snd) sigs
+  let sig_decs = Maybe.catMaybes $ sig_dec_maybes
+  -- Create concurrent statements for all signal definitions
   let statements = zipWith (mkConcSm signaturemap sigs) defs [0..]
   return $ AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
@@ -164,12 +168,12 @@ createArchitecture hsfunc flatfunc = do
     args = flat_args flatfunc
     res  = flat_res  flatfunc
     defs = flat_defs flatfunc
-    -- Create signal declarations for all internal and state signals
-    (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
     -- TODO: Unique ty_decls
     -- TODO: Store ty_decls somewhere
     procs = map mkStateProcSm (makeStatePairs flatfunc)
     procs' = map AST.CSPSm procs
+    -- mkSigDec only uses vsTypes from the state
+    mkSigDec' = MonadState.lift vsTypes . mkSigDec
 
 -- | Looks up all pairs of old state, new state signals, together with
 --   the state id they represent.
@@ -198,14 +202,14 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
-mkSigDec :: SignalInfo -> ([AST.TypeDec], Maybe AST.SigDec)
+mkSigDec :: SignalInfo -> TypeState (Maybe AST.SigDec)
 mkSigDec info =
   let use = sigUse info in
-  if isInternalSigUse use || isStateSigUse use then
-    let (ty_decls, type_mark) = vhdl_ty ty in
-    (ty_decls, Just $ AST.SigDec (getSignalId info) type_mark Nothing)
+  if isInternalSigUse use || isStateSigUse use then do
+    type_mark <- vhdl_ty ty
+    return $ Just (AST.SigDec (getSignalId info) type_mark Nothing)
   else
-    ([], Nothing)
+    return Nothing
   where
     ty = sigTy info
 
@@ -329,38 +333,56 @@ std_logic_ty :: AST.TypeMark
 std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
 
 -- Translate a Haskell type to a VHDL type
-vhdl_ty :: Type.Type -> ([AST.TypeDec], AST.TypeMark)
-vhdl_ty ty = Maybe.fromMaybe
-  (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
-  (vhdl_ty_maybe ty)
+vhdl_ty :: Type.Type -> TypeState AST.TypeMark
+vhdl_ty ty = do
+  typemap <- State.get
+  let builtin_ty = do -- See if this is a tycon and lookup its name
+        (tycon, args) <- Type.splitTyConApp_maybe ty
+        let name = Name.getOccString (TyCon.tyConName tycon)
+        Map.lookup name builtin_types
+  -- If not a builtin type, try the custom types
+  let existing_ty = (fmap fst) $ Map.lookup (OrdType ty) typemap
+  case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
+    -- Found a type, return it
+    Just t -> return t
+    -- No type yet, try to construct it
+    Nothing -> do
+      let new_ty = do
+            -- Use the Maybe Monad for failing when one of these fails
+            (tycon, args) <- Type.splitTyConApp_maybe ty
+            let name = Name.getOccString (TyCon.tyConName tycon)
+            case name of
+              "FSVec" -> Just $ mk_fsvec_ty ty args
+              otherwise -> Nothing
+      -- Return new_ty when a new type was successfully created
+      Maybe.fromMaybe 
+        (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
+        new_ty
 
--- Translate a Haskell type to a VHDL type, optionally generating a type
--- declaration for the type.
-vhdl_ty_maybe :: Type.Type -> Maybe ([AST.TypeDec], AST.TypeMark)
-vhdl_ty_maybe ty =
-  if Type.coreEqType ty TysWiredIn.boolTy
-    then
-      Just ([], bool_ty)
-    else
-      case Type.splitTyConApp_maybe ty of
-        Just (tycon, args) ->
-          let name = TyCon.tyConName tycon in
-            -- TODO: Do something more robust than string matching
-            case Name.getOccString name of
-              "Bit"      -> Just ([], std_logic_ty)
-              "FSVec"    ->
-                let 
-                  [len, el_ty] = args 
-                  -- TODO: Find actual number
-                  ty_id = mkVHDLId ("vector_" ++ (show len))
-                  -- TODO: Use el_ty
-                  range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
-                  ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
-                  ty_dec = AST.TypeDec ty_id ty_def
-                in
-                  Just ([ty_dec], ty_id)
-              otherwise  -> Nothing
-        otherwise -> Nothing
+-- | Create a VHDL type belonging to a FSVec Haskell type
+mk_fsvec_ty ::
+  Type.Type -- ^ The Haskell type to create a VHDL type for
+  -> [Type.Type] -- ^ Type arguments to the FSVec type constructor
+  -> TypeState AST.TypeMark -- The typemark created.
+
+mk_fsvec_ty ty args = do
+  -- Assume there are two type arguments
+  let [len, el_ty] = args 
+  -- TODO: Find actual number
+  let ty_id = mkVHDLId ("vector_" ++ (show len))
+  -- TODO: Use el_ty
+  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
+  let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
+  let ty_dec = AST.TypeDec ty_id ty_def
+  State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
+  return ty_id
+
+
+builtin_types = 
+  Map.fromList [
+    ("Bit", std_logic_ty),
+    ("Bool", bool_ty) -- TysWiredIn.boolTy
+  ]
 
 -- Shortcut
 mkVHDLId :: String -> AST.VHDLId
