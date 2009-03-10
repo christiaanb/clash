@@ -3,7 +3,7 @@ module FlattenTypes where
 import qualified Maybe
 import Data.Traversable
 import qualified Data.Foldable as Foldable
-import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans.State as State
 
 import CoreSyn
 import qualified Type

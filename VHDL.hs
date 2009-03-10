@@ -9,6 +9,7 @@ import qualified Data.Map as Map
 import qualified Maybe
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
+import qualified Control.Monad.Trans.State as State
 import qualified Data.Traversable as Traversable
 import qualified Data.Monoid as Monoid
 import Data.Accessor
@@ -27,28 +28,44 @@ import FlattenTypes
 import TranslatorTypes
 import Pretty
 
-getDesignFiles :: [FuncData] -> [AST.DesignFile]
-getDesignFiles funcs =
-  map (AST.DesignFile context) units
+createDesignFiles ::
+  FlatFuncMap
+  -> [(AST.VHDLId, AST.DesignFile)]
+
+createDesignFiles flatfuncmap =
+  -- TODO: Output types
+  map (Arrow.second $ AST.DesignFile context) units
   where
-    units = filter (not.null) $ map getLibraryUnits funcs
+    init_session = VHDLSession Map.empty Map.empty
+    (units, final_session) = 
+      State.runState (createLibraryUnits flatfuncmap) init_session
     context = [
       AST.Library $ mkVHDLId "IEEE",
       AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All]
-  
+
+createLibraryUnits ::
+  FlatFuncMap
+  -> VHDLState [(AST.VHDLId, [AST.LibraryUnit])]
+
+createLibraryUnits flatfuncmap = do
+  let hsfuncs = Map.keys flatfuncmap
+  let flatfuncs = Map.elems flatfuncmap
+  entities <- Monad.zipWithM createEntity hsfuncs flatfuncs
+  archs <- Monad.zipWithM createArchitecture hsfuncs flatfuncs
+  return $ zipWith 
+    (\ent arch -> 
+      let AST.EntityDec id _ = ent in 
+      (id, [AST.LUEntity ent, AST.LUArch arch])
+    )
+    entities archs
+
 -- | Create an entity for a given function
 createEntity ::
-  HsFunction        -- | The function signature
-  -> FuncData       -- | The function data collected so far
-  -> Maybe Entity   -- | The resulting entity. Should return the existing
-                    ---  Entity for builtin functions.
+  HsFunction -- | The function signature
+  -> FlatFunction -- | The FlatFunction
+  -> VHDLState AST.EntityDec -- | The resulting entity
 
-createEntity hsfunc fdata = 
-  case fdata ^. fdFlatFunc of
-    -- Skip (builtin) functions without a FlatFunction
-    Nothing -> fdata ^. fdEntity
-    -- Create an entity for all other functions
-    Just flatfunc ->
+createEntity hsfunc flatfunc = 
       let 
         sigs    = flat_sigs flatfunc
         args    = flat_args flatfunc
@@ -61,9 +78,12 @@ createEntity hsfunc fdata =
         pkg_decl = if null ty_decls && null ty_decls'
           then Nothing
           else Just $ AST.PackageDec pkg_id (map AST.PDITD $ ty_decls ++ ty_decls')
+        -- TODO: Output package
         AST.EntityDec entity_id _ = ent_decl' 
-      in 
-        Just $ Entity entity_id args' res' (Just ent_decl') pkg_decl
+        signature = Entity entity_id args' res'
+      in do
+        modA vsSignatures (Map.insert hsfunc signature)
+        return ent_decl'
   where
     mkMap :: 
       [(SignalId, SignalInfo)] 
@@ -125,36 +145,30 @@ mkEntityId hsfunc =
 
 -- | Create an architecture for a given function
 createArchitecture ::
-  FuncMap           -- ^ The functions in the current session
-  -> HsFunction     -- ^ The function signature
-  -> FuncData       -- ^ The function data collected so far
-  -> Maybe AST.ArchBody -- ^ The architecture for this function
+  HsFunction -- ^ The function signature
+  -> FlatFunction -- ^ The FlatFunction
+  -> VHDLState AST.ArchBody -- ^ The architecture for this function
 
-createArchitecture funcs hsfunc fdata = 
-  case fdata ^. fdFlatFunc of
-    -- Skip (builtin) functions without a FlatFunction
-    Nothing -> fdata ^. fdArch
-    -- Create an architecture for all other functions
-    Just flatfunc ->
-      let
-        sigs = flat_sigs flatfunc
-        args = flat_args flatfunc
-        res  = flat_res  flatfunc
-        defs = flat_defs flatfunc
-        entity_id = Maybe.fromMaybe
-                      (error $ "Building architecture without an entity? This should not happen!")
-                      (getEntityId fdata)
-        -- Create signal declarations for all signals that are not in args and
-        -- res
-        (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
-        -- TODO: Unique ty_decls
-        -- TODO: Store ty_decls somewhere
-        -- Create concurrent statements for all signal definitions
-        statements = zipWith (mkConcSm funcs sigs) defs [0..]
-        procs = map mkStateProcSm (makeStatePairs flatfunc)
-        procs' = map AST.CSPSm procs
-      in
-        Just $ AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
+createArchitecture hsfunc flatfunc = do
+  signaturemap <- getA vsSignatures
+  let signature = Maybe.fromMaybe 
+        (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
+        (Map.lookup hsfunc signaturemap)
+  let entity_id = ent_id signature
+    -- Create concurrent statements for all signal definitions
+  let statements = zipWith (mkConcSm signaturemap sigs) defs [0..]
+  return $ AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
+  where
+    sigs = flat_sigs flatfunc
+    args = flat_args flatfunc
+    res  = flat_res  flatfunc
+    defs = flat_defs flatfunc
+    -- Create signal declarations for all internal and state signals
+    (ty_decls, sig_decs)  = Arrow.second Maybe.catMaybes $ Traversable.traverse (mkSigDec . snd) sigs
+    -- TODO: Unique ty_decls
+    -- TODO: Store ty_decls somewhere
+    procs = map mkStateProcSm (makeStatePairs flatfunc)
+    procs' = map AST.CSPSm procs
 
 -- | Looks up all pairs of old state, new state signals, together with
 --   the state id they represent.
@@ -204,27 +218,23 @@ getSignalId info =
 
 -- | Transforms a signal definition into a VHDL concurrent statement
 mkConcSm ::
-  FuncMap                  -- ^ The functions in the current session
+  SignatureMap             -- ^ The interfaces of functions in the session
   -> [(SignalId, SignalInfo)] -- ^ The signals in the current architecture
   -> SigDef                -- ^ The signal definition 
   -> Int                   -- ^ A number that will be unique for all
                            --   concurrent statements in the architecture.
   -> AST.ConcSm            -- ^ The corresponding VHDL component instantiation.
 
-mkConcSm funcs sigs (FApp hsfunc args res) num =
+mkConcSm signatures sigs (FApp hsfunc args res) num =
   let 
-    fdata_maybe = Map.lookup hsfunc funcs
-    fdata = Maybe.fromMaybe
-        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' that is not in the session? This should not happen!")
-        fdata_maybe
-    entity = Maybe.fromMaybe
-        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without entity declaration? This should not happen!")
-        (fdata ^. fdEntity)
-    entity_id = ent_id entity
+    signature = Maybe.fromMaybe
+        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without signature? This should not happen!")
+        (Map.lookup hsfunc signatures)
+    entity_id = ent_id signature
     label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
     -- Add a clk port if we have state
     clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLId "clk") "clk"
-    portmaps = mkAssocElems sigs args res entity ++ (if hasState hsfunc then [clk_port] else [])
+    portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
   in
     AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
@@ -304,32 +314,6 @@ lookupSigName sigs sig = name
 mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
 mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLId signal))) 
 mkAssocElem Nothing _ = Nothing
-
--- | Extracts the generated entity id from the given funcdata
-getEntityId :: FuncData -> Maybe AST.VHDLId
-getEntityId fdata =
-  case fdata ^. fdEntity of
-    Nothing -> Nothing
-    Just e  -> case ent_decl e of
-      Nothing -> Nothing
-      Just (AST.EntityDec id _) -> Just id
-
-getLibraryUnits ::
-  FuncData                    -- | A function from the session
-  -> [AST.LibraryUnit]  -- | The entity, architecture and optional package for the function
-
-getLibraryUnits fdata =
-  case fdata ^. fdEntity of 
-    Nothing -> []
-    Just ent -> 
-      case ent_decl ent of
-      Nothing -> []
-      Just decl ->
-        case fdata ^. fdArch of
-          Nothing -> []
-          Just arch ->
-              [AST.LUEntity decl, AST.LUArch arch]
-              ++ (Maybe.maybeToList (fmap AST.LUPackageDec $ ent_pkg_decl ent))
 
 -- | The VHDL Bit type
 bit_ty :: AST.TypeMark

@@ -10,8 +10,8 @@ import qualified TyCon
 import qualified DataCon
 import qualified Maybe
 import qualified Module
-import qualified Control.Monad.State as State
 import qualified Data.Foldable as Foldable
+import qualified Control.Monad.Trans.State as State
 import Name
 import qualified Data.Map as Map
 import Data.Accessor
@@ -73,44 +73,38 @@ listBind filename name = do
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
 --   stateless (False).
-moduleToVHDL :: HscTypes.CoreModule -> [(String, Bool)] -> IO [AST.DesignFile]
+moduleToVHDL :: HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
 moduleToVHDL core list = do
   let (names, statefuls) = unzip list
   --liftIO $ putStr $ prettyShow (cm_binds core)
   let binds = findBinds core names
   --putStr $ prettyShow binds
   -- Turn bind into VHDL
-  let (vhdl, sess) = State.runState (mkVHDL binds statefuls) (VHDLSession core 0 Map.empty)
-  mapM (putStr . render . ForSyDe.Backend.Ppr.ppr) vhdl
+  let (vhdl, sess) = State.runState (mkVHDL binds statefuls) (TranslatorSession core 0 Map.empty)
+  mapM (putStr . render . ForSyDe.Backend.Ppr.ppr . snd) vhdl
   putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
-
   where
     -- Turns the given bind into VHDL
+    mkVHDL :: [CoreBind] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
     mkVHDL binds statefuls = do
       -- Add the builtin functions
-      mapM addBuiltIn builtin_funcs
+      --mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       Monad.zipWithM processBind statefuls binds
-      modFuncMap $ Map.map (fdFlatFunc ^: (fmap nameFlatFunction))
-      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdEntity ^= (VHDL.createEntity hsfunc fdata) $ fdata)
-      funcs <- getFuncMap
-      modFuncMap $ Map.mapWithKey (\hsfunc fdata -> fdArch ^= (VHDL.createArchitecture funcs hsfunc fdata) $ fdata)
-      funcs <- getFuncs
-      return $ VHDL.getDesignFiles (map snd funcs)
+      modA tsFlatFuncs (Map.map nameFlatFunction)
+      flatfuncs <- getA tsFlatFuncs
+      return $ VHDL.createDesignFiles flatfuncs
 
--- | Write the given design file to a file inside the given dir
---   The first library unit in the designfile must be an entity, whose name
---   will be used as a filename.
-writeVHDL :: String -> AST.DesignFile -> IO ()
-writeVHDL dir vhdl = do
+-- | Write the given design file to a file with the given name inside the
+--   given dir
+writeVHDL :: String -> (AST.VHDLId, AST.DesignFile) -> IO ()
+writeVHDL dir (name, vhdl) = do
   -- Create the dir if needed
   exists <- Directory.doesDirectoryExist dir
   Monad.unless exists $ Directory.createDirectory dir
   -- Find the filename
-  let AST.DesignFile _ (u:us) = vhdl
-  let AST.LUEntity (AST.EntityDec id _) = u
-  let fname = dir ++ AST.fromVHDLId id ++ ".vhdl"
+  let fname = dir ++ (AST.fromVHDLId name) ++ ".vhdl"
   -- Write the file
   ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl fname
 
@@ -169,18 +163,15 @@ flattenBind ::
 flattenBind _ (Rec _) = error "Recursive binders not supported"
 
 flattenBind hsfunc bind@(NonRec var expr) = do
-  -- Add the function to the session
-  addFunc hsfunc
   -- Flatten the function
   let flatfunc = flattenFunction hsfunc bind
   -- Propagate state variables
   let flatfunc' = propagateState hsfunc flatfunc
   -- Store the flat function in the session
-  setFlatFunc hsfunc flatfunc'
+  modA tsFlatFuncs (Map.insert hsfunc flatfunc)
   -- Flatten any functions used
   let used_hsfuncs = Maybe.mapMaybe usedHsFunc (flat_defs flatfunc')
-  State.mapM resolvFunc used_hsfuncs
-  return ()
+  mapM_ resolvFunc used_hsfuncs
 
 -- | Decide which incoming state variables will become state in the
 --   given function, and which will be propagate to other applied
@@ -276,23 +267,18 @@ resolvFunc ::
   -> TranslatorState ()
 
 resolvFunc hsfunc = do
-  -- See if the function is already known
-  func <- getFunc hsfunc
-  case func of
-    -- Already known, do nothing
-    Just _ -> do
-      return ()
-    -- New function, resolve it
-    Nothing -> do
-      -- Get the current module
-      core <- getModule
-      -- Find the named function
-      let bind = findBind (cm_binds core) name
-      case bind of
-        Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
-        Just b  -> flattenBind hsfunc b
-  where
-    name = hsFuncName hsfunc
+  flatfuncmap <- getA tsFlatFuncs
+  -- Don't do anything if there is already a flat function for this hsfunc.
+  Monad.unless (Map.member hsfunc flatfuncmap) $ do
+  -- TODO: Builtin functions
+  -- New function, resolve it
+  core <- getA tsCoreModule
+  -- Find the named function
+  let name = (hsFuncName hsfunc)
+  let bind = findBind (cm_binds core) name 
+  case bind of
+    Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
+    Just b  -> flattenBind hsfunc b
 
 -- | Translate a top level function declaration to a HsFunction. i.e., which
 --   interface will be provided by this function. This function essentially
@@ -378,6 +364,7 @@ toVHDLSignalMap = fmap (\(name, ty) -> Just (VHDL.mkVHDLId name, ty))
 
 -- | Translate a concise representation of a builtin function to something
 --   that can be put into FuncMap directly.
+{-
 addBuiltIn :: BuiltIn -> TranslatorState ()
 addBuiltIn (BuiltIn name args res) = do
     addFunc hsfunc
@@ -393,5 +380,5 @@ builtin_funcs =
     BuiltIn "hwor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
     BuiltIn "hwnot" [(Single ("a", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
   ]
-
+-}
 -- vim: set ts=8 sw=2 sts=2 expandtab:

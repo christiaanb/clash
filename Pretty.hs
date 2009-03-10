@@ -97,15 +97,15 @@ instance Pretty SigUse where
   pPrint SigSubState = text "s"
 
 instance Pretty TranslatorSession where
-  pPrint (VHDLSession mod nameCount funcs) =
+  pPrint (TranslatorSession mod nameCount flatfuncs) =
     text "Module: " $$ nest 15 (text modname)
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
-    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList funcs)))
+    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList flatfuncs)))
     where
-      ppfunc (hsfunc, fdata) =
-        pPrint hsfunc $+$ nest 5 (pPrint fdata)
+      ppfunc (hsfunc, flatfunc) =
+        pPrint hsfunc $+$ nest 5 (pPrint flatfunc)
       modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
-
+{-
 instance Pretty FuncData where
   pPrint (FuncData flatfunc entity arch) =
     text "Flattened: " $$ nest 15 (ppffunc flatfunc)
@@ -118,19 +118,13 @@ instance Pretty FuncData where
       ppent Nothing    = text "Nothing"
       pparch Nothing = text "VHDL architecture not present"
       pparch (Just _) = text "VHDL architecture present"
+-}
 
 instance Pretty Entity where
-  pPrint (Entity id args res decl pkg) =
+  pPrint (Entity id args res) =
     text "Entity: " $$ nest 10 (pPrint id)
     $+$ text "Args: " $$ nest 10 (pPrint args)
     $+$ text "Result: " $$ nest 10 (pPrint res)
-    $+$ ppdecl decl
-    $+$ pppkg pkg
-    where
-      ppdecl Nothing = text "VHDL entity not present"
-      ppdecl (Just _) = text "VHDL entity present"
-      pppkg Nothing = text "VHDL package not present"
-      pppkg (Just _) = text "VHDL package present"
 
 instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.NonRec b expr) =

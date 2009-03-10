@@ -15,7 +15,7 @@ import qualified Data.Traversable as Traversable
 import qualified Data.Foldable as Foldable
 import Control.Applicative
 import Outputable ( showSDoc, ppr )
-import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans.State as State
 
 import HsValueMap
 import TranslatorTypes
@@ -222,7 +222,7 @@ flattenExpr binds app@(App _ _) = do
 
     flattenBuildTupleExpr binds args = do
       -- Flatten each of our args
-      flat_args <- (State.mapM (flattenExpr binds) args)
+      flat_args <- (mapM (flattenExpr binds) args)
       -- Check and split each of the arguments
       let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
       let res = Tuple arg_ress
@@ -233,7 +233,7 @@ flattenExpr binds app@(App _ _) = do
       -- Find the function to call
       let func = appToHsFunction ty f args
       -- Flatten each of our args
-      flat_args <- (State.mapM (flattenExpr binds) args)
+      flat_args <- (mapM (flattenExpr binds) args)
       -- Check and split each of the arguments
       let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
       -- Generate signals for our result
