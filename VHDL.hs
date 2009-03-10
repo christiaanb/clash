@@ -26,6 +26,7 @@ import VHDLTypes
 import Flatten
 import FlattenTypes
 import TranslatorTypes
+import HsValueMap
 import Pretty
 
 createDesignFiles ::
@@ -36,7 +37,7 @@ createDesignFiles flatfuncmap =
   -- TODO: Output types
   map (Arrow.second $ AST.DesignFile context) units
   where
-    init_session = VHDLSession Map.empty Map.empty
+    init_session = VHDLSession Map.empty builtin_funcs
     (units, final_session) = 
       State.runState (createLibraryUnits flatfuncmap) init_session
     context = [
@@ -374,3 +375,30 @@ mkVHDLId s =
           ('_':_) -> "_"
           _ -> cs
       ) . List.group
+
+-- | A consise representation of a (set of) ports on a builtin function
+type PortMap = HsValueMap (String, AST.TypeMark)
+-- | A consise representation of a builtin function
+data BuiltIn = BuiltIn String [PortMap] PortMap
+
+-- | Translate a list of concise representation of builtin functions to a
+--   SignatureMap
+mkBuiltins :: [BuiltIn] -> SignatureMap
+mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
+    (HsFunction name (map useAsPort args) (useAsPort res),
+     Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
+  )
+
+builtin_hsfuncs = Map.keys builtin_funcs
+builtin_funcs = mkBuiltins
+  [ 
+    BuiltIn "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
+    BuiltIn "hwand" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
+    BuiltIn "hwor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
+    BuiltIn "hwnot" [(Single ("a", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
+  ]
+
+-- | Map a port specification of a builtin function to a VHDL Signal to put in
+--   a VHDLSignalMap
+toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
+toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLId name, ty))

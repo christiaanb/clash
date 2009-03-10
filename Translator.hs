@@ -268,8 +268,10 @@ resolvFunc ::
 
 resolvFunc hsfunc = do
   flatfuncmap <- getA tsFlatFuncs
-  -- Don't do anything if there is already a flat function for this hsfunc.
+  -- Don't do anything if there is already a flat function for this hsfunc or
+  -- when it is a builtin function.
   Monad.unless (Map.member hsfunc flatfuncmap) $ do
+  Monad.unless (elem hsfunc VHDL.builtin_hsfuncs) $ do
   -- TODO: Builtin functions
   -- New function, resolve it
   core <- getA tsCoreModule
@@ -352,33 +354,4 @@ splitTupleType ty =
         Nothing
     Nothing -> Nothing
 
--- | A consise representation of a (set of) ports on a builtin function
-type PortMap = HsValueMap (String, AST.TypeMark)
--- | A consise representation of a builtin function
-data BuiltIn = BuiltIn String [PortMap] PortMap
-
--- | Map a port specification of a builtin function to a VHDL Signal to put in
---   a VHDLSignalMap
-toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
-toVHDLSignalMap = fmap (\(name, ty) -> Just (VHDL.mkVHDLId name, ty))
-
--- | Translate a concise representation of a builtin function to something
---   that can be put into FuncMap directly.
-{-
-addBuiltIn :: BuiltIn -> TranslatorState ()
-addBuiltIn (BuiltIn name args res) = do
-    addFunc hsfunc
-    setEntity hsfunc entity
-  where
-    hsfunc = HsFunction name (map useAsPort args) (useAsPort res)
-    entity = Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res) Nothing Nothing
-
-builtin_funcs = 
-  [ 
-    BuiltIn "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwand" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwnot" [(Single ("a", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
-  ]
--}
 -- vim: set ts=8 sw=2 sts=2 expandtab:
