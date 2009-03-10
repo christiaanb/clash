@@ -35,7 +35,6 @@ createDesignFiles ::
   -> [(AST.VHDLId, AST.DesignFile)]
 
 createDesignFiles flatfuncmap =
-  -- TODO: Output types
   (mkVHDLId "types", AST.DesignFile ieee_context [type_package]) :
   map (Arrow.second $ AST.DesignFile full_context) units
   
@@ -171,8 +170,6 @@ createArchitecture hsfunc flatfunc = do
     args = flat_args flatfunc
     res  = flat_res  flatfunc
     defs = flat_defs flatfunc
-    -- TODO: Unique ty_decls
-    -- TODO: Store ty_decls somewhere
     procs = map mkStateProcSm (makeStatePairs flatfunc)
     procs' = map AST.CSPSm procs
     -- mkSigDec only uses vsTypes from the state

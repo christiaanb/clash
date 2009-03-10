@@ -272,7 +272,6 @@ resolvFunc hsfunc = do
   -- when it is a builtin function.
   Monad.unless (Map.member hsfunc flatfuncmap) $ do
   Monad.unless (elem hsfunc VHDL.builtin_hsfuncs) $ do
-  -- TODO: Builtin functions
   -- New function, resolve it
   core <- getA tsCoreModule
   -- Find the named function
