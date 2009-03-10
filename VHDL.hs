@@ -369,7 +369,8 @@ mk_fsvec_ty ty args = do
   -- Assume there are two type arguments
   let [len, el_ty] = args 
   -- TODO: Find actual number
-  let ty_id = mkVHDLId ("vector_" ++ (show len))
+  -- Construct the type id, but filter out dots (since these are not allowed).
+  let ty_id = mkVHDLId $ filter (/='.') ("vector_" ++ (show len))
   -- TODO: Use el_ty
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
