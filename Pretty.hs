@@ -141,3 +141,10 @@ prettyBind (b, expr) =
   where
     b' = show b
     expr' = show expr
+
+instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
+  pPrint = 
+    vcat . map ppentry . Map.toList
+    where
+      ppentry (k, v) =
+        pPrint k <> text " : " $$ nest 15 (pPrint v)
