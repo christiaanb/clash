@@ -15,6 +15,7 @@ import qualified Data.Traversable as Traversable
 import qualified Data.Monoid as Monoid
 import Data.Accessor
 import qualified Data.Accessor.MonadState as MonadState
+import Text.Regex.Posix
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -39,7 +40,7 @@ createDesignFiles ::
   -> [(AST.VHDLId, AST.DesignFile)]
 
 createDesignFiles flatfuncmap =
-  (mkVHDLId "types", AST.DesignFile ieee_context [type_package]) :
+  (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package]) :
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
@@ -48,14 +49,24 @@ createDesignFiles flatfuncmap =
       State.runState (createLibraryUnits flatfuncmap) init_session
     ty_decls = Map.elems (final_session ^. vsTypes)
     ieee_context = [
-        AST.Library $ mkVHDLId "IEEE",
-        AST.Use $ (AST.NSimple $ mkVHDLId "IEEE.std_logic_1164") AST.:.: AST.All
+        AST.Library $ mkVHDLBasicId "IEEE",
+        mkUseAll ["IEEE", "std_logic_1164"]
       ]
     full_context =
-      (AST.Use $ (AST.NSimple $ mkVHDLId "work.types") AST.:.: AST.All)
+      mkUseAll ["work", "types"]
       : ieee_context
-    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLId "types") (map (AST.PDITD . snd) ty_decls)
+    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (map (AST.PDITD . snd) ty_decls)
 
+-- Create a use foo.bar.all statement. Takes a list of components in the used
+-- name. Must contain at least two components
+mkUseAll :: [String] -> AST.ContextItem
+mkUseAll ss = 
+  AST.Use $ from AST.:.: AST.All
+  where
+    base_prefix = (AST.NSimple $ mkVHDLBasicId $ head ss)
+    from = foldl select base_prefix (tail ss)
+    select prefix s = AST.NSelected $ prefix AST.:.: (AST.SSimple $ mkVHDLBasicId s)
+      
 createLibraryUnits ::
   FlatFuncMap
   -> VHDLState [(AST.VHDLId, [AST.LibraryUnit])]
@@ -108,7 +119,7 @@ createEntity hsfunc flatfunc = do
         if isPortSigUse $ sigUse info
           then do
             type_mark <- vhdl_ty ty
-            return $ Just (mkVHDLId nm, type_mark)
+            return $ Just (mkVHDLExtId nm, type_mark)
           else
             return $ Nothing
        )
@@ -133,7 +144,7 @@ createEntityAST hsfunc args res =
     -- Add a clk port if we have state
     clk_port = if hasState hsfunc
       then
-        [AST.IfaceSigDec (mkVHDLId "clk") AST.In VHDL.std_logic_ty]
+        [AST.IfaceSigDec (mkVHDLExtId "clk") AST.In VHDL.std_logic_ty]
       else
         []
 
@@ -149,7 +160,9 @@ mkIfaceSigDec _ Nothing = Nothing
 -- | Generate a VHDL entity name for the given hsfunc
 mkEntityId hsfunc =
   -- TODO: This doesn't work for functions with multiple signatures!
-  mkVHDLId $ hsFuncName hsfunc
+  -- Use a Basic Id, since using extended id's for entities throws off
+  -- precision and causes problems when generating filenames.
+  mkVHDLBasicId $ hsFuncName hsfunc
 
 -- | Create an architecture for a given function
 createArchitecture ::
@@ -168,7 +181,7 @@ createArchitecture hsfunc flatfunc = do
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
   -- Create concurrent statements for all signal definitions
   let statements = zipWith (mkConcSm signaturemap sigs) defs [0..]
-  return $ AST.ArchBody (mkVHDLId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
+  return $ AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
     sigs = flat_sigs flatfunc
     args = flat_args flatfunc
@@ -198,9 +211,9 @@ mkStateProcSm :: (StateId, SignalInfo, SignalInfo) -> AST.ProcSm
 mkStateProcSm (num, old, new) =
   AST.ProcSm label [clk] [statement]
   where
-    label       = mkVHDLId $ "state_" ++ (show num)
-    clk         = mkVHDLId "clk"
-    rising_edge = AST.NSimple $ mkVHDLId "rising_edge"
+    label       = mkVHDLExtId $ "state_" ++ (show num)
+    clk         = mkVHDLExtId "clk"
+    rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
     wform       = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple $ getSignalId new) Nothing]
     assign      = AST.SigAssign (AST.NSimple $ getSignalId old) wform
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
@@ -221,7 +234,7 @@ mkSigDec info =
 --   is not named.
 getSignalId :: SignalInfo -> AST.VHDLId
 getSignalId info =
-    mkVHDLId $ Maybe.fromMaybe
+    mkVHDLExtId $ Maybe.fromMaybe
       (error $ "Unnamed signal? This should not happen!")
       (sigName info)
 
@@ -242,10 +255,10 @@ mkConcSm signatures sigs (FApp hsfunc args res) num =
     entity_id = ent_id signature
     label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
     -- Add a clk port if we have state
-    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLId "clk") "clk"
+    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
     portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
   in
-    AST.CSISm $ AST.CompInsSm (mkVHDLId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+    AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 mkConcSm _ sigs (UncondDef src dst) _ =
   let
@@ -321,7 +334,7 @@ lookupSigName sigs sig = name
 
 -- | Create an VHDL port -> signal association
 mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
-mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLId signal))) 
+mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLExtId signal))) 
 mkAssocElem Nothing _ = Nothing
 
 -- | The VHDL Bit type
@@ -373,7 +386,7 @@ mk_fsvec_ty ty args = do
   -- Assume there are two type arguments
   let [len, el_ty] = args 
   let len_int = eval_type_level_int len
-  let ty_id = mkVHDLId $ "vector_" ++ (show len_int)
+  let ty_id = mkVHDLExtId $ "vector_" ++ (show len_int)
   -- TODO: Use el_ty
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len_int - 1))]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
@@ -389,19 +402,37 @@ builtin_types =
     ("Bool", bool_ty) -- TysWiredIn.boolTy
   ]
 
--- Shortcut
-mkVHDLId :: String -> AST.VHDLId
-mkVHDLId s = 
-  AST.unsafeVHDLBasicId $ (strip_multiscore . strip_invalid) s
+-- Shortcut for 
+-- Can only contain alphanumerics and underscores. The supplied string must be
+-- a valid basic id, otherwise an error value is returned. This function is
+-- not meant to be passed identifiers from a source file, use mkVHDLExtId for
+-- that.
+mkVHDLBasicId :: String -> AST.VHDLId
+mkVHDLBasicId s = 
+  AST.unsafeVHDLBasicId $ (strip_multiscore . strip_leading . strip_invalid) s
   where
     -- Strip invalid characters.
     strip_invalid = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.")
+    -- Strip leading numbers and underscores
+    strip_leading = dropWhile (`elem` ['0'..'9'] ++ "_")
     -- Strip multiple adjacent underscores
     strip_multiscore = concat . map (\cs -> 
         case cs of 
           ('_':_) -> "_"
           _ -> cs
       ) . List.group
+
+-- Shortcut for Extended VHDL Id's. These Id's can contain a lot more
+-- different characters than basic ids, but can never be used to refer to
+-- basic ids.
+-- Use extended Ids for any values that are taken from the source file.
+mkVHDLExtId :: String -> AST.VHDLId
+mkVHDLExtId s = 
+  AST.unsafeVHDLExtId $ strip_invalid s
+  where 
+    -- Allowed characters, taken from ForSyde's mkVHDLExtId
+    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
+    strip_invalid = filter (`elem` allowed)
 
 -- | A consise representation of a (set of) ports on a builtin function
 type PortMap = HsValueMap (String, AST.TypeMark)
@@ -413,7 +444,7 @@ data BuiltIn = BuiltIn String [PortMap] PortMap
 mkBuiltins :: [BuiltIn] -> SignatureMap
 mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
     (HsFunction name (map useAsPort args) (useAsPort res),
-     Entity (VHDL.mkVHDLId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
+     Entity (VHDL.mkVHDLExtId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
   )
 
 builtin_hsfuncs = Map.keys builtin_funcs
@@ -428,6 +459,4 @@ builtin_funcs = mkBuiltins
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap
 toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
-toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLId name, ty))
-
--- vim: set ts=8 sw=2 sts=2 expandtab:
+toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLExtId name, ty))
