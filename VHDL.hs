@@ -3,6 +3,7 @@
 --
 module VHDL where
 
+-- Standard modules
 import qualified Data.Foldable as Foldable
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -15,14 +16,16 @@ import qualified Data.Monoid as Monoid
 import Data.Accessor
 import qualified Data.Accessor.MonadState as MonadState
 
+-- ForSyDe
+import qualified ForSyDe.Backend.VHDL.AST as AST
+
+-- GHC API
 import qualified Type
-import qualified TysWiredIn
 import qualified Name
 import qualified TyCon
 import Outputable ( showSDoc, ppr )
 
-import qualified ForSyDe.Backend.VHDL.AST as AST
-
+-- Local imports
 import VHDLTypes
 import Flatten
 import FlattenTypes
@@ -426,3 +429,5 @@ builtin_funcs = mkBuiltins
 --   a VHDLSignalMap
 toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
 toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLId name, ty))
+
+-- vim: set ts=8 sw=2 sts=2 expandtab:
