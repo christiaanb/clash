@@ -8,6 +8,9 @@ import qualified Var
 import qualified Type
 import qualified TyCon
 import qualified DataCon
+import qualified HscMain
+import qualified SrcLoc
+import qualified FastString
 import qualified Maybe
 import qualified Module
 import qualified Data.Foldable as Foldable
@@ -63,12 +66,17 @@ makeVHDL filename name stateful = do
 listBind :: String -> String -> IO ()
 listBind filename name = do
   core <- loadModule filename
-  let binds = findBinds core [name]
+  let [bind] = findBinds core [name]
   putStr "\n"
-  putStr $ prettyShow binds
+  putStr $ prettyShow bind
   putStr "\n\n"
-  putStr $ showSDoc $ ppr binds
+  putStr $ showSDoc $ ppr bind
   putStr "\n\n"
+  case bind of
+    NonRec b expr -> do 
+      putStr $ showSDoc $ ppr $ CoreUtils.exprType expr
+      putStr "\n\n"
+    otherwise -> return ()
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
