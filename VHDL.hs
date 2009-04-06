@@ -32,6 +32,7 @@ import FlattenTypes
 import TranslatorTypes
 import HsValueMap
 import Pretty
+import HsTools
 
 createDesignFiles ::
   FlatFuncMap
@@ -371,11 +372,10 @@ mk_fsvec_ty ::
 mk_fsvec_ty ty args = do
   -- Assume there are two type arguments
   let [len, el_ty] = args 
-  -- TODO: Find actual number
-  -- Construct the type id, but filter out dots (since these are not allowed).
-  let ty_id = mkVHDLId $ filter (/='.') ("vector_" ++ (show len))
+  let len_int = eval_type_level_int len
+  let ty_id = mkVHDLId $ "vector_" ++ (show len_int)
   -- TODO: Use el_ty
-  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "16")]
+  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len_int - 1))]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
   let ty_dec = AST.TypeDec ty_id ty_def
   -- TODO: Check name uniqueness
