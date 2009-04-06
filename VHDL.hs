@@ -444,7 +444,7 @@ data BuiltIn = BuiltIn String [PortMap] PortMap
 mkBuiltins :: [BuiltIn] -> SignatureMap
 mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
     (HsFunction name (map useAsPort args) (useAsPort res),
-     Entity (VHDL.mkVHDLExtId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
+     Entity (VHDL.mkVHDLBasicId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
   )
 
 builtin_hsfuncs = Map.keys builtin_funcs
@@ -459,4 +459,4 @@ builtin_funcs = mkBuiltins
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap
 toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
-toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLExtId name, ty))
+toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLBasicId name, ty))
