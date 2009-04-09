@@ -33,7 +33,7 @@ import FlattenTypes
 import TranslatorTypes
 import HsValueMap
 import Pretty
-import HsTools
+import CoreTools
 
 createDesignFiles ::
   FlatFuncMap
@@ -370,6 +370,7 @@ vhdl_ty ty = do
             let name = Name.getOccString (TyCon.tyConName tycon)
             case name of
               "FSVec" -> Just $ mk_fsvec_ty ty args
+              "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
               otherwise -> Nothing
       -- Return new_ty when a new type was successfully created
       Maybe.fromMaybe 
@@ -389,6 +390,23 @@ mk_fsvec_ty ty args = do
   let ty_id = mkVHDLExtId $ "vector_" ++ (show len_int)
   -- TODO: Use el_ty
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len_int - 1))]
+  let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
+  let ty_dec = AST.TypeDec ty_id ty_def
+  -- TODO: Check name uniqueness
+  State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
+  return ty_id
+
+-- | Create a VHDL vector type
+mk_vector_ty ::
+  Int -- ^ The length of the vector
+  -> Type.Type -- ^ The Haskell type to create a VHDL type for
+  -> TypeState AST.TypeMark -- The typemark created.
+
+mk_vector_ty len ty = do
+  -- Assume there is a single type argument
+  let ty_id = mkVHDLExtId $ "vector_" ++ (show len)
+  -- TODO: Use el_ty
+  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
   let ty_dec = AST.TypeDec ty_id ty_def
   -- TODO: Check name uniqueness
