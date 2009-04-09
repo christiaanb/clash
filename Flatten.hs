@@ -21,6 +21,7 @@ import qualified Control.Monad.Trans.State as State
 import HsValueMap
 import TranslatorTypes
 import FlattenTypes
+import CoreTools
 
 -- Extract the arguments from a data constructor application (that is, the
 -- normal args, leaving out the type args).
@@ -207,6 +208,20 @@ flattenExpr binds app@(App _ _) = do
         ([], b) <- flattenExpr binds (last args)
         res <- mkEqComparisons a b
         return ([], res)
+      else if fname == "fromInteger" then do
+        let [to_ty, to_dict, val] = args 
+        -- We assume this is an application of the GHC.Integer.smallInteger
+        -- function to a literal
+        let App smallint (Lit lit) = val
+        let (Literal.MachInt int) = lit
+        let ty = CoreUtils.exprType app
+        sig_id <- genSignalId SigInternal ty
+        -- TODO: fromInteger is defined for more types than just SizedWord
+        let len = sized_word_len ty
+        -- TODO: to_stdlogicvector doesn't work here, since SizedWord
+        -- translates to a different type...
+        addDef (UncondDef (Right $ Literal $ "to_stdlogicvector(to_unsigned(" ++ (show int) ++ ", " ++ (show len) ++ "))") sig_id)
+        return ([], Single sig_id)
       else
         flattenApplicationExpr binds (CoreUtils.exprType app) f args
   where

@@ -50,7 +50,8 @@ createDesignFiles flatfuncmap =
     ty_decls = Map.elems (final_session ^. vsTypes)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
-        mkUseAll ["IEEE", "std_logic_1164"]
+        mkUseAll ["IEEE", "std_logic_1164"],
+        mkUseAll ["IEEE", "numeric_std"]
       ]
     full_context =
       mkUseAll ["work", "types"]
