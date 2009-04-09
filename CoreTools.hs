@@ -41,3 +41,12 @@ eval_tfp_int ty =
 
     core <- toCore expr
     execCore core 
+
+-- | Get the length of a SizedWord type
+sized_word_len :: Type.Type -> Int
+sized_word_len ty =
+  eval_tfp_int len
+  where 
+    (tycon, args) = Type.splitTyConApp ty
+    [len] = args
+
