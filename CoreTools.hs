@@ -46,7 +46,7 @@ eval_tfp_int ty =
     core <- toCore modules expr
     execCore core 
 
--- | Get the length of a SizedWord type
+-- | Get the width of a SizedWord type
 sized_word_len :: Type.Type -> Int
 sized_word_len ty =
   eval_tfp_int len
