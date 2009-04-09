@@ -11,6 +11,7 @@ import qualified TyCon
 
 import qualified HsTypes
 import qualified HsExpr
+import qualified HsBinds
 import qualified SrcLoc
 import qualified RdrName
 
@@ -27,6 +28,7 @@ deriving instance (Show x) => Show (SrcLoc.Located x)
 deriving instance (Show x, OutputableBndr x) => Show (HsExpr.StmtLR x x)
 deriving instance (Show x, OutputableBndr x) => Show (HsExpr.HsExpr x)
 deriving instance Show (RdrName.RdrName)
+deriving instance (Show idL, Show idR, OutputableBndr idL, OutputableBndr idR) => Show (HsBinds.HsBindLR idL idR)
 
 
 -- Implement dummy shows, since deriving them will need loads of other shows
@@ -49,6 +51,10 @@ instance Show (HsExpr.GroupByClause x) where
   show b = "_GroupByClause"
 instance Show (HsExpr.HsStmtContext x) where
   show b = "_HsStmtContext"
+instance Show (HsBinds.Prag) where
+  show b = "_Prag"
+instance Show (HsExpr.GRHSs id) where
+  show b = "_GRHSs"
 
 
 instance (Outputable x) => Show x where
