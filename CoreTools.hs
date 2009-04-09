@@ -42,7 +42,7 @@ eval_tfp_int ty =
           (HsBinds.HsValBinds $ (HsBinds.ValBindsIn binds) [])
           (SrcLoc.noLoc expr)
 
-    core <- toCore expr
+    core <- toCore [] expr
     execCore core 
 
 -- | Get the length of a SizedWord type

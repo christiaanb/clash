@@ -66,8 +66,12 @@ import CoreShow
 --    (==) = Prelude.(==) Int $dInt 
 --  in 
 --    \x = (==) x 1
-toCore :: HsSyn.HsExpr RdrName.RdrName -> GHC.Ghc CoreSyn.CoreExpr
-toCore expr = do
+toCore :: 
+  [Module.ModuleName] -- ^ The modules that need to be imported before translating
+                      --   this expression.
+  -> HsSyn.HsExpr RdrName.RdrName -- ^ The expression to translate to Core.
+  -> GHC.Ghc CoreSyn.CoreExpr -- ^ The resulting core expression.
+toCore modules expr = do
   env <- GHC.getSession
   let icontext = HscTypes.hsc_IC env
   
@@ -75,6 +79,7 @@ toCore expr = do
     -- Translage the TcRn (typecheck-rename) monad into an IO monad
     TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
       (tc_expr, insts) <- TcRnMonad.getLIE $ do
+        mapM importModule modules
         -- Rename the expression, resulting in a HsExpr Name
         (rn_expr, freevars) <- RnExpr.rnExpr expr
         -- Typecheck the expression, resulting in a HsExpr Id and a list of
@@ -161,7 +166,7 @@ eval_type_level_int ty =
     let undef = hsTypedUndef $ coreToHsType ty
     let app = HsExpr.HsApp (to_int) (undef)
 
-    core <- toCore app
+    core <- toCore [] app
     execCore core 
 
 -- These functions build (parts of) a LHSExpr RdrName.
