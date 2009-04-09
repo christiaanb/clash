@@ -1,6 +1,8 @@
 module Alu  where
 import Bits
 import qualified Sim
+import Data.SizedWord
+import Types.Data.Num
 
 main = Sim.simulate exec program initial_state
 mainIO = Sim.simulateIO exec initial_state
@@ -17,18 +19,18 @@ program = [
           ]
 
 --initial_state = (Regs Low High, Low, Low)
-initial_state = ((Low, High), Low, Low)
+initial_state = ((0, 1), 0, 0)
 
+type Word = SizedWord D4
 -- Register bank
-
 type RegAddr = Bit
-type RegisterBankState = (Bit, Bit)
+type RegisterBankState = (Word, Word)
 --data RegisterBankState = Regs { r0, r1 :: Bit} deriving (Show)
 
 register_bank :: 
-  (RegAddr, Bit, Bit) -> -- (addr, we, d)
+  (RegAddr, Bit, Word) -> -- (addr, we, d)
   RegisterBankState -> -- s
-  (RegisterBankState, Bit) -- (s', o)
+  (RegisterBankState, Word) -- (s', o)
 
 register_bank (Low, Low, _) s = -- Read r0
   --(s, r0 s)
@@ -39,7 +41,7 @@ register_bank (High, Low, _) s = -- Read r1
   (s, snd s)
 
 register_bank (addr, High, d) s = -- Write
-  (s', dontcare)
+  (s', 0)
   where
     --Regs r0 r1 = s
     (r0, r1) = s
@@ -52,13 +54,15 @@ register_bank (addr, High, d) s = -- Write
 
 type AluOp = Bit
 
-alu :: AluOp -> Bit -> Bit -> Bit
+alu :: AluOp -> Word -> Word -> Word
 {-# NOINLINE alu #-}
-alu High a b = a `hwand` b
-alu Low a b = a `hwor` b
+--alu High a b = a `hwand` b
+--alu Low a b = a `hwor` b
+alu High a b = a
+alu Low a b = b
 
-type ExecState = (RegisterBankState, Bit, Bit)
-exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, (Bit))
+type ExecState = (RegisterBankState, Word, Word)
+exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, Word)
 
 -- Read & Exec
 exec (addr, we, op) s =

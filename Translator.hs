@@ -49,7 +49,7 @@ import VHDLTypes
 import qualified VHDL
 
 main = do
-  makeVHDL "Alu.hs" "register_bank" True
+  makeVHDL "Alu.hs" "exec" True
 
 makeVHDL :: String -> String -> Bool -> IO ()
 makeVHDL filename name stateful = do
