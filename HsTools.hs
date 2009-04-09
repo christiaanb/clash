@@ -14,6 +14,7 @@ import qualified FastString
 import qualified StringBuffer
 import qualified MonadUtils
 import Outputable ( showSDoc, ppr )
+import qualified Outputable
 -- Lexer & Parser, i.e. up to HsExpr
 import qualified Lexer
 import qualified Parser
@@ -24,19 +25,25 @@ import qualified HsExpr
 import qualified HsTypes
 import qualified HsBinds
 import qualified TcRnMonad
+import qualified TcRnTypes
 import qualified RnExpr
 import qualified RnEnv
 import qualified TcExpr
 import qualified TcEnv
 import qualified TcSimplify
 import qualified Desugar
+import qualified InstEnv
+import qualified FamInstEnv
 import qualified PrelNames
 import qualified Module
 import qualified OccName
 import qualified RdrName
 import qualified Name
+import qualified TysWiredIn
 import qualified SrcLoc
+import qualified LoadIface
 import qualified BasicTypes
+import qualified Bag
 -- Core representation and handling
 import qualified CoreSyn
 import qualified Id
@@ -185,3 +192,30 @@ hscParseThing parser dflags str = do
     let Lexer.POk _ thing = Lexer.unP parser (Lexer.mkPState buf loc dflags)
     return thing
 
+-- | This function imports the module with the given name, for the renamer /
+-- typechecker to use. It also imports any "orphans" and "family instances"
+-- from modules included by this module, but not the actual modules
+-- themselves. I'm not 100% sure how this works, but it seems that any
+-- functions defined in included modules are available just by loading the
+-- original module, and by doing this orphan stuff, any (type family or class)
+-- instances are available as well.
+--
+-- Most of the code is based on tcRnImports and rnImportDecl, but those
+-- functions do a lot more (which I hope we won't need...).
+importModule :: Module.ModuleName -> TcRnTypes.RnM ()
+importModule mod = do
+  let reason = Outputable.text "Hardcoded import" -- Used for trace output
+  let pkg = Nothing
+  -- Load the interface.
+  iface <- LoadIface.loadSrcInterface reason mod False pkg
+  -- Load orphan an familiy instance dependencies as well. I think these
+  -- dependencies are needed for the type checker to know all instances. Any
+  -- other instances (on other packages) are only useful to the
+  -- linker, so we can probably safely ignore them here. Dependencies within
+  -- the same package are also listed in deps, but I'm not so sure what to do
+  -- with them.
+  let deps = HscTypes.mi_deps iface
+  let orphs = HscTypes.dep_orphs deps
+  let finsts = HscTypes.dep_finsts deps
+  LoadIface.loadOrphanModules orphs False
+  LoadIface.loadOrphanModules finsts True
