@@ -6,6 +6,10 @@ import qualified System.IO.Unsafe
 import qualified GHC
 import qualified GHC.Paths
 import qualified DynFlags
+import qualified TcRnMonad
+import qualified MonadUtils
+import qualified HscTypes
+import qualified PrelNames
 
 -- Change a DynFlag from within the Ghc monad. Strangely enough there seems to
 -- be no standard function to do exactly this.
@@ -29,3 +33,12 @@ unsafeRunGhc m =
         dflags <- GHC.getSessionDynFlags
         GHC.setSessionDynFlags dflags
         m
+
+runTcM :: TcRnMonad.TcM a -> IO a
+runTcM thing_inside = do
+  GHC.runGhc (Just GHC.Paths.libdir) $ do   
+    dflags <- GHC.getSessionDynFlags
+    GHC.setSessionDynFlags dflags
+    env <- GHC.getSession
+    HscTypes.ioMsgMaybe . MonadUtils.liftIO .  TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
+      thing_inside
