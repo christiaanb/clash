@@ -42,7 +42,8 @@ eval_tfp_int ty =
           (HsBinds.HsValBinds $ (HsBinds.ValBindsIn binds) [])
           (SrcLoc.noLoc expr)
 
-    core <- toCore [] expr
+    let modules = map GHC.mkModuleName ["Types.Data.Num"]
+    core <- toCore modules expr
     execCore core 
 
 -- | Get the length of a SizedWord type
