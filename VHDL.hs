@@ -370,32 +370,13 @@ vhdl_ty ty = do
             (tycon, args) <- Type.splitTyConApp_maybe ty
             let name = Name.getOccString (TyCon.tyConName tycon)
             case name of
-              "FSVec" -> Just $ mk_fsvec_ty ty args
+              "FSVec" -> Just $ mk_vector_ty (fsvec_len ty) ty
               "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
               otherwise -> Nothing
       -- Return new_ty when a new type was successfully created
       Maybe.fromMaybe 
         (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
         new_ty
-
--- | Create a VHDL type belonging to a FSVec Haskell type
-mk_fsvec_ty ::
-  Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> [Type.Type] -- ^ Type arguments to the FSVec type constructor
-  -> TypeState AST.TypeMark -- The typemark created.
-
-mk_fsvec_ty ty args = do
-  -- Assume there are two type arguments
-  let [len, el_ty] = args 
-  let len_int = eval_type_level_int len
-  let ty_id = mkVHDLExtId $ "vector_" ++ (show len_int)
-  -- TODO: Use el_ty
-  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len_int - 1))]
-  let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
-  let ty_dec = AST.TypeDec ty_id ty_def
-  -- TODO: Check name uniqueness
-  State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
-  return ty_id
 
 -- | Create a VHDL vector type
 mk_vector_ty ::

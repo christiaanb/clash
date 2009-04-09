@@ -69,3 +69,11 @@ eval_type_level_int ty =
 
     core <- toCore [] app
     execCore core 
+
+-- | Get the length of a FSVec type
+fsvec_len :: Type.Type -> Int
+fsvec_len ty =
+  eval_type_level_int len
+  where 
+    (tycon, args) = Type.splitTyConApp ty
+    [len, el_ty] = args
