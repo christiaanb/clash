@@ -176,7 +176,7 @@ flattenBind hsfunc bind@(NonRec var expr) = do
   -- Propagate state variables
   let flatfunc' = propagateState hsfunc flatfunc
   -- Store the flat function in the session
-  modA tsFlatFuncs (Map.insert hsfunc flatfunc)
+  modA tsFlatFuncs (Map.insert hsfunc flatfunc')
   -- Flatten any functions used
   let used_hsfuncs = Maybe.mapMaybe usedHsFunc (flat_defs flatfunc')
   mapM_ resolvFunc used_hsfuncs
