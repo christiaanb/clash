@@ -8,6 +8,7 @@ import qualified Maybe
 import qualified Control.Arrow as Arrow
 import qualified DataCon
 import qualified TyCon
+import qualified Literal
 import qualified CoreUtils
 import qualified TysWiredIn
 import qualified IdInfo
@@ -228,36 +229,6 @@ flattenExpr binds app@(App _ _) = do
       let res = Tuple arg_ress
       return ([], res)
 
-    -- | Flatten a normal application expression
-    flattenApplicationExpr binds ty f args = do
-      -- Find the function to call
-      let func = appToHsFunction ty f args
-      -- Flatten each of our args
-      flat_args <- (mapM (flattenExpr binds) args)
-      -- Check and split each of the arguments
-      let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
-      -- Generate signals for our result
-      res <- genSignals ty
-      -- Add name hints to the generated signals
-      let resname = Name.getOccString f ++ "_res"
-      Traversable.mapM (addNameHint resname) res
-      -- Create the function application
-      let app = FApp {
-        appFunc = func,
-        appArgs = arg_ress,
-        appRes  = res
-      }
-      addDef app
-      return ([], res)
-    -- | Check a flattened expression to see if it is valid to use as a
-    --   function argument. The first argument is the original expression for
-    --   use in the error message.
-    checkArg arg flat =
-      let (args, res) = flat in
-      if not (null args)
-        then error $ "Passing lambda expression or function as a function argument not supported: " ++ (showSDoc $ ppr arg)
-        else flat 
-
 flattenExpr binds l@(Let (NonRec b bexpr) expr) = do
   (b_args, b_res) <- flattenExpr binds bexpr
   if not (null b_args)
@@ -368,6 +339,36 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
 
 flattenExpr _ expr = do
   error $ "Unsupported expression: " ++ (showSDoc $ ppr expr)
+
+-- | Flatten a normal application expression
+flattenApplicationExpr binds ty f args = do
+  -- Find the function to call
+  let func = appToHsFunction ty f args
+  -- Flatten each of our args
+  flat_args <- (mapM (flattenExpr binds) args)
+  -- Check and split each of the arguments
+  let (_, arg_ress) = unzip (zipWith checkArg args flat_args)
+  -- Generate signals for our result
+  res <- genSignals ty
+  -- Add name hints to the generated signals
+  let resname = Name.getOccString f ++ "_res"
+  Traversable.mapM (addNameHint resname) res
+  -- Create the function application
+  let app = FApp {
+    appFunc = func,
+    appArgs = arg_ress,
+    appRes  = res
+  }
+  addDef app
+  return ([], res)
+-- | Check a flattened expression to see if it is valid to use as a
+--   function argument. The first argument is the original expression for
+--   use in the error message.
+checkArg arg flat =
+  let (args, res) = flat in
+  if not (null args)
+    then error $ "Passing lambda expression or function as a function argument not supported: " ++ (showSDoc $ ppr arg)
+    else flat 
 
 -- | Translates a dataconstructor without arguments to the corresponding
 --   literal.
