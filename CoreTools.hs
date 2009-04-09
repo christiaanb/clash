@@ -5,17 +5,20 @@
 module CoreTools where
   
 -- GHC API
-import qualified DynFlags
+import qualified GHC
 import qualified Type
 import qualified HsExpr
 import qualified HsTypes
+import qualified HsBinds
 import qualified RdrName
-import qualified HsBinds
 import qualified OccName
-import qualified HsBinds
+import qualified TysWiredIn
+import qualified Bag
+import qualified DynFlags
 import qualified SrcLoc
 
-import qualified HsTools
+import GhcTools
+import HsTools
 
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int.
