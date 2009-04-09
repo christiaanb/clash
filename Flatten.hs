@@ -170,6 +170,9 @@ flattenExpr binds var@(Var id) =
           addNameHint (Name.getOccString id) sig_id
           addDef (UncondDef (Right $ Literal lit) sig_id)
           return ([], Single sig_id)
+    IdInfo.VanillaGlobal ->
+      -- Treat references to globals as an application with zero elements
+      flattenApplicationExpr binds (CoreUtils.exprType var) id []
     otherwise ->
       error $ "Ids other than local vars and dataconstructors not supported: " ++ (showSDoc $ ppr id)
 
