@@ -261,24 +261,30 @@ mkConcSm sigs (FApp hsfunc args res) num = do
     in
       return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
-mkConcSm sigs (UncondDef src dst) _ =
-  let
-    src_expr  = vhdl_expr src
-    src_wform = AST.Wform [AST.WformElem src_expr Nothing]
-    dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
-    assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-  in
-    return $ AST.CSSASm assign
+mkConcSm sigs (UncondDef src dst) _ = do
+  src_expr <- vhdl_expr src
+  let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
+  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
+  let assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+  return $ AST.CSSASm assign
   where
-    vhdl_expr (Left id) = mkIdExpr sigs id
+    vhdl_expr (Left id) = return $ mkIdExpr sigs id
     vhdl_expr (Right expr) =
       case expr of
         (EqLit id lit) ->
-          (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
-        (Literal lit _) ->
-          AST.PrimLit lit
+          return $ (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
+        (Literal lit Nothing) ->
+          return $ AST.PrimLit lit
+        (Literal lit (Just ty)) -> do
+          -- Create a cast expression, which is just a function call using the
+          -- type name as the function name.
+          let litexpr = AST.PrimLit lit
+          ty_id <- MonadState.lift vsTypes (vhdl_ty ty)
+          let ty_name = AST.NSimple ty_id
+          let args = [Nothing AST.:=>: (AST.ADExpr litexpr)] 
+          return $ AST.PrimFCall $ AST.FCall ty_name args
         (Eq a b) ->
-          (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
+         return $  (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
 
 mkConcSm sigs (CondDef cond true false dst) _ =
   let
