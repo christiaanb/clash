@@ -275,7 +275,7 @@ mkConcSm _ sigs (UncondDef src dst) _ =
       case expr of
         (EqLit id lit) ->
           (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
-        (Literal lit) ->
+        (Literal lit _) ->
           AST.PrimLit lit
         (Eq a b) ->
           (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)

@@ -169,7 +169,7 @@ flattenExpr binds var@(Var id) =
           sig_id <- genSignalId SigInternal ty
           -- Add a name hint to the signal
           addNameHint (Name.getOccString id) sig_id
-          addDef (UncondDef (Right $ Literal lit) sig_id)
+          addDef (UncondDef (Right $ Literal lit Nothing) sig_id)
           return ([], Single sig_id)
     IdInfo.VanillaGlobal ->
       -- Treat references to globals as an application with zero elements
@@ -220,7 +220,7 @@ flattenExpr binds app@(App _ _) = do
         let len = sized_word_len ty
         -- TODO: to_stdlogicvector doesn't work here, since SizedWord
         -- translates to a different type...
-        addDef (UncondDef (Right $ Literal $ "to_stdlogicvector(to_unsigned(" ++ (show int) ++ ", " ++ (show len) ++ "))") sig_id)
+        addDef $ UncondDef (Right $ Literal ("to_stdlogicvector(to_unsigned(" ++ (show int) ++ ", " ++ (show len) ++ "))") Nothing) sig_id
         return ([], Single sig_id)
       else
         flattenApplicationExpr binds (CoreUtils.exprType app) f args

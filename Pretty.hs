@@ -76,8 +76,8 @@ instance Pretty SigDef where
 instance Pretty SignalExpr where
   pPrint (EqLit id lit) =
     parens $ pPrint id <> text " = " <> text lit
-  pPrint (Literal lit) =
-    text lit
+  pPrint (Literal lit ty) =
+    text "(" <> text (show ty) <> text ") " <> text lit
   pPrint (Eq a b) =
     parens $ pPrint a <> text " = " <> pPrint b
 

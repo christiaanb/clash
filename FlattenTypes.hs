@@ -113,14 +113,18 @@ sigDefUses (FApp _ args _) = concat $ map Foldable.toList args
 -- | An expression on signals
 data SignalExpr = 
   EqLit SignalId String -- ^ Is the given signal equal to the given (VHDL) literal
-  | Literal String -- ^ A literal value
+  | Literal String (Maybe Type.Type)-- ^ A literal value, with an optional type to cast to
   | Eq SignalId SignalId -- ^ A comparison between to signals
   deriving (Show, Eq)
+
+-- Instantiate Eq for Type, so we can derive Eq for SignalExpr.
+instance Eq Type.Type where
+  (==) = Type.coreEqType
 
 -- | Which signals are used by the given SignalExpr?
 sigExprUses :: SignalExpr -> [SignalId]
 sigExprUses (EqLit id _) = [id]
-sigExprUses (Literal _) = []
+sigExprUses (Literal _ _) = []
 sigExprUses (Eq a b) = [a, b]
 
 -- Returns the function used by the given SigDef, if any
