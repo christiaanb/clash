@@ -181,7 +181,7 @@ createArchitecture hsfunc flatfunc = do
   sig_dec_maybes <- mapM (mkSigDec' . snd) sigs
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
   -- Create concurrent statements for all signal definitions
-  let statements = zipWith (mkConcSm signaturemap sigs) defs [0..]
+  statements <- Monad.zipWithM (mkConcSm sigs) defs [0..]
   return $ AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
     sigs = flat_sigs flatfunc
@@ -241,34 +241,34 @@ getSignalId info =
 
 -- | Transforms a signal definition into a VHDL concurrent statement
 mkConcSm ::
-  SignatureMap             -- ^ The interfaces of functions in the session
-  -> [(SignalId, SignalInfo)] -- ^ The signals in the current architecture
+  [(SignalId, SignalInfo)] -- ^ The signals in the current architecture
   -> SigDef                -- ^ The signal definition 
   -> Int                   -- ^ A number that will be unique for all
                            --   concurrent statements in the architecture.
-  -> AST.ConcSm            -- ^ The corresponding VHDL component instantiation.
+  -> VHDLState AST.ConcSm  -- ^ The corresponding VHDL component instantiation.
 
-mkConcSm signatures sigs (FApp hsfunc args res) num =
+mkConcSm sigs (FApp hsfunc args res) num = do
+  signatures <- getA vsSignatures
   let 
-    signature = Maybe.fromMaybe
-        (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without signature? This should not happen!")
-        (Map.lookup hsfunc signatures)
-    entity_id = ent_id signature
-    label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
-    -- Add a clk port if we have state
-    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-    portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
-  in
-    AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+      signature = Maybe.fromMaybe
+          (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without signature? This should not happen!")
+          (Map.lookup hsfunc signatures)
+      entity_id = ent_id signature
+      label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
+      -- Add a clk port if we have state
+      clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+      portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
+    in
+      return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
-mkConcSm _ sigs (UncondDef src dst) _ =
+mkConcSm sigs (UncondDef src dst) _ =
   let
     src_expr  = vhdl_expr src
     src_wform = AST.Wform [AST.WformElem src_expr Nothing]
     dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
     assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
   in
-    AST.CSSASm assign
+    return $ AST.CSSASm assign
   where
     vhdl_expr (Left id) = mkIdExpr sigs id
     vhdl_expr (Right expr) =
@@ -280,7 +280,7 @@ mkConcSm _ sigs (UncondDef src dst) _ =
         (Eq a b) ->
           (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
 
-mkConcSm _ sigs (CondDef cond true false dst) _ =
+mkConcSm sigs (CondDef cond true false dst) _ =
   let
     cond_expr  = mkIdExpr sigs cond
     true_expr  = mkIdExpr sigs true
@@ -291,7 +291,7 @@ mkConcSm _ sigs (CondDef cond true false dst) _ =
     dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
     assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
   in
-    AST.CSSASm assign
+    return $ AST.CSSASm assign
 
 -- | Turn a SignalId into a VHDL Expr
 mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
