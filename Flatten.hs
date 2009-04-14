@@ -218,9 +218,12 @@ flattenExpr binds app@(App _ _) = do
         sig_id <- genSignalId SigInternal ty
         -- TODO: fromInteger is defined for more types than just SizedWord
         let len = sized_word_len ty
-        -- TODO: to_stdlogicvector doesn't work here, since SizedWord
-        -- translates to a different type...
-        addDef $ UncondDef (Right $ Literal ("to_stdlogicvector(to_unsigned(" ++ (show int) ++ ", " ++ (show len) ++ "))") Nothing) sig_id
+        -- Use a to_unsigned to translate the number (a natural) to an unsiged
+        -- (array of bits)
+        let lit_str = "to_unsigned(" ++ (show int) ++ ", " ++ (show len) ++ ")"
+        -- Set the signal to our literal unconditionally, but add the type so
+        -- the literal will be typecast to the proper type.
+        addDef $ UncondDef (Right $ Literal lit_str (Just ty)) sig_id
         return ([], Single sig_id)
       else
         flattenApplicationExpr binds (CoreUtils.exprType app) f args
