@@ -29,12 +29,11 @@ deriving instance (Show x, OutputableBndr x) => Show (HsExpr.StmtLR x x)
 deriving instance (Show x, OutputableBndr x) => Show (HsExpr.HsExpr x)
 deriving instance Show (RdrName.RdrName)
 deriving instance (Show idL, Show idR, OutputableBndr idL, OutputableBndr idR) => Show (HsBinds.HsBindLR idL idR)
+deriving instance Show CoreSyn.Note
 
 
 -- Implement dummy shows, since deriving them will need loads of other shows
 -- as well.
-instance Show CoreSyn.Note where
-  show n = "<note>"
 instance Show TypeRep.PredType where
   show t = "_PredType:(" ++ (showSDoc $ ppr t) ++ ")"
 instance Show TyCon.TyCon where
