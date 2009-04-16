@@ -268,11 +268,12 @@ flattenExpr binds expr@(Case scrut b _ alts) = do
   -- TODO: Special casing for higher order functions
   -- Flatten the scrutinee
   (_, res) <- flattenExpr binds scrut
+  -- Put the scrutinee in the BindMap
+  let binds' = (b, Left res) : binds
   case alts of
-    -- TODO include b in the binds list
-    [alt] -> flattenSingleAltCaseExpr binds res b alt
+    [alt] -> flattenSingleAltCaseExpr binds' res b alt
     -- Reverse the alternatives, so the __DEFAULT alternative ends up last
-    otherwise -> flattenMultipleAltCaseExpr binds res b (reverse alts)
+    otherwise -> flattenMultipleAltCaseExpr binds' res b (reverse alts)
   where
     flattenSingleAltCaseExpr ::
       BindMap
