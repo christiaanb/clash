@@ -2,7 +2,7 @@ module Adders where
 import Bits
 import qualified Sim
 import Language.Haskell.Syntax
-import Data.TypeLevel
+import qualified Data.TypeLevel as TypeLevel
 import qualified Data.Param.FSVec as FSVec
 
 mainIO f = Sim.simulateIO (Sim.stateless f) ()
@@ -26,10 +26,10 @@ mux2 High (a, b) = b
 wire :: Bit -> Bit
 wire a = a
 
-bus :: (Pos len) => BitVec len -> BitVec len
+bus :: (TypeLevel.Pos len) => BitVec len -> BitVec len
 bus v = v
 
-bus_4 :: BitVec D4 -> BitVec D4
+bus_4 :: BitVec TypeLevel.D4 -> BitVec TypeLevel.D4
 bus_4 v = v
 
 {-
@@ -72,11 +72,31 @@ dff d s = (s', q)
 
 type ShifterState = (Bit, Bit, Bit, Bit)
 shifter :: Bit -> ShifterState -> (ShifterState, Bit)
-shifter a s =
-  (s', o)
+shifter i (a, b, c, d) =
+  (s', d)
   where
-    s' = (a, b, c, d)
-    (b, c, d, o) = s
+    s' = (i, a, b, c)
+
+{-# NOINLINE shifter_en #-}
+shifter_en :: Bit -> Bit-> ShifterState -> (ShifterState, Bit)
+shifter_en High i (a, b, c, d) =
+  (s', d)
+  where
+    s' = (i, a, b, c)
+
+shifter_en Low i s@(a, b, c, d) =
+  (s, d)
+
+-- Two multiplexed shifters
+type ShiftersState = (ShifterState, ShifterState)
+shifters :: Bit -> Bit -> ShiftersState -> (ShiftersState, Bit)
+shifters sel i (sa, sb) =
+  (s', out)
+  where
+    (sa', outa) = shifter_en sel i sa
+    (sb', outb) = shifter_en (hwnot sel) i sb
+    s' = (sa', sb')
+    out = if sel == High then outa else outb
 
 -- Combinatoric stateless no-carry adder
 -- A -> B -> S
