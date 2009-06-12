@@ -66,17 +66,14 @@ makeVHDL filename name stateful = do
 listBind :: String -> String -> IO ()
 listBind filename name = do
   core <- loadModule filename
-  let [bind] = findBinds core [name]
+  let [(b, expr)] = findBinds core [name]
   putStr "\n"
-  putStr $ prettyShow bind
+  putStr $ prettyShow expr
   putStr "\n\n"
-  putStr $ showSDoc $ ppr bind
+  putStr $ showSDoc $ ppr expr
   putStr "\n\n"
-  case bind of
-    NonRec b expr -> do 
-      putStr $ showSDoc $ ppr $ CoreUtils.exprType expr
-      putStr "\n\n"
-    otherwise -> return ()
+  putStr $ showSDoc $ ppr $ CoreUtils.exprType expr
+  putStr "\n\n"
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
@@ -94,7 +91,7 @@ moduleToVHDL core list = do
   return vhdl
   where
     -- Turns the given bind into VHDL
-    mkVHDL :: [CoreBind] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
+    mkVHDL :: [(CoreBndr, CoreExpr)] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
     mkVHDL binds statefuls = do
       -- Add the builtin functions
       --mapM addBuiltIn builtin_funcs
@@ -133,28 +130,24 @@ loadModule filename =
       return core
 
 -- | Extracts the named binds from the given module.
-findBinds :: HscTypes.CoreModule -> [String] -> [CoreBind]
-findBinds core names = Maybe.mapMaybe (findBind (cm_binds core)) names
+findBinds :: HscTypes.CoreModule -> [String] -> [(CoreBndr, CoreExpr)]
+findBinds core names = Maybe.mapMaybe (findBind (CoreSyn.flattenBinds $ cm_binds core)) names
 
 -- | Extract a named bind from the given list of binds
-findBind :: [CoreBind] -> String -> Maybe CoreBind
+findBind :: [(CoreBndr, CoreExpr)] -> String -> Maybe (CoreBndr, CoreExpr)
 findBind binds lookfor =
   -- This ignores Recs and compares the name of the bind with lookfor,
   -- disregarding any namespaces in OccName and extra attributes in Name and
   -- Var.
-  find (\b -> case b of 
-    Rec l -> False
-    NonRec var _ -> lookfor == (occNameString $ nameOccName $ getName var)
-  ) binds
+  find (\(var, _) -> lookfor == (occNameString $ nameOccName $ getName var)) binds
 
 -- | Processes the given bind as a top level bind.
 processBind ::
   Bool                       -- ^ Should this be stateful function?
-  -> CoreBind                -- ^ The bind to process
+  -> (CoreBndr, CoreExpr)    -- ^ The bind to process
   -> TranslatorState ()
 
-processBind _ (Rec _) = error "Recursive binders not supported"
-processBind stateful bind@(NonRec var expr) = do
+processBind stateful bind@(var, expr) = do
   -- Create the function signature
   let ty = CoreUtils.exprType expr
   let hsfunc = mkHsFunction var ty stateful
@@ -165,12 +158,10 @@ processBind stateful bind@(NonRec var expr) = do
 --   with them.
 flattenBind ::
   HsFunction                         -- The signature to flatten into
-  -> CoreBind                        -- The bind to flatten
+  -> (CoreBndr, CoreExpr)            -- The bind to flatten
   -> TranslatorState ()
 
-flattenBind _ (Rec _) = error "Recursive binders not supported"
-
-flattenBind hsfunc bind@(NonRec var expr) = do
+flattenBind hsfunc bind@(var, expr) = do
   -- Flatten the function
   let flatfunc = flattenFunction hsfunc bind
   -- Propagate state variables
@@ -284,7 +275,7 @@ resolvFunc hsfunc = do
   core <- getA tsCoreModule
   -- Find the named function
   let name = (hsFuncName hsfunc)
-  let bind = findBind (cm_binds core) name 
+  let bind = findBind (CoreSyn.flattenBinds $ cm_binds core) name 
   case bind of
     Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
     Just b  -> flattenBind hsfunc b

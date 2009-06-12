@@ -132,6 +132,9 @@ instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.Rec binds) =
     text "Rec: " $$ nest 10 (vcat $ map (prettyBind) binds)
 
+instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Expr b) where
+  pPrint = text . show
+
 instance Pretty AST.VHDLId where
   pPrint id = ForSyDe.Backend.Ppr.ppr id
 

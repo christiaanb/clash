@@ -54,11 +54,10 @@ markSignal use id = markSignals use [id]
 -- | Flatten a haskell function
 flattenFunction ::
   HsFunction                      -- ^ The function to flatten
-  -> CoreBind                     -- ^ The function value
+  -> (CoreBndr, CoreExpr)         -- ^ The function value
   -> FlatFunction                 -- ^ The resulting flat function
 
-flattenFunction _ (Rec _) = error "Recursive binders not supported"
-flattenFunction hsfunc bind@(NonRec var expr) =
+flattenFunction hsfunc (var, expr) =
   FlatFunction args res defs sigs
   where
     init_state        = ([], [], 0)
