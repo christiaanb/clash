@@ -96,10 +96,10 @@ moduleToVHDL core list = do
       -- Add the builtin functions
       --mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
-      Monad.zipWithM processBind statefuls binds
-      modA tsFlatFuncs (Map.map nameFlatFunction)
-      flatfuncs <- getA tsFlatFuncs
-      return $ VHDL.createDesignFiles flatfuncs
+      --Monad.zipWithM processBind statefuls binds
+      --modA tsFlatFuncs (Map.map nameFlatFunction)
+      --flatfuncs <- getA tsFlatFuncs
+      return $ VHDL.createDesignFiles binds
 
 -- | Write the given design file to a file with the given name inside the
 --   given dir
@@ -126,7 +126,7 @@ loadModule filename =
       --setTargets [target]
       --load LoadAllTargets
       --core <- GHC.compileToCoreSimplified "Adders.hs"
-      core <- GHC.compileToCoreSimplified filename
+      core <- GHC.compileToCoreModule filename
       return core
 
 -- | Extracts the named binds from the given module.
@@ -270,7 +270,7 @@ resolvFunc hsfunc = do
   -- Don't do anything if there is already a flat function for this hsfunc or
   -- when it is a builtin function.
   Monad.unless (Map.member hsfunc flatfuncmap) $ do
-  Monad.unless (elem hsfunc VHDL.builtin_hsfuncs) $ do
+  -- Not working with new builtins -- Monad.unless (elem hsfunc VHDL.builtin_hsfuncs) $ do
   -- New function, resolve it
   core <- getA tsCoreModule
   -- Find the named function

@@ -53,7 +53,7 @@ instance Inv (BitVec D0) where
 -}
 -- Not really an adder either, but a slightly more complex example
 inv :: Bit -> Bit
-inv a = hwnot a
+inv a = let r = hwnot a in r
 
 -- Not really an adder either, but a slightly more complex example
 invinv :: Bit -> Bit
