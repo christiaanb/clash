@@ -146,6 +146,25 @@ rec_adder ((a:as), (b:bs)) =
     (rest, cin) = rec_adder (as, bs)
     (s, cout) = full_adder (a, b, cin)
 
+foo = id
+add, sub :: Int -> Int -> Int
+add a b = a + b
+sub a b = a - b
+
+highordtest = \x ->
+  let s = foo x
+  in
+     case s of
+       (a, b) ->
+         case a of
+           High -> add
+           Low -> let
+             op' = case b of
+                High -> sub
+                Low -> \c d -> c
+             in
+                \c d -> op' d c
+
 -- Four bit adder, using the continous adder below
 -- [a] -> [b] -> ([s], cout)
 --con_adder_4 as bs = 
