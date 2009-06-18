@@ -22,6 +22,7 @@ import qualified Var
 import qualified SrcLoc
 import qualified Type
 import qualified IdInfo
+import qualified CoreUtils
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -53,7 +54,7 @@ applyboth first (name, second) expr  = do
   (expr'', changed) <- Writer.listen $ second expr'
   if Monoid.getAny changed 
     then 
-      trace ("Transform " ++ name ++ " changed from:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nTo:\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n") $
+      trace ("Transform " ++ name ++ " changed from:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n" ++ "\nTo:\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
       applyboth first (name, second) expr'' 
     else 
       return expr''
