@@ -1,6 +1,8 @@
 module Translator where
 import qualified Directory
 import qualified List
+import Debug.Trace
+import qualified Control.Arrow as Arrow
 import GHC hiding (loadModule, sigName)
 import CoreSyn
 import qualified CoreUtils
@@ -26,6 +28,7 @@ import MonadUtils ( liftIO )
 import Outputable ( showSDoc, ppr )
 import GHC.Paths ( libdir )
 import DynFlags ( defaultDynFlags )
+import qualified UniqSupply
 import List ( find )
 import qualified List
 import qualified Monad
@@ -43,6 +46,7 @@ import Text.PrettyPrint.HughesPJ (render)
 import TranslatorTypes
 import HsValueMap
 import Pretty
+import Normalize
 import Flatten
 import FlattenTypes
 import VHDLTypes
@@ -81,25 +85,31 @@ listBind filename name = do
 moduleToVHDL :: HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
 moduleToVHDL core list = do
   let (names, statefuls) = unzip list
-  --liftIO $ putStr $ prettyShow (cm_binds core)
   let binds = findBinds core names
-  --putStr $ prettyShow binds
+  -- Generate a UniqSupply
+  -- Running 
+  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
+  -- unique supply anywhere.
+  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   -- Turn bind into VHDL
-  let (vhdl, sess) = State.runState (mkVHDL binds statefuls) (TranslatorSession core 0 Map.empty)
+  let (vhdl, sess) = State.runState (mkVHDL uniqSupply binds statefuls) (TranslatorSession core 0 Map.empty)
   mapM (putStr . render . ForSyDe.Backend.Ppr.ppr . snd) vhdl
   putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
   where
     -- Turns the given bind into VHDL
-    mkVHDL :: [(CoreBndr, CoreExpr)] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
-    mkVHDL binds statefuls = do
+    mkVHDL :: UniqSupply.UniqSupply -> [(CoreBndr, CoreExpr)] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
+    mkVHDL uniqSupply binds statefuls = do
+      let binds'' = map (Arrow.second $ normalize uniqSupply) binds
+      let binds' = trace ("Before:\n\n" ++ showSDoc ( ppr binds ) ++ "\n\nAfter:\n\n" ++ showSDoc ( ppr binds'')) binds''
       -- Add the builtin functions
       --mapM addBuiltIn builtin_funcs
       -- Create entities and architectures for them
       --Monad.zipWithM processBind statefuls binds
       --modA tsFlatFuncs (Map.map nameFlatFunction)
       --flatfuncs <- getA tsFlatFuncs
-      return $ VHDL.createDesignFiles binds
+      return $ VHDL.createDesignFiles binds'
 
 -- | Write the given design file to a file with the given name inside the
 --   given dir
