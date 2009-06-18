@@ -20,6 +20,7 @@ import qualified SrcLoc
 import qualified CoreSyn
 import qualified Var
 import qualified Unique
+import qualified CoreUtils
 
 import GhcTools
 import HsTools
@@ -89,3 +90,12 @@ is_wild :: CoreSyn.CoreBndr -> Bool
 -- occstring for now... TODO
 --(Var.varUnique bndr) == (Unique.mkBuiltinUnique 1)
 is_wild bndr = "wild" == (OccName.occNameString . Name.nameOccName . Var.varName) bndr
+
+-- Is the given core expression a lambda abstraction?
+is_lam :: CoreSyn.CoreExpr -> Bool
+is_lam (CoreSyn.Lam _ _) = True
+is_lam _ = False
+
+-- Is the given core expression of a function type?
+is_fun :: CoreSyn.CoreExpr -> Bool
+is_fun = Type.isFunTy . CoreUtils.exprType
