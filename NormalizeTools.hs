@@ -23,6 +23,7 @@ import qualified SrcLoc
 import qualified Type
 import qualified IdInfo
 import qualified CoreUtils
+import qualified CoreSubst
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -140,3 +141,9 @@ mkUnique = Trans.lift $ do
     let (us', us'') = UniqSupply.splitUniqSupply us
     putA tsUniqSupply us'
     return $ UniqSupply.uniqFromSupply us''
+
+-- Replace each of the binders given with the coresponding expressions in the
+-- given expression.
+substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
+substitute replace expr = CoreSubst.substExpr subs expr
+    where subs = foldl (\s (b, e) -> CoreSubst.extendIdSubst s b e) CoreSubst.emptySubst replace
