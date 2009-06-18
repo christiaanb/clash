@@ -11,11 +11,15 @@ import qualified HsExpr
 import qualified HsTypes
 import qualified HsBinds
 import qualified RdrName
+import qualified Name
 import qualified OccName
 import qualified TysWiredIn
 import qualified Bag
 import qualified DynFlags
 import qualified SrcLoc
+import qualified CoreSyn
+import qualified Var
+import qualified Unique
 
 import GhcTools
 import HsTools
@@ -77,3 +81,11 @@ fsvec_len ty =
   where 
     (tycon, args) = Type.splitTyConApp ty
     [len, el_ty] = args
+
+-- Is this a wild binder?
+is_wild :: CoreSyn.CoreBndr -> Bool
+-- wild binders have a particular unique, that we copied from MkCore.lhs to
+-- here. However, this comparison didn't work, so we'll just check the
+-- occstring for now... TODO
+--(Var.varUnique bndr) == (Unique.mkBuiltinUnique 1)
+is_wild bndr = "wild" == (OccName.occNameString . Name.nameOccName . Var.varName) bndr
