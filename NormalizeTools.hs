@@ -5,6 +5,7 @@
 module NormalizeTools where
 -- Standard modules
 import Debug.Trace
+import qualified List
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
@@ -122,6 +123,18 @@ dotransforms' :: [Transform] -> CoreExpr -> State.State TransformState CoreExpr
 dotransforms' transs expr = do
   (expr', changed) <- Writer.runWriterT $ Monad.foldM (flip ($)) expr transs
   if Monoid.getAny changed then dotransforms' transs expr' else return expr'
+
+-- Inline all let bindings that satisfy the given condition
+inlinebind :: ((CoreBndr, CoreExpr) -> Bool) -> Transform
+inlinebind condition (Let (Rec binds) expr) | not $ null replace =
+    change newexpr
+  where 
+    -- Find all simple bindings
+    (replace, others) = List.partition condition binds
+    -- Substitute the to be replaced binders with their expression
+    newexpr = substitute replace (Let (Rec others) expr)
+-- Leave all other expressions unchanged
+inlinebind _ expr = return expr
 
 -- Sets the changed flag in the TransformMonad, to signify that some
 -- transform has changed the result
