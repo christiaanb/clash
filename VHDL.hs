@@ -16,6 +16,7 @@ import qualified Data.Monoid as Monoid
 import Data.Accessor
 import qualified Data.Accessor.MonadState as MonadState
 import Text.Regex.Posix
+import Debug.Trace
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -23,7 +24,10 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 -- GHC API
 import qualified Type
 import qualified Name
+import qualified OccName
+import qualified Var
 import qualified TyCon
+import qualified CoreSyn
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
@@ -39,17 +43,17 @@ import Generate
 import GlobalNameTable
 
 createDesignFiles ::
-  FlatFuncMap
+  [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
   -> [(AST.VHDLId, AST.DesignFile)]
 
-createDesignFiles flatfuncmap =
+createDesignFiles binds =
   (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package]) :
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
     init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
-      State.runState (createLibraryUnits flatfuncmap) init_session
+      State.runState (createLibraryUnits binds) init_session
     ty_decls = Map.elems (final_session ^. vsTypes)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
@@ -72,14 +76,12 @@ mkUseAll ss =
     select prefix s = AST.NSelected $ prefix AST.:.: (AST.SSimple $ mkVHDLBasicId s)
       
 createLibraryUnits ::
-  FlatFuncMap
+  [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
   -> VHDLState [(AST.VHDLId, [AST.LibraryUnit])]
 
-createLibraryUnits flatfuncmap = do
-  let hsfuncs = Map.keys flatfuncmap
-  let flatfuncs = Map.elems flatfuncmap
-  entities <- Monad.zipWithM createEntity hsfuncs flatfuncs
-  archs <- Monad.zipWithM createArchitecture hsfuncs flatfuncs
+createLibraryUnits binds = do
+  entities <- Monad.mapM createEntity binds
+  archs <- Monad.mapM createArchitecture binds
   return $ zipWith 
     (\ent arch -> 
       let AST.EntityDec id _ = ent in 
@@ -89,68 +91,66 @@ createLibraryUnits flatfuncmap = do
 
 -- | Create an entity for a given function
 createEntity ::
-  HsFunction -- | The function signature
-  -> FlatFunction -- | The FlatFunction
+  (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- | The function
   -> VHDLState AST.EntityDec -- | The resulting entity
 
-createEntity hsfunc flatfunc = do
-      let sigs    = flat_sigs flatfunc
-      let args    = flat_args flatfunc
-      let res     = flat_res  flatfunc
-      args' <- Traversable.traverse (Traversable.traverse (mkMap sigs)) args
-      res' <- Traversable.traverse (mkMap sigs) res
-      let ent_decl' = createEntityAST hsfunc args' res'
+createEntity (fname, expr) = do
+      -- Strip off lambda's, these will be arguments
+      let (args, letexpr) = CoreSyn.collectBinders expr
+      args' <- Monad.mapM mkMap args
+      -- There must be a let at top level 
+      let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
+      res' <- mkMap res
+      let ent_decl' = createEntityAST fname args' res'
       let AST.EntityDec entity_id _ = ent_decl' 
       let signature = Entity entity_id args' res'
-      modA vsSignatures (Map.insert hsfunc signature)
+      modA vsSignatures (Map.insert (bndrToString fname) signature)
       return ent_decl'
   where
     mkMap :: 
-      [(SignalId, SignalInfo)] 
-      -> SignalId 
+      --[(SignalId, SignalInfo)] 
+      CoreSyn.CoreBndr 
       -> VHDLState VHDLSignalMapElement
     -- We only need the vsTypes element from the state
-    mkMap sigmap = (\id ->
+    mkMap = (\bndr ->
       let
-        info = Maybe.fromMaybe
-          (error $ "Signal not found in the name map? This should not happen!")
-          (lookup id sigmap)
-        nm = Maybe.fromMaybe
-          (error $ "Signal not named? This should not happen!")
-          (sigName info)
-        ty = sigTy info
+        --info = Maybe.fromMaybe
+        --  (error $ "Signal not found in the name map? This should not happen!")
+        --  (lookup id sigmap)
+        --  Assume the bndr has a valid VHDL id already
+        id = bndrToVHDLId bndr
+        ty = Var.varType bndr
       in
-        if isPortSigUse $ sigUse info
+        if True -- isPortSigUse $ sigUse info
           then do
             type_mark <- vhdl_ty ty
-            return $ Just (mkVHDLExtId nm, type_mark)
+            return $ Just (id, type_mark)
           else
             return $ Nothing
        )
 
   -- | Create the VHDL AST for an entity
 createEntityAST ::
-  HsFunction            -- | The signature of the function we're working with
-  -> [VHDLSignalMap]    -- | The entity's arguments
-  -> VHDLSignalMap      -- | The entity's result
-  -> AST.EntityDec      -- | The entity with the ent_decl filled in as well
+  CoreSyn.CoreBndr             -- | The name of the function
+  -> [VHDLSignalMapElement]    -- | The entity's arguments
+  -> VHDLSignalMapElement      -- | The entity's result
+  -> AST.EntityDec             -- | The entity with the ent_decl filled in as well
 
-createEntityAST hsfunc args res =
+createEntityAST name args res =
   AST.EntityDec vhdl_id ports
   where
-    vhdl_id = mkEntityId hsfunc
-    ports = concatMap (mapToPorts AST.In) args
-            ++ mapToPorts AST.Out res
-            ++ clk_port
-    mapToPorts :: AST.Mode -> VHDLSignalMap -> [AST.IfaceSigDec] 
-    mapToPorts mode m =
-      Maybe.catMaybes $ map (mkIfaceSigDec mode) (Foldable.toList m)
+    -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
+    vhdl_id = mkVHDLBasicId $ bndrToString name
+    ports = Maybe.catMaybes $ 
+              map (mkIfaceSigDec AST.In) args
+              ++ [mkIfaceSigDec AST.Out res]
+              ++ [clk_port]
     -- Add a clk port if we have state
-    clk_port = if hasState hsfunc
+    clk_port = if True -- hasState hsfunc
       then
-        [AST.IfaceSigDec (mkVHDLExtId "clk") AST.In VHDL.std_logic_ty]
+        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In VHDL.std_logic_ty
       else
-        []
+        Nothing
 
 -- | Create a port declaration
 mkIfaceSigDec ::
@@ -170,28 +170,28 @@ mkEntityId hsfunc =
 
 -- | Create an architecture for a given function
 createArchitecture ::
-  HsFunction -- ^ The function signature
-  -> FlatFunction -- ^ The FlatFunction
+  (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The function
   -> VHDLState AST.ArchBody -- ^ The architecture for this function
 
-createArchitecture hsfunc flatfunc = do
-  signaturemap <- getA vsSignatures
-  let signature = Maybe.fromMaybe 
-        (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
-        (Map.lookup hsfunc signaturemap)
-  let entity_id = ent_id signature
+createArchitecture (fname, expr) = do
+  --signaturemap <- getA vsSignatures
+  --let signature = Maybe.fromMaybe 
+  --      (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
+  --      (Map.lookup hsfunc signaturemap)
+  let entity_id = mkVHDLBasicId $ bndrToString fname
+  -- Strip off lambda's, these will be arguments
+  let (args, letexpr) = CoreSyn.collectBinders expr
+  -- There must be a let at top level 
+  let (CoreSyn.Let (CoreSyn.Rec binds) res) = letexpr
+
   -- Create signal declarations for all internal and state signals
-  sig_dec_maybes <- mapM (mkSigDec' . snd) sigs
+  sig_dec_maybes <- mapM (mkSigDec' . fst) binds
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
-  -- Create concurrent statements for all signal definitions
-  statements <- Monad.zipWithM (mkConcSm sigs) defs [0..]
+
+  statements <- Monad.mapM mkConcSm binds
   return $ AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
-    sigs = flat_sigs flatfunc
-    args = flat_args flatfunc
-    res  = flat_res  flatfunc
-    defs = flat_defs flatfunc
-    procs = map mkStateProcSm (makeStatePairs flatfunc)
+    procs = map mkStateProcSm [] -- (makeStatePairs flatfunc)
     procs' = map AST.CSPSm procs
     -- mkSigDec only uses vsTypes from the state
     mkSigDec' = mkSigDec
@@ -223,16 +223,13 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
-mkSigDec :: SignalInfo -> VHDLState (Maybe AST.SigDec)
-mkSigDec info =
-  let use = sigUse info in
-  if isInternalSigUse use || isStateSigUse use then do
-    type_mark <- vhdl_ty ty
-    return $ Just (AST.SigDec (getSignalId info) type_mark Nothing)
+mkSigDec :: CoreSyn.CoreBndr -> VHDLState (Maybe AST.SigDec)
+mkSigDec bndr =
+  if True then do --isInternalSigUse use || isStateSigUse use then do
+    type_mark <- vhdl_ty $ Var.varType bndr
+    return $ Just (AST.SigDec (bndrToVHDLId bndr) type_mark Nothing)
   else
     return Nothing
-  where
-    ty = sigTy info
 
 -- | Creates a VHDL Id from a named SignalInfo. Errors out if the SignalInfo
 --   is not named.
@@ -242,28 +239,33 @@ getSignalId info =
       (error $ "Unnamed signal? This should not happen!")
       (sigName info)
 
--- | Transforms a signal definition into a VHDL concurrent statement
+-- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
-  [(SignalId, SignalInfo)] -- ^ The signals in the current architecture
-  -> SigDef                -- ^ The signal definition 
-  -> Int                   -- ^ A number that will be unique for all
-                           --   concurrent statements in the architecture.
+  (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
   -> VHDLState AST.ConcSm  -- ^ The corresponding VHDL component instantiation.
 
-mkConcSm sigs (FApp hsfunc args res) num = do
+mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   signatures <- getA vsSignatures
   let 
+      (CoreSyn.Var f, args) = CoreSyn.collectArgs app
       signature = Maybe.fromMaybe
-          (error $ "Using function '" ++ (prettyShow hsfunc) ++ "' without signature? This should not happen!")
-          (Map.lookup hsfunc signatures)
+          (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!")
+          (Map.lookup (bndrToString f) signatures)
       entity_id = ent_id signature
-      label = (AST.fromVHDLId entity_id) ++ "_" ++ (show num)
+      label = bndrToString bndr
       -- Add a clk port if we have state
-      clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-      portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
+      --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+      --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
+      portmaps = mkAssocElems args bndr signature
     in
       return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
+-- GHC generates some funny "r = r" bindings in let statements before
+-- simplification. This outputs some dummy ConcSM for these, so things will at
+-- least compile for now.
+mkConcSm (bndr, CoreSyn.Var _) = return $ AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []
+
+{-
 mkConcSm sigs (UncondDef src dst) _ = do
   src_expr <- vhdl_expr src
   let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
@@ -301,7 +303,7 @@ mkConcSm sigs (CondDef cond true false dst) _ =
     assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
   in
     return $ AST.CSSASm assign
-
+-}
 -- | Turn a SignalId into a VHDL Expr
 mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
 mkIdExpr sigs id =
@@ -309,27 +311,29 @@ mkIdExpr sigs id =
   AST.PrimName src_name
 
 mkAssocElems :: 
-  [(SignalId, SignalInfo)]      -- | The signals in the current architecture
-  -> [SignalMap]                -- | The signals that are applied to function
-  -> SignalMap                  -- | the signals in which to store the function result
+  [CoreSyn.CoreExpr]            -- | The argument that are applied to function
+  -> CoreSyn.CoreBndr           -- | The binder in which to store the result
   -> Entity                     -- | The entity to map against.
   -> [AST.AssocElem]            -- | The resulting port maps
 
-mkAssocElems sigmap args res entity =
+mkAssocElems args res entity =
     -- Create the actual AssocElems
     Maybe.catMaybes $ zipWith mkAssocElem ports sigs
   where
     -- Turn the ports and signals from a map into a flat list. This works,
     -- since the maps must have an identical form by definition. TODO: Check
     -- the similar form?
-    arg_ports = concat (map Foldable.toList (ent_args entity))
-    res_ports = Foldable.toList (ent_res entity)
-    arg_sigs  = (concat (map Foldable.toList args))
-    res_sigs  = Foldable.toList res
+    arg_ports = ent_args entity
+    res_port  = ent_res entity
     -- Extract the id part from the (id, type) tuple
-    ports     = (map (fmap fst) (arg_ports ++ res_ports)) 
+    ports     = map (Monad.liftM fst) (res_port : arg_ports)
     -- Translate signal numbers into names
-    sigs      = (map (lookupSigName sigmap) (arg_sigs ++ res_sigs))
+    sigs      = (bndrToString res : map (bndrToString.varBndr) args)
+
+-- Turns a Var CoreExpr into the Id inside it. Will of course only work for
+-- simple Var CoreExprs, not complexer ones.
+varBndr :: CoreSyn.CoreExpr -> Var.Id
+varBndr (CoreSyn.Var id) = id
 
 -- | Look up a signal in the signal name map
 lookupSigName :: [(SignalId, SignalInfo)] -> SignalId -> String
@@ -445,29 +449,43 @@ mkVHDLExtId s =
     allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
     strip_invalid = filter (`elem` allowed)
 
+-- Creates a VHDL Id from a binder
+bndrToVHDLId ::
+  CoreSyn.CoreBndr
+  -> AST.VHDLId
+
+bndrToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varName
+
+-- Extracts the binder name as a String
+bndrToString ::
+  CoreSyn.CoreBndr
+  -> String
+
+bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
+
 -- | A consise representation of a (set of) ports on a builtin function
-type PortMap = HsValueMap (String, AST.TypeMark)
+--type PortMap = HsValueMap (String, AST.TypeMark)
 -- | A consise representation of a builtin function
-data BuiltIn = BuiltIn String [PortMap] PortMap
+data BuiltIn = BuiltIn String [(String, AST.TypeMark)] (String, AST.TypeMark)
 
 -- | Translate a list of concise representation of builtin functions to a
 --   SignatureMap
 mkBuiltins :: [BuiltIn] -> SignatureMap
 mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
-    (HsFunction name (map useAsPort args) (useAsPort res),
-     Entity (VHDL.mkVHDLBasicId name) (map toVHDLSignalMap args) (toVHDLSignalMap res))
+    (name,
+     Entity (VHDL.mkVHDLBasicId name) (map toVHDLSignalMapElement args) (toVHDLSignalMapElement res))
   )
 
 builtin_hsfuncs = Map.keys builtin_funcs
 builtin_funcs = mkBuiltins
   [ 
-    BuiltIn "hwxor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwand" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwor" [(Single ("a", VHDL.bit_ty)), (Single ("b", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty)),
-    BuiltIn "hwnot" [(Single ("a", VHDL.bit_ty))] (Single ("o", VHDL.bit_ty))
+    BuiltIn "hwxor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
+    BuiltIn "hwand" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
+    BuiltIn "hwor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
+    BuiltIn "hwnot" [("a", VHDL.bit_ty)] ("o", VHDL.bit_ty)
   ]
 
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap
-toVHDLSignalMap :: HsValueMap (String, AST.TypeMark) -> VHDLSignalMap
-toVHDLSignalMap = fmap (\(name, ty) -> Just (mkVHDLBasicId name, ty))
+toVHDLSignalMapElement :: (String, AST.TypeMark) -> VHDLSignalMapElement
+toVHDLSignalMapElement (name, ty) = Just (mkVHDLBasicId name, ty)

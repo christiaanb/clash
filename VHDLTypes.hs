@@ -12,6 +12,7 @@ import qualified Data.Accessor.Template
 
 -- GHC API imports
 import qualified Type
+import qualified CoreSyn
 
 -- ForSyDe imports
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -30,8 +31,8 @@ type VHDLSignalMap = HsValueMap VHDLSignalMapElement
 -- ports.
 data Entity = Entity { 
   ent_id     :: AST.VHDLId,           -- The id of the entity
-  ent_args   :: [VHDLSignalMap],      -- A mapping of each function argument to port names
-  ent_res    :: VHDLSignalMap         -- A mapping of the function result to port names
+  ent_args   :: [VHDLSignalMapElement],      -- A mapping of each function argument to port names
+  ent_res    :: VHDLSignalMapElement         -- A mapping of the function result to port names
 } deriving (Show);
 
 -- A orderable equivalent of CoreSyn's Type for use as a map key
@@ -48,7 +49,7 @@ type TypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDec)
 type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
 
 -- A map of a Haskell function to a hardware signature
-type SignatureMap = Map.Map HsFunction Entity
+type SignatureMap = Map.Map String Entity
 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, [AST.Expr] -> AST.Expr )
