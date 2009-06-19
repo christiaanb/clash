@@ -174,6 +174,16 @@ instance Inv (BitVec D0) where
 functiontest :: TFVec D4 Bit -> Bit
 functiontest = \v -> let r = head v in r
 
+highordtest2 = \a b ->
+         case a of
+           High -> \c d -> d
+           Low -> let
+             op' :: Bit -> Bit -> Bit
+             op' = case b of
+                High -> \c d -> d
+                Low -> \c d -> c
+             in
+                \c d -> op' d c
 -- Four bit adder, using the continous adder below
 -- [a] -> [b] -> ([s], cout)
 --con_adder_4 as bs = 

@@ -22,12 +22,13 @@ import Debug.Trace
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 -- GHC API
+import CoreSyn
 import qualified Type
 import qualified Name
 import qualified OccName
 import qualified Var
 import qualified TyCon
-import qualified CoreSyn
+import qualified DataCon
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
@@ -277,6 +278,50 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
 -- simplification. This outputs some dummy ConcSM for these, so things will at
 -- least compile for now.
 mkConcSm (bndr, CoreSyn.Var _) = return $ AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []
+
+-- A single alt case must be a selector
+mkConcSm (bndr, (Case (Var scrut) b ty [alt])) = error "Single case alt not supported yet"
+
+-- Multiple case alt are be conditional assignments and have only wild
+-- binders in the alts and only variables in the case values and a variable
+-- for a scrutinee. We check the constructor of the second alt, since the
+-- first is the default case, if there is any.
+mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) =
+  let
+    cond_expr = (varToVHDLExpr scrut) AST.:=: (conToVHDLExpr con)
+    true_expr  = (varToVHDLExpr true)
+    false_expr  = (varToVHDLExpr false)
+    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
+    true_wform = AST.Wform [AST.WformElem true_expr Nothing]
+    whenelse = AST.WhenElse true_wform cond_expr
+    dst_name  = AST.NSimple (bndrToVHDLId bndr)
+    assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
+  in
+    return $ AST.CSSASm assign
+mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
+mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
+
+-- Turn a variable reference into a AST expression
+varToVHDLExpr :: Var.Var -> AST.Expr
+varToVHDLExpr var = AST.PrimName $ AST.NSimple $ bndrToVHDLId var
+
+-- Turn a constructor into an AST expression. For dataconstructors, this is
+-- only the constructor itself, not any arguments it has. Should not be called
+-- with a DEFAULT constructor.
+conToVHDLExpr :: CoreSyn.AltCon -> AST.Expr
+conToVHDLExpr (DataAlt dc) = AST.PrimLit lit
+  where
+    tycon = DataCon.dataConTyCon dc
+    tyname = TyCon.tyConName tycon
+    dcname = DataCon.dataConName dc
+    lit = case Name.getOccString tyname of
+      -- TODO: Do something more robust than string matching
+      "Bit"      -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
+      "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
+conToVHDLExpr (LitAlt _) = error "VHDL.conToVHDLExpr Literals not support in case alternatives yet"
+conToVHDLExpr DEFAULT = error "VHDL.conToVHDLExpr DEFAULT alternative should not occur here!"
+
+
 
 {-
 mkConcSm sigs (UncondDef src dst) _ = do
