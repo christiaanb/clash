@@ -26,12 +26,12 @@ genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
 genUnconsVectorFuns elemTM vectorTM  = 
   [ AST.SubProgBody exSpec      []                  [exExpr]                    
   , AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet]   
-    , AST.SubProgBody headSpec    []                  [headExpr]                  
-    , AST.SubProgBody lastSpec    []                  [lastExpr]                  
-    , AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet]         
-    , AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet]         
-    , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
-    , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]         
+  , AST.SubProgBody headSpec    []                  [headExpr]                  
+  , AST.SubProgBody lastSpec    []                  [lastExpr]                  
+  , AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet]         
+  , AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet]         
+  , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
+  , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]         
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"

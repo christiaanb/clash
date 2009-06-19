@@ -10,6 +10,7 @@ import Prelude hiding (
 import Language.Haskell.Syntax
 import Types
 import Data.Param.TFVec
+import Data.RangedWord
 
 mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
@@ -171,8 +172,8 @@ highordtest = \x ->
              in
                 \c d -> op' d c
 
-functiontest :: TFVec D4 Bit -> Bit
-functiontest = \v -> let r = head v in r
+functiontest :: TFVec D4 Bit -> RangedWord D3 -> Bit
+functiontest = \v i -> let r = v!i in r
 
 highordtest2 = \a b ->
          case a of
