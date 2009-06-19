@@ -2,7 +2,7 @@ module Alu  where
 import Bits
 import qualified Sim
 import Data.SizedWord
-import Types.Data.Num
+import Types
 
 main = Sim.simulate exec program initial_state
 mainIO = Sim.simulateIO exec initial_state

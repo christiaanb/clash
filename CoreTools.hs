@@ -56,24 +56,24 @@ sized_word_len ty =
 
 -- | Evaluate a core Type representing type level int from the TypeLevel
 -- library to a real int.
-eval_type_level_int :: Type.Type -> Int
-eval_type_level_int ty =
-  unsafeRunGhc $ do
-    -- Automatically import modules for any fully qualified identifiers
-    setDynFlag DynFlags.Opt_ImplicitImportQualified
-
-    let to_int_name = mkRdrName "Data.TypeLevel.Num.Sets" "toInt"
-    let to_int = SrcLoc.noLoc $ HsExpr.HsVar to_int_name
-    let undef = hsTypedUndef $ coreToHsType ty
-    let app = HsExpr.HsApp (to_int) (undef)
-
-    core <- toCore [] app
-    execCore core 
+-- eval_type_level_int :: Type.Type -> Int
+-- eval_type_level_int ty =
+--   unsafeRunGhc $ do
+--     -- Automatically import modules for any fully qualified identifiers
+--     setDynFlag DynFlags.Opt_ImplicitImportQualified
+-- 
+--     let to_int_name = mkRdrName "Data.TypeLevel.Num.Sets" "toInt"
+--     let to_int = SrcLoc.noLoc $ HsExpr.HsVar to_int_name
+--     let undef = hsTypedUndef $ coreToHsType ty
+--     let app = HsExpr.HsApp (to_int) (undef)
+-- 
+--     core <- toCore [] app
+--     execCore core 
 
 -- | Get the length of a FSVec type
-fsvec_len :: Type.Type -> Int
-fsvec_len ty =
-  eval_type_level_int len
+tfvec_len :: Type.Type -> Int
+tfvec_len ty =
+  eval_tfp_int len
   where 
     (tycon, args) = Type.splitTyConApp ty
     [len, el_ty] = args

@@ -58,7 +58,7 @@ makeVHDL filename name stateful = do
   -- Translate to VHDL
   vhdl <- moduleToVHDL core [(name, stateful)]
   -- Write VHDL to file
-  let dir = "../vhdl/vhdl/" ++ name ++ "/"
+  let dir = "./vhdl/" ++ name ++ "/"
   mapM (writeVHDL dir) vhdl
   return ()
 

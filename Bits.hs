@@ -2,8 +2,8 @@
 
 module Bits where
 
-import qualified Data.Param.FSVec as FSVec
-import qualified Data.TypeLevel as TypeLevel
+import qualified Data.Param.TFVec as TFVec
+import qualified Types
 
 --class Signal a where
 --	hwand :: a -> a -> a
@@ -58,6 +58,6 @@ type Stream a = [a]
 lows  = Low : lows
 highs = High : highs
 
-type BitVec len = FSVec.FSVec len Bit
+type BitVec len = TFVec.TFVec len Bit
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

@@ -47,7 +47,7 @@ createDesignFiles flatfuncmap =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty builtin_funcs
+    init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits flatfuncmap) init_session
     ty_decls = Map.elems (final_session ^. vsTypes)
@@ -110,7 +110,7 @@ createEntity hsfunc flatfunc = do
       -> SignalId 
       -> VHDLState VHDLSignalMapElement
     -- We only need the vsTypes element from the state
-    mkMap sigmap = MonadState.lift vsTypes . (\id ->
+    mkMap sigmap = (\id ->
       let
         info = Maybe.fromMaybe
           (error $ "Signal not found in the name map? This should not happen!")
@@ -194,7 +194,7 @@ createArchitecture hsfunc flatfunc = do
     procs = map mkStateProcSm (makeStatePairs flatfunc)
     procs' = map AST.CSPSm procs
     -- mkSigDec only uses vsTypes from the state
-    mkSigDec' = MonadState.lift vsTypes . mkSigDec
+    mkSigDec' = mkSigDec
 
 -- | Looks up all pairs of old state, new state signals, together with
 --   the state id they represent.
@@ -223,7 +223,7 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
-mkSigDec :: SignalInfo -> TypeState (Maybe AST.SigDec)
+mkSigDec :: SignalInfo -> VHDLState (Maybe AST.SigDec)
 mkSigDec info =
   let use = sigUse info in
   if isInternalSigUse use || isStateSigUse use then do
@@ -282,7 +282,7 @@ mkConcSm sigs (UncondDef src dst) _ = do
           -- Create a cast expression, which is just a function call using the
           -- type name as the function name.
           let litexpr = AST.PrimLit lit
-          ty_id <- MonadState.lift vsTypes (vhdl_ty ty)
+          ty_id <- vhdl_ty ty
           let ty_name = AST.NSimple ty_id
           let args = [Nothing AST.:=>: (AST.ADExpr litexpr)] 
           return $ AST.PrimFCall $ AST.FCall ty_name args
@@ -360,9 +360,9 @@ std_logic_ty :: AST.TypeMark
 std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
 
 -- Translate a Haskell type to a VHDL type
-vhdl_ty :: Type.Type -> TypeState AST.TypeMark
+vhdl_ty :: Type.Type -> VHDLState AST.TypeMark
 vhdl_ty ty = do
-  typemap <- State.get
+  typemap <- getA vsTypes
   let builtin_ty = do -- See if this is a tycon and lookup its name
         (tycon, args) <- Type.splitTyConApp_maybe ty
         let name = Name.getOccString (TyCon.tyConName tycon)
@@ -379,7 +379,7 @@ vhdl_ty ty = do
             (tycon, args) <- Type.splitTyConApp_maybe ty
             let name = Name.getOccString (TyCon.tyConName tycon)
             case name of
-              "FSVec" -> Just $ mk_vector_ty (fsvec_len ty) ty
+              "TFVec" -> Just $ mk_vector_ty (tfvec_len ty) ty
               "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
               otherwise -> Nothing
       -- Return new_ty when a new type was successfully created
@@ -391,7 +391,7 @@ vhdl_ty ty = do
 mk_vector_ty ::
   Int -- ^ The length of the vector
   -> Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> TypeState AST.TypeMark -- The typemark created.
+  -> VHDLState AST.TypeMark -- The typemark created.
 
 mk_vector_ty len ty = do
   -- Assume there is a single type argument
@@ -401,7 +401,9 @@ mk_vector_ty len ty = do
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
   let ty_dec = AST.TypeDec ty_id ty_def
   -- TODO: Check name uniqueness
-  State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
+  --State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
+  modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
+  modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns std_logic_ty ty_id))
   return ty_id
 
 
