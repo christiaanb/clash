@@ -246,19 +246,32 @@ mkConcSm ::
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   signatures <- getA vsSignatures
-  let 
-      (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-      signature = Maybe.fromMaybe
-          (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!")
+  funSignatures <- getA vsNameTable
+  let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+  case (Map.lookup (bndrToString f) funSignatures) of
+    Just funSignature ->
+      let
+        sigs = map (bndrToString.varBndr) args
+        sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
+        func = (snd funSignature) sigsNames
+        src_wform = AST.Wform [AST.WformElem func Nothing]
+        dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+        assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+      in
+        return $ AST.CSSASm assign
+    Nothing ->
+      let  
+        signature = Maybe.fromMaybe 
+          (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup (bndrToString f) signatures)
-      entity_id = ent_id signature
-      label = bndrToString bndr
+        entity_id = ent_id signature
+        label = bndrToString bndr
       -- Add a clk port if we have state
       --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
       --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
-      portmaps = mkAssocElems args bndr signature
-    in
-      return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+        portmaps = mkAssocElems args bndr signature
+      in
+        return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
 
 -- GHC generates some funny "r = r" bindings in let statements before
 -- simplification. This outputs some dummy ConcSM for these, so things will at
