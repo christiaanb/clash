@@ -48,14 +48,16 @@ createDesignFiles ::
   -> [(AST.VHDLId, AST.DesignFile)]
 
 createDesignFiles binds =
-  (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package]) :
+  (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package_dec, type_package_body]) :
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
+    init_session = VHDLSession Map.empty Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     ty_decls = Map.elems (final_session ^. vsTypes)
+    subty_decls = Map.elems (final_session ^. vsSubTypes)
+    tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
@@ -64,7 +66,12 @@ createDesignFiles binds =
     full_context =
       mkUseAll ["work", "types"]
       : ieee_context
-    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (map (AST.PDITD . snd) ty_decls)
+    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (packageTypeDecs ++ packageSubtypeDecs ++ subProgSpecs)
+    type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
+    packageTypeDecs = map (AST.PDITD . snd) ty_decls
+    packageSubtypeDecs = map (AST.PDISD . snd) subty_decls
+    subProgSpecs = concat (map subProgSpec tyfun_decls)
+    subProgSpec = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec)
 
 -- Create a use foo.bar.all statement. Takes a list of components in the used
 -- name. Must contain at least two components
@@ -443,6 +450,7 @@ vhdl_ty ty = do
             case name of
               "TFVec" -> Just $ mk_vector_ty (tfvec_len ty) ty
               "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
+              "RangedWord" -> Just $ mk_natural_ty 0 (ranged_word_bound ty) ty
               otherwise -> Nothing
       -- Return new_ty when a new type was successfully created
       Maybe.fromMaybe 
@@ -466,6 +474,18 @@ mk_vector_ty len ty = do
   --State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
   modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
   modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns std_logic_ty ty_id))
+  return ty_id
+
+mk_natural_ty ::
+  Int -- ^ The minimum bound (> 0)
+  -> Int -- ^ The maximum bound (> minimum bound)
+  -> Type.Type -- ^ The Haskell type to create a VHDL type for
+  -> VHDLState AST.TypeMark -- The typemark created.
+mk_natural_ty min_bound max_bound ty = do
+  let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
+  let ty_def = AST.SubtypeIn naturalTM (Nothing)
+  let ty_dec = AST.SubtypeDec ty_id ty_def
+  modA vsSubTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
   return ty_id
 
 

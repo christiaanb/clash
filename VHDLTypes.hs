@@ -45,6 +45,9 @@ instance Ord OrdType where
 -- A map of a Core type to the corresponding type name
 type TypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDec)
 
+-- A map of a Core type to the corresponding VHDL subtype
+type SubTypeMap = Map.Map OrdType (AST.VHDLId, AST.SubtypeDec)
+
 -- A map of a vector Core type to the coressponding VHDL functions
 type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
 
@@ -57,6 +60,8 @@ type NameTable = Map.Map String (Int, [AST.Expr] -> AST.Expr )
 data VHDLSession = VHDLSession {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
+  -- | A map of Core type -> VHDL SubType
+  vsSubTypes_   :: SubTypeMap,
   -- | A map of vector Core type -> VHDL type function
   vsTypeFuns_   :: TypeFunMap,
   -- | A map of HsFunction -> hardware signature (entity name, port names,

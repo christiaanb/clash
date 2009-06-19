@@ -58,6 +58,14 @@ sized_word_len ty =
   where 
     (tycon, args) = Type.splitTyConApp ty
     [len] = args
+    
+-- | Get the upperbound of a RangedWord type
+ranged_word_bound :: Type.Type -> Int
+ranged_word_bound ty =
+  eval_tfp_int len
+  where
+    (tycon, args) = Type.splitTyConApp ty
+    [len]         = args
 
 -- | Evaluate a core Type representing type level int from the TypeLevel
 -- library to a real int.
