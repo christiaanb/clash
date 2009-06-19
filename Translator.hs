@@ -82,7 +82,7 @@ listBind filename name = do
 moduleToVHDL :: HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
 moduleToVHDL core list = do
   let (names, statefuls) = unzip list
-  let binds = findBinds core names
+  let binds = map fst $ findBinds core names
   -- Generate a UniqSupply
   -- Running 
   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
@@ -90,23 +90,13 @@ moduleToVHDL core list = do
   -- unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   -- Turn bind into VHDL
-  let (vhdl, sess) = State.runState (mkVHDL uniqSupply binds statefuls) (TranslatorSession core 0 Map.empty)
+  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
+  let normalized_bindings = normalizeModule uniqSupply all_bindings binds statefuls
+  let vhdl = VHDL.createDesignFiles normalized_bindings
   mapM (putStr . render . ForSyDe.Backend.Ppr.ppr . snd) vhdl
-  putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
+  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
   where
-    -- Turns the given bind into VHDL
-    mkVHDL :: UniqSupply.UniqSupply -> [(CoreBndr, CoreExpr)] -> [Bool] -> TranslatorState [(AST.VHDLId, AST.DesignFile)]
-    mkVHDL uniqSupply binds statefuls = do
-      let binds'' = map (Arrow.second $ normalize uniqSupply) binds
-      let binds' = trace ("Before:\n\n" ++ showSDoc ( ppr binds ) ++ "\n\nAfter:\n\n" ++ showSDoc ( ppr binds'')) binds''
-      -- Add the builtin functions
-      --mapM addBuiltIn builtin_funcs
-      -- Create entities and architectures for them
-      --Monad.zipWithM processBind statefuls binds
-      --modA tsFlatFuncs (Map.map nameFlatFunction)
-      --flatfuncs <- getA tsFlatFuncs
-      return $ VHDL.createDesignFiles binds'
 
 -- | Write the given design file to a file with the given name inside the
 --   given dir
@@ -147,18 +137,6 @@ findBind binds lookfor =
   -- disregarding any namespaces in OccName and extra attributes in Name and
   -- Var.
   find (\(var, _) -> lookfor == (occNameString $ nameOccName $ getName var)) binds
-
--- | Processes the given bind as a top level bind.
-processBind ::
-  Bool                       -- ^ Should this be stateful function?
-  -> (CoreBndr, CoreExpr)    -- ^ The bind to process
-  -> TranslatorState ()
-
-processBind stateful bind@(var, expr) = do
-  -- Create the function signature
-  let ty = CoreUtils.exprType expr
-  let hsfunc = mkHsFunction var ty stateful
-  flattenBind hsfunc bind
 
 -- | Flattens the given bind into the given signature and adds it to the
 --   session. Then (recursively) finds any functions it uses and does the same
