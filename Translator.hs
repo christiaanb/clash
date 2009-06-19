@@ -53,7 +53,7 @@ import VHDLTypes
 import qualified VHDL
 
 main = do
-  makeVHDL "Adders.hs" "highordtest" True
+  makeVHDL "Adders.hs" "highordtest2" True
 
 makeVHDL :: String -> String -> Bool -> IO ()
 makeVHDL filename name stateful = do
