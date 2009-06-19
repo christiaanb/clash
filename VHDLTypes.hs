@@ -47,6 +47,9 @@ type TypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDec)
 -- A map of a Haskell function to a hardware signature
 type SignatureMap = Map.Map HsFunction Entity
 
+-- A map of a builtin function to VHDL function builder 
+type NameTable = Map.Map String (Int, [AST.Expr] -> AST.Expr )
+
 data VHDLSession = VHDLSession {
   -- | A map of Core type -> VHDL Type
   vsTypes_ :: TypeMap,

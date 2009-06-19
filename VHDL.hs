@@ -34,6 +34,9 @@ import TranslatorTypes
 import HsValueMap
 import Pretty
 import CoreTools
+import Constants
+import Generate
+import GlobalNameTable
 
 createDesignFiles ::
   FlatFuncMap
