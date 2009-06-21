@@ -455,8 +455,8 @@ normalizeBind bndr =
               -- the last let).
               let expr' = Let (Rec []) expr
               -- Normalize this expression
-              trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
-              expr' <- dotransforms transforms expr
+              trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr' ) ++ "\n") $ return ()
+              expr' <- dotransforms transforms expr'
               trace ("\nAfter:\n\n" ++ showSDoc ( ppr expr')) $ return ()
               -- And store the normalized version in the session
               modA tsBindings (Map.insert bndr expr')
