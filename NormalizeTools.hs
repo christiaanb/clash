@@ -58,8 +58,8 @@ mkTypeVar str kind = do
 -- works for both value and type level expressions, so it can return a Var or
 -- TyVar (which is just an alias for Var).
 mkBinderFor :: CoreExpr -> String -> TransformMonad Var.Var
-mkBinderFor (Type ty) = mkTypeVar string (Type.typeKind ty)
-mkBinderFor expr = mkInternalVar string (CoreUtils.exprType expr)
+mkBinderFor (Type ty) string = mkTypeVar string (Type.typeKind ty)
+mkBinderFor expr string = mkInternalVar string (CoreUtils.exprType expr)
 
 -- Creates a reference to the given variable. This works for both a normal
 -- variable as well as a type variable
