@@ -74,6 +74,17 @@ cloneVar v = do
   -- contains, but vannillaIdInfo is always correct, since it means "no info").
   return $ Var.lazySetVarIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
 
+-- Creates a new function with the same name as the given binder (but with a
+-- new unique) and with the given function body. Returns the new binder for
+-- this function.
+mkFunction :: CoreBndr -> CoreExpr -> TransformMonad CoreBndr
+mkFunction bndr body = do
+  let ty = CoreUtils.exprType body
+  id <- cloneVar bndr
+  let newid = Var.setVarType id ty
+  Trans.lift $ addGlobalBind newid body
+  return newid
+
 -- Apply the given transformation to all expressions in the given expression,
 -- including the expression itself.
 everywhere :: (String, Transform) -> Transform

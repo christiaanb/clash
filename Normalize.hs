@@ -302,14 +302,13 @@ typeprop, typeproptop :: Transform
 -- arguments without any free tyvars, since tyvars those wouldn't be in scope
 -- in the new function.
 typeprop expr@(App (Var f) arg@(Type ty)) | not $ has_free_tyvars arg = do
-  id <- cloneVar f
-  let newty = Type.applyTy (Id.idType f) ty
-  let newf = Var.setVarType id newty
   body_maybe <- Trans.lift $ getGlobalBind f
   case body_maybe of
     Just body -> do
       let newbody = App body (Type ty)
-      Trans.lift $ addGlobalBind newf newbody
+      -- Create a new function with the same name but a new body
+      newf <- mkFunction f newbody
+      -- Replace the application with this new function
       change (Var newf)
     -- If we don't have a body for the function called, leave it unchanged (it
     -- should be a primitive function then).
@@ -346,11 +345,8 @@ funprop expr@(App _ _) | is_var fexpr && not (any has_free_tyvars args) = do
           -- Create a new body that consists of a lambda for all new arguments and
           -- the old body applied to some arguments.
           let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
-          -- Create a new function name
-          id <- cloneVar f
-          let newf = Var.setVarType id (CoreUtils.exprType newbody)
-          -- Add the new function
-          Trans.lift $ addGlobalBind newf newbody
+          -- Create a new function with the same name but a new body
+          newf <- mkFunction f newbody
           -- Replace the original application with one of the new function to the
           -- new arguments.
           change $ MkCore.mkCoreApps (Var newf) newargs
