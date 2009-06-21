@@ -98,4 +98,6 @@ is_lam _ = False
 
 -- Is the given core expression of a function type?
 is_fun :: CoreSyn.CoreExpr -> Bool
-is_fun = Type.isFunTy . CoreUtils.exprType
+-- Treat Type arguments differently, because exprType is not defined for them.
+is_fun (CoreSyn.Type _) = False
+is_fun expr = (Type.isFunTy . CoreUtils.exprType) expr
