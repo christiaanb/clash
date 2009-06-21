@@ -361,10 +361,10 @@ normalizeBind bndr = do
           -- Find all vars used with a function type. All of these should be global
           -- binders (i.e., functions used), since any local binders with a function
           -- type should have been inlined already.
-          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> trace (showSDoc $ ppr $ Id.idType v) ((Type.isFunTy . snd . Type.splitForAllTys . Id.idType)v)) expr''
+          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr''
           let used_funcs = VarSet.varSetElems used_funcs_set
           -- Process each of the used functions recursively
-          mapM normalizeBind (trace (show used_funcs) used_funcs)
+          mapM normalizeBind used_funcs
           return ()
         -- We don't have a value for this binder, let's assume this is a builtin
         -- function. This might need some extra checking and a nice error
