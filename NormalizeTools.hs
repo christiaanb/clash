@@ -43,6 +43,13 @@ mkInternalVar str ty = do
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkLocalIdVar name ty IdInfo.vanillaIdInfo
 
+cloneVar :: Var.Var -> TransformMonad Var.Var
+cloneVar v = do
+  uniq <- mkUnique
+  -- Swap out the unique, and reset the IdInfo (I'm not 100% sure what it
+  -- contains, but vannillaIdInfo is always correct, since it means "no info").
+  return $ Var.lazySetVarIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
+
 -- Apply the given transformation to all expressions in the given expression,
 -- including the expression itself.
 everywhere :: (String, Transform) -> Transform
