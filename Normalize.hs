@@ -429,38 +429,46 @@ normalizeModule uniqsupply bindings generate_for statefuls = runTransformSession
   return $ filter ((flip VarSet.elemVarSet normalized_bindings) . fst) bindings
 
 normalizeBind :: CoreBndr -> TransformSession ()
-normalizeBind bndr = do
-  normalized_funcs <- getA tsNormalized
-  -- See if this function was normalized already
-  if VarSet.elemVarSet bndr normalized_funcs
+normalizeBind bndr =
+  -- Skip binders that have a polymorphic type, since it's impossible to
+  -- create polymorphic hardware.
+  if is_poly (Var bndr)
     then
-      -- Yup, don't do it again
-      return ()
+      -- This should really only happen at the top level... TODO: Give
+      -- a different error if this happens down in the recursion.
+      error $ "Function " ++ show bndr ++ " is polymorphic, can't normalize"
     else do
-      -- Nope, note that it has been and do it.
-      modA tsNormalized (flip VarSet.extendVarSet bndr)
-      expr_maybe <- getGlobalBind bndr
-      case expr_maybe of 
-        Just expr -> do
-          -- Introduce an empty Let at the top level, so there will always be
-          -- a let in the expression (none of the transformations will remove
-          -- the last let).
-          let expr' = Let (Rec []) expr
-          -- Normalize this expression
-          trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
-          expr' <- dotransforms transforms expr
-          trace ("\nAfter:\n\n" ++ showSDoc ( ppr expr')) $ return ()
-          -- And store the normalized version in the session
-          modA tsBindings (Map.insert bndr expr')
-          -- Find all vars used with a function type. All of these should be global
-          -- binders (i.e., functions used), since any local binders with a function
-          -- type should have been inlined already.
-          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr'
-          let used_funcs = VarSet.varSetElems used_funcs_set
-          -- Process each of the used functions recursively
-          mapM normalizeBind used_funcs
+      normalized_funcs <- getA tsNormalized
+      -- See if this function was normalized already
+      if VarSet.elemVarSet bndr normalized_funcs
+        then
+          -- Yup, don't do it again
           return ()
-        -- We don't have a value for this binder, let's assume this is a builtin
-        -- function. This might need some extra checking and a nice error
-        -- message).
-        Nothing -> return ()
+        else do
+          -- Nope, note that it has been and do it.
+          modA tsNormalized (flip VarSet.extendVarSet bndr)
+          expr_maybe <- getGlobalBind bndr
+          case expr_maybe of 
+            Just expr -> do
+              -- Introduce an empty Let at the top level, so there will always be
+              -- a let in the expression (none of the transformations will remove
+              -- the last let).
+              let expr' = Let (Rec []) expr
+              -- Normalize this expression
+              trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
+              expr' <- dotransforms transforms expr
+              trace ("\nAfter:\n\n" ++ showSDoc ( ppr expr')) $ return ()
+              -- And store the normalized version in the session
+              modA tsBindings (Map.insert bndr expr')
+              -- Find all vars used with a function type. All of these should be global
+              -- binders (i.e., functions used), since any local binders with a function
+              -- type should have been inlined already.
+              let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr'
+              let used_funcs = VarSet.varSetElems used_funcs_set
+              -- Process each of the used functions recursively
+              mapM normalizeBind used_funcs
+              return ()
+            -- We don't have a value for this binder, let's assume this is a builtin
+            -- function. This might need some extra checking and a nice error
+            -- message).
+            Nothing -> return ()
