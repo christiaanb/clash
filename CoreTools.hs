@@ -3,7 +3,10 @@
 -- Core and Haskell (it uses HsTools for this), but only the functions that
 -- know about various libraries and know which functions to call.
 module CoreTools where
-  
+
+--Standard modules
+import qualified Maybe
+
 -- GHC API
 import qualified GHC
 import qualified Type
@@ -101,3 +104,16 @@ is_fun :: CoreSyn.CoreExpr -> Bool
 -- Treat Type arguments differently, because exprType is not defined for them.
 is_fun (CoreSyn.Type _) = False
 is_fun expr = (Type.isFunTy . CoreUtils.exprType) expr
+
+-- Is the given core expression polymorphic (i.e., does it accept type
+-- arguments?).
+is_poly :: CoreSyn.CoreExpr -> Bool
+-- Treat Type arguments differently, because exprType is not defined for them.
+is_poly (CoreSyn.Type _) = False
+is_poly expr = (Maybe.isJust . Type.splitForAllTy_maybe . CoreUtils.exprType) expr
+
+-- Is the given core expression a variable reference?
+is_var :: CoreSyn.CoreExpr -> Bool
+is_var (CoreSyn.Var _) = True
+is_var _ = False
+
