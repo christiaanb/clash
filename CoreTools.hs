@@ -22,8 +22,10 @@ import qualified DynFlags
 import qualified SrcLoc
 import qualified CoreSyn
 import qualified Var
+import qualified VarSet
 import qualified Unique
 import qualified CoreUtils
+import qualified CoreFVs
 
 import GhcTools
 import HsTools
@@ -117,3 +119,6 @@ is_var :: CoreSyn.CoreExpr -> Bool
 is_var (CoreSyn.Var _) = True
 is_var _ = False
 
+-- Does the given CoreExpr have any free type vars?
+has_free_tyvars :: CoreSyn.CoreExpr -> Bool
+has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
