@@ -168,7 +168,7 @@ mkUnique = Trans.lift $ do
 -- given expression.
 substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
 substitute replace expr = CoreSubst.substExpr subs expr
-    where subs = foldl (\s (b, e) -> CoreSubst.extendIdSubst s b e) CoreSubst.emptySubst replace
+    where subs = foldl (\s (b, e) -> CoreSubst.extendSubst s b e) CoreSubst.emptySubst replace
 
 -- Run a given TransformSession. Used mostly to setup the right calls and
 -- an initial state.
