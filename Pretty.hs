@@ -1,4 +1,4 @@
-module Pretty (prettyShow) where
+module Pretty (prettyShow, pprString) where
 
 
 import qualified Data.Map as Map
@@ -151,3 +151,7 @@ instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
     where
       ppentry (k, v) =
         pPrint k <> text " : " $$ nest 15 (pPrint v)
+
+-- Convenience method for turning an Outputable into a string
+pprString :: (Outputable x) => x -> String
+pprString = showSDoc . ppr
