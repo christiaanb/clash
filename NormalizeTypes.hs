@@ -47,3 +47,9 @@ getGlobalBind bndr = do
 -- Adds a new global binding with the given value
 addGlobalBind :: CoreBndr -> CoreExpr -> TransformSession ()
 addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)
+
+-- Returns a list of all global binders
+getGlobalBinders :: TransformSession [CoreBndr]
+getGlobalBinders = do
+  bindings <- getA tsBindings
+  return $ Map.keys bindings
