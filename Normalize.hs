@@ -11,7 +11,9 @@ import Debug.Trace
 import qualified Maybe
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Control.Monad as Monad
+import qualified Control.Monad.Trans.Writer as Writer
 import qualified Data.Map as Map
+import qualified Data.Monoid as Monoid
 import Data.Accessor
 
 -- GHC API
@@ -23,6 +25,8 @@ import qualified Id
 import qualified Var
 import qualified VarSet
 import qualified CoreFVs
+import qualified CoreUtils
+import qualified MkCore
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -315,6 +319,87 @@ typeprop expr = return expr
 -- Perform this transform everywhere
 typeproptop = everywhere ("typeprop", typeprop)
 
+
+--------------------------------
+-- Function-typed argument propagation
+--------------------------------
+-- Remove all applications to function-typed arguments, by duplication the
+-- function called with the function-typed parameter replaced by the free
+-- variables of the argument passed in.
+funprop, funproptop :: Transform
+-- Transform any application of a named function (i.e., skip applications of
+-- lambda's). Also skip applications that have arguments with free type
+-- variables, since we can't inline those.
+funprop expr@(App _ _) | is_var fexpr && not (any has_free_tyvars args) = do
+  -- Find the body of the function called
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    Just body -> do
+      -- Process each of the arguments in turn
+      (args', changed) <- Writer.listen $ mapM doarg args
+      -- See if any of the arguments changed
+      case Monoid.getAny changed of
+        True -> do
+          let (newargs', newparams', oldargs) = unzip3 args'
+          let newargs = concat newargs'
+          let newparams = concat newparams'
+          -- Create a new body that consists of a lambda for all new arguments and
+          -- the old body applied to some arguments.
+          let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
+          -- Create a new function name
+          id <- cloneVar f
+          let newf = Var.setVarType id (CoreUtils.exprType newbody)
+          -- Add the new function
+          Trans.lift $ addGlobalBind newf newbody
+          -- Replace the original application with one of the new function to the
+          -- new arguments.
+          change $ MkCore.mkCoreApps (Var newf) newargs
+        False ->
+          -- Don't change the expression if none of the arguments changed
+          return expr
+      
+    -- If we don't have a body for the function called, leave it unchanged (it
+    -- should be a primitive function then).
+    Nothing -> return expr
+  where
+    -- Find the function called and the arguments
+    (fexpr, args) = collectArgs expr
+    Var f = fexpr
+
+    -- Process a single argument and return (args, bndrs, arg), where args are
+    -- the arguments to replace the given argument in the original
+    -- application, bndrs are the binders to include in the top-level lambda
+    -- in the new function body, and arg is the argument to apply to the old
+    -- function body.
+    doarg :: CoreExpr -> TransformMonad ([CoreExpr], [CoreBndr], CoreExpr)
+    doarg arg | is_fun arg = do
+      bndrs <- Trans.lift getGlobalBinders
+      -- Find interesting free variables, each of which should be passed to
+      -- the new function instead of the original function argument.
+      -- 
+      -- Interesting vars are those that are local, but not available from the
+      -- top level scope (functions from this module are defined as local, but
+      -- they're not local to this function, so we can freely move references
+      -- to them into another function).
+      let interesting var = Var.isLocalVar var && (not $ var `elem` bndrs)
+      let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting arg
+      -- Mark the current expression as changed
+      setChanged
+      return (map Var free_vars, free_vars, arg)
+    -- Non-functiontyped arguments can be unchanged. Note that this handles
+    -- both values and types.
+    doarg arg = do
+      -- TODO: preserve original naming?
+      id <- mkBinderFor arg "param"
+      -- Just pass the original argument to the new function, which binds it
+      -- to a new id and just pass that new id to the old function body.
+      return ([arg], [id], mkReferenceTo id) 
+-- Leave all other expressions unchanged
+funprop expr = return expr
+-- Perform this transform everywhere
+funproptop = everywhere ("funprop", funprop)
+
+
 -- TODO: introduce top level let if needed?
 
 --------------------------------
@@ -325,7 +410,7 @@ typeproptop = everywhere ("typeprop", typeprop)
 
 
 -- What transforms to run?
-transforms = [typeproptop, etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [typeproptop, funproptop, etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
