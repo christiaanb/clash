@@ -29,6 +29,7 @@ import qualified OccName
 import qualified Var
 import qualified TyCon
 import qualified DataCon
+import qualified CoreSubst
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
@@ -55,7 +56,7 @@ createDesignFiles binds =
     init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
-    ty_decls = Map.elems (final_session ^. vsTypes)
+    ty_decls = map (uncurry AST.TypeDec) $ Map.elems (final_session ^. vsTypes)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
@@ -64,7 +65,7 @@ createDesignFiles binds =
     full_context =
       mkUseAll ["work", "types"]
       : ieee_context
-    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (map (AST.PDITD . snd) ty_decls)
+    type_package = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (map AST.PDITD ty_decls)
 
 -- Create a use foo.bar.all statement. Takes a list of components in the used
 -- name. Must contain at least two components
@@ -436,13 +437,16 @@ vhdl_ty ty = do
     Just t -> return t
     -- No type yet, try to construct it
     Nothing -> do
-      new_ty <- (construct_vhdl_ty ty)
-      return $ Maybe.fromMaybe 
-        (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
-        new_ty
+      newty_maybe <- (construct_vhdl_ty ty)
+      case newty_maybe of
+        Just (ty_id, ty_def) -> do
+          -- TODO: Check name uniqueness
+          modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          return ty_id
+        Nothing -> error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty)
 
 -- Construct a new VHDL type for the given Haskell type.
-construct_vhdl_ty :: Type.Type -> VHDLState (Maybe AST.TypeMark)
+construct_vhdl_ty :: Type.Type -> VHDLState (Maybe (AST.TypeMark, AST.TypeDef))
 construct_vhdl_ty ty = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
@@ -455,12 +459,13 @@ construct_vhdl_ty ty = do
           res <- mk_vector_ty (sized_word_len ty) ty
           return $ Just res
         otherwise -> return Nothing
+    Nothing -> return $ Nothing
 
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Int -- ^ The length of the vector
   -> Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> VHDLState AST.TypeMark -- The typemark created.
+  -> VHDLState (AST.TypeMark, AST.TypeDef) -- The typemark created.
 
 mk_vector_ty len ty = do
   -- Assume there is a single type argument
@@ -468,12 +473,8 @@ mk_vector_ty len ty = do
   -- TODO: Use el_ty
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
-  let ty_dec = AST.TypeDec ty_id ty_def
-  -- TODO: Check name uniqueness
-  --State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
-  modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
   modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns std_logic_ty ty_id))
-  return ty_id
+  return (ty_id, ty_def)
 
 
 builtin_types = 

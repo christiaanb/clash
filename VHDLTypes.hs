@@ -43,7 +43,7 @@ instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.tcCmpType a b
 
 -- A map of a Core type to the corresponding type name
-type TypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDec)
+type TypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDef)
 
 -- A map of a vector Core type to the coressponding VHDL functions
 type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
