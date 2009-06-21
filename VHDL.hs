@@ -436,18 +436,25 @@ vhdl_ty ty = do
     Just t -> return t
     -- No type yet, try to construct it
     Nothing -> do
-      let new_ty = do
-            -- Use the Maybe Monad for failing when one of these fails
-            (tycon, args) <- Type.splitTyConApp_maybe ty
-            let name = Name.getOccString (TyCon.tyConName tycon)
-            case name of
-              "TFVec" -> Just $ mk_vector_ty (tfvec_len ty) ty
-              "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
-              otherwise -> Nothing
-      -- Return new_ty when a new type was successfully created
-      Maybe.fromMaybe 
+      new_ty <- (construct_vhdl_ty ty)
+      return $ Maybe.fromMaybe 
         (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
         new_ty
+
+-- Construct a new VHDL type for the given Haskell type.
+construct_vhdl_ty :: Type.Type -> VHDLState (Maybe AST.TypeMark)
+construct_vhdl_ty ty = do
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "TFVec" -> do
+          res <- mk_vector_ty (tfvec_len ty) ty
+          return $ Just res
+        "SizedWord" -> do
+          res <- mk_vector_ty (sized_word_len ty) ty
+          return $ Just res
+        otherwise -> return Nothing
 
 -- | Create a VHDL vector type
 mk_vector_ty ::
