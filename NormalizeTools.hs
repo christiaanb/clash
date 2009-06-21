@@ -43,6 +43,30 @@ mkInternalVar str ty = do
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkLocalIdVar name ty IdInfo.vanillaIdInfo
 
+-- Create a new type variable with the given name and kind. A Unique is
+-- appended to the given name, to ensure uniqueness (not strictly neccesary,
+-- since the Unique is also stored in the name, but this ensures variable
+-- names are unique in the output).
+mkTypeVar :: String -> Type.Kind -> TransformMonad Var.Var
+mkTypeVar str kind = do
+  uniq <- mkUnique
+  let occname = OccName.mkVarOcc (str ++ show uniq)
+  let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
+  return $ Var.mkTyVar name kind
+
+-- Creates a binder for the given expression with the given name. This
+-- works for both value and type level expressions, so it can return a Var or
+-- TyVar (which is just an alias for Var).
+mkBinderFor :: CoreExpr -> String -> TransformMonad Var.Var
+mkBinderFor (Type ty) = mkTypeVar string (Type.typeKind ty)
+mkBinderFor expr = mkInternalVar string (CoreUtils.exprType expr)
+
+-- Creates a reference to the given variable. This works for both a normal
+-- variable as well as a type variable
+mkReferenceTo :: Var.Var -> CoreExpr
+mkReferenceTo var | Var.isTyVar var = (Type $ Type.mkTyVarTy var)
+                  | otherwise       = (Var var)
+
 cloneVar :: Var.Var -> TransformMonad Var.Var
 cloneVar v = do
   uniq <- mkUnique
