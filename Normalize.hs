@@ -362,14 +362,15 @@ normalizeBind bndr = do
       case expr_maybe of 
         Just expr -> do
           -- Normalize this expression
+          trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
           expr' <- dotransforms transforms expr
-          let expr'' = trace ("Before:\n\n" ++ showSDoc ( ppr expr ) ++ "\n\nAfter:\n\n" ++ showSDoc ( ppr expr')) expr'
+          trace ("\nAfter:\n\n" ++ showSDoc ( ppr expr')) $ return ()
           -- And store the normalized version in the session
-          modA tsBindings (Map.insert bndr expr'')
+          modA tsBindings (Map.insert bndr expr')
           -- Find all vars used with a function type. All of these should be global
           -- binders (i.e., functions used), since any local binders with a function
           -- type should have been inlined already.
-          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr''
+          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr'
           let used_funcs = VarSet.varSetElems used_funcs_set
           -- Process each of the used functions recursively
           mapM normalizeBind used_funcs
