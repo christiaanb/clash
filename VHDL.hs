@@ -27,6 +27,7 @@ import qualified Type
 import qualified Name
 import qualified OccName
 import qualified Var
+import qualified Id
 import qualified TyCon
 import qualified DataCon
 import qualified CoreSubst
@@ -280,8 +281,29 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
 -- least compile for now.
 mkConcSm (bndr, CoreSyn.Var _) = return $ AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []
 
--- A single alt case must be a selector
-mkConcSm (bndr, (Case (Var scrut) b ty [alt])) = error "Single case alt not supported yet"
+-- A single alt case must be a selector. This means thee scrutinee is a simple
+-- variable, the alternative is a dataalt with a single non-wild binder that
+-- is also returned.
+mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
+  case alt of
+    (DataAlt dc, bndrs, (Var sel_bndr)) -> do
+      case List.elemIndex sel_bndr bndrs of
+        Just i -> do
+          labels <- getFieldLabels (Id.idType scrut)
+          let label = labels!!i
+          let scrut_name = AST.NSimple $ bndrToVHDLId scrut
+          let sel_suffix = AST.SSimple $ label
+          let sel_name = AST.NSelected $ scrut_name AST.:.: sel_suffix 
+          let sel_expr = AST.PrimName sel_name
+          let sel_wform = AST.Wform [AST.WformElem sel_expr Nothing]
+          let dst_name  = AST.NSimple (bndrToVHDLId bndr)
+          -- TODO: Reduce code duplication with the next mkConcSm clause
+          let assign = dst_name AST.:<==: (AST.ConWforms [] sel_wform Nothing)
+          return $ AST.CSSASm assign
+        Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
+      
+    _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
+
 
 -- Multiple case alt are be conditional assignments and have only wild
 -- binders in the alts and only variables in the case values and a variable
@@ -301,6 +323,18 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     return $ AST.CSSASm assign
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
+
+-- Finds the field labels for VHDL type generated for the given Core type,
+-- which must result in a record type.
+getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
+getFieldLabels ty = do
+  -- Ensure that the type is generated (but throw away it's VHDLId)
+  vhdl_ty ty
+  -- Get the types map, lookup and unpack the VHDL TypeDef
+  types <- getA vsTypes
+  case Map.lookup (OrdType ty) types of
+    Just (_, AST.TDR (AST.RecordTypeDef elems)) -> return $ map (\(AST.ElementDec id _) -> id) elems
+    _ -> error $ "VHDL.getFieldLabels Type not found or not a record type? This should not happen! Type: " ++ (show ty)
 
 -- Turn a variable reference into a AST expression
 varToVHDLExpr :: Var.Var -> AST.Expr
