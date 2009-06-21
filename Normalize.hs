@@ -442,6 +442,10 @@ normalizeBind bndr = do
       expr_maybe <- getGlobalBind bndr
       case expr_maybe of 
         Just expr -> do
+          -- Introduce an empty Let at the top level, so there will always be
+          -- a let in the expression (none of the transformations will remove
+          -- the last let).
+          let expr' = Let (Rec []) expr
           -- Normalize this expression
           trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
           expr' <- dotransforms transforms expr
