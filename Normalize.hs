@@ -294,8 +294,10 @@ appsimpltop = everywhere ("appsimpl", appsimpl)
 typeprop, typeproptop :: Transform
 -- Transform any function that is applied to a type argument. Since type
 -- arguments are always the first ones to apply and we'll remove all type
--- arguments, we can simply do them one by one.
-typeprop expr@(App (Var f) (Type ty)) = do
+-- arguments, we can simply do them one by one. We only propagate type
+-- arguments without any free tyvars, since tyvars those wouldn't be in scope
+-- in the new function.
+typeprop expr@(App (Var f) arg@(Type ty)) | not $ has_free_tyvars arg = do
   id <- cloneVar f
   let newty = Type.applyTy (Id.idType f) ty
   let newf = Var.setVarType id newty
