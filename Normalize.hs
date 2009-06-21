@@ -62,7 +62,7 @@ beta (App (Let binds expr) arg) = change $ Let binds (App expr arg)
 beta (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
   where 
     alts' = map (\(con, bndrs, expr) -> (con, bndrs, (App expr arg))) alts
-    (_, ty') = Type.splitFunTy ty
+    ty' = CoreUtils.applyTypeToArg ty arg
 -- Leave all other expressions unchanged
 beta expr = return expr
 -- Perform this transform everywhere
