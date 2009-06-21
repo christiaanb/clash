@@ -458,8 +458,38 @@ construct_vhdl_ty ty = do
         "SizedWord" -> do
           res <- mk_vector_ty (sized_word_len ty) ty
           return $ Just res
-        otherwise -> return Nothing
+        -- Create a custom type from this tycon
+        otherwise -> mk_tycon_ty tycon args
     Nothing -> return $ Nothing
+
+-- | Create VHDL type for a custom tycon
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLState (Maybe (AST.TypeMark, AST.TypeDef))
+mk_tycon_ty tycon args =
+  case TyCon.tyConDataCons tycon of
+    -- Not an algebraic type
+    [] -> error $ "Only custom algebraic types are supported: " ++  (showSDoc $ ppr tycon)
+    [dc] -> do
+      let arg_tys = DataCon.dataConRepArgTys dc
+      -- TODO: CoreSubst docs say each Subs can be applied only once. Is this a
+      -- violation? Or does it only mean not to apply it again to the same
+      -- subject?
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      elem_tys <- mapM vhdl_ty real_arg_tys
+      let elems = zipWith AST.ElementDec recordlabels elem_tys
+      -- For a single construct datatype, build a record with one field for
+      -- each argument.
+      -- TODO: Add argument type ids to this, to ensure uniqueness
+      -- TODO: Special handling for tuples?
+      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+      let ty_def = AST.TDR $ AST.RecordTypeDef elems
+      return $ Just (ty_id, ty_def)
+    dcs -> error $ "Only single constructor datatypes supported: " ++  (showSDoc $ ppr tycon)
+  where
+    -- Create a subst that instantiates all types passed to the tycon
+    -- TODO: I'm not 100% sure that this is the right way to do this. It seems
+    -- to work so far, though..
+    tyvars = TyCon.tyConTyVars tycon
+    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
 
 -- | Create a VHDL vector type
 mk_vector_ty ::
@@ -529,6 +559,10 @@ bndrToString ::
 
 bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
 
+-- Extracts the string version of the name
+nameToString :: Name.Name -> String
+nameToString = OccName.occNameString . Name.nameOccName
+
 -- | A consise representation of a (set of) ports on a builtin function
 --type PortMap = HsValueMap (String, AST.TypeMark)
 -- | A consise representation of a builtin function
@@ -550,6 +584,8 @@ builtin_funcs = mkBuiltins
     BuiltIn "hwor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
     BuiltIn "hwnot" [("a", VHDL.bit_ty)] ("o", VHDL.bit_ty)
   ]
+
+recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
 
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap
