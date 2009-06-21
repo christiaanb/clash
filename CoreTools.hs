@@ -119,6 +119,11 @@ is_var :: CoreSyn.CoreExpr -> Bool
 is_var (CoreSyn.Var _) = True
 is_var _ = False
 
+-- Can the given core expression be applied to something? This is true for
+-- applying to a value as well as a type.
+is_applicable :: CoreSyn.CoreExpr -> Bool
+is_applicable expr = is_fun expr || is_poly expr
+
 -- Does the given CoreExpr have any free type vars?
 has_free_tyvars :: CoreSyn.CoreExpr -> Bool
 has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
