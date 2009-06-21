@@ -81,8 +81,8 @@ letsimpl, letsimpltop :: Transform
 -- Don't simplifiy lets that are already simple
 letsimpl expr@(Let _ (Var _)) = return expr
 -- Put the "in ..." value of a let in its own binding, but not when the
--- expression has a function type (to prevent loops with inlinefun).
-letsimpl (Let (Rec binds) expr) | not $ is_fun expr = do
+-- expression is applicable (to prevent loops with inlinefun).
+letsimpl (Let (Rec binds) expr) | not $ is_applicable expr = do
   id <- mkInternalVar "foo" (CoreUtils.exprType expr)
   let bind = (id, expr)
   change $ Let (Rec (bind:binds)) (Var id)
@@ -126,7 +126,12 @@ letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v)
 --------------------------------
 -- Function inlining
 --------------------------------
--- Remove a = B bindings, with B :: a -> b, from let expressions everywhere.
+-- Remove a = B bindings, with B :: a -> b, or B :: forall x . T, from let
+-- expressions everywhere. This means that any value that still needs to be
+-- applied to something else (polymorphic values need to be applied to a
+-- Type) will be inlined, and will eventually be applied to all their
+-- arguments.
+--
 -- This is a tricky function, which is prone to create loops in the
 -- transformations. To fix this, we make sure that no transformation will
 -- create a new let binding with a function type. These other transformations
@@ -134,7 +139,7 @@ letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v)
 -- transformations (in particular β-reduction) should make sure that the type
 -- of those values eventually becomes primitive.
 inlinefuntop :: Transform
-inlinefuntop = everywhere ("inlinefun", inlinebind (Type.isFunTy . CoreUtils.exprType . snd))
+inlinefuntop = everywhere ("inlinefun", inlinebind (is_applicable . snd))
 
 --------------------------------
 -- Scrutinee simplification
@@ -143,10 +148,10 @@ scrutsimpl,scrutsimpltop :: Transform
 -- Don't touch scrutinees that are already simple
 scrutsimpl expr@(Case (Var _) _ _ _) = return expr
 -- Replace all other cases with a let that binds the scrutinee and a new
--- simple scrutinee, but not when the scrutinee is a function type (to prevent
--- loops with inlinefun, though I don't think a scrutinee can have a function
--- type...)
-scrutsimpl (Case scrut b ty alts) | not $ is_fun scrut = do
+-- simple scrutinee, but not when the scrutinee is applicable (to prevent
+-- loops with inlinefun, though I don't think a scrutinee can be
+-- applicable...)
+scrutsimpl (Case scrut b ty alts) | not $ is_applicable scrut = do
   id <- mkInternalVar "scrut" (CoreUtils.exprType scrut)
   change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
 -- Leave all other expressions unchanged
@@ -228,9 +233,9 @@ casevalsimpl expr@(Case scrut b ty alts) = do
     -- replacing the case value with that id. Only do this when the case value
     -- does not use any of the binders bound by this alternative, for that would
     -- cause those binders to become unbound when moving the value outside of
-    -- the case statement. Also, don't create a binding for function-typed
+    -- the case statement. Also, don't create a binding for applicable
     -- expressions, to prevent loops with inlinefun.
-    doalt (con, bndrs, expr) | (not usesvars) && (not $ is_fun expr) = do
+    doalt (con, bndrs, expr) | (not usesvars) && (not $ is_applicable expr) = do
       id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
       -- We don't flag a change here, since casevalsimpl will do that above
       -- based on Just we return here.
@@ -266,10 +271,11 @@ caseremovetop = everywhere ("caseremove", caseremove)
 appsimpl, appsimpltop :: Transform
 -- Don't simplify arguments that are already simple
 appsimpl expr@(App f (Var _)) = return expr
--- Simplify all arguments that do not have a function type (to prevent loops
--- with inlinefun) and is not a type argument. Do this by introducing a new
--- Let that binds the argument and passing the new binder in the application.
-appsimpl (App f expr) | (not $ is_fun expr) && (not $ CoreSyn.isTypeArg expr) = do
+-- Simplify all non-applicable (to prevent loops with inlinefun) arguments,
+-- except for type arguments (since a let can't bind type vars, only a lambda
+-- can). Do this by introducing a new Let that binds the argument and passing
+-- the new binder in the application.
+appsimpl (App f expr) | (not $ is_applicable expr) && (not $ CoreSyn.isTypeArg expr) = do
   id <- mkInternalVar "arg" (CoreUtils.exprType expr)
   change $ Let (Rec [(id, expr)]) (App f (Var id))
 -- Leave all other expressions unchanged
