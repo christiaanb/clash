@@ -1,3 +1,4 @@
+{-# LANGUAGE PackageImports #-}
 --
 -- Functions to bring a Core expression in normal form. This module provides a
 -- top level function "normalize", and defines the actual transformation passes that
@@ -8,6 +9,7 @@ module Normalize (normalizeModule) where
 -- Standard modules
 import Debug.Trace
 import qualified Maybe
+import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Control.Monad as Monad
 import qualified Data.Map as Map
 import Data.Accessor
@@ -18,6 +20,7 @@ import qualified UniqSupply
 import qualified CoreUtils
 import qualified Type
 import qualified Id
+import qualified Var
 import qualified VarSet
 import qualified CoreFVs
 import Outputable ( showSDoc, ppr, nest )
@@ -274,6 +277,36 @@ appsimpl expr = return expr
 -- Perform this transform everywhere
 appsimpltop = everywhere ("appsimpl", appsimpl)
 
+
+--------------------------------
+-- Type argument propagation
+--------------------------------
+-- Remove all applications to type arguments, by duplicating the function
+-- called with the type application in its new definition. We leave
+-- dictionaries that might be associated with the type untouched, the funprop
+-- transform should propagate these later on.
+typeprop, typeproptop :: Transform
+-- Transform any function that is applied to a type argument. Since type
+-- arguments are always the first ones to apply and we'll remove all type
+-- arguments, we can simply do them one by one.
+typeprop expr@(App (Var f) (Type ty)) = do
+  id <- cloneVar f
+  let newty = Type.applyTy (Id.idType f) ty
+  let newf = Var.setVarType id newty
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    Just body -> do
+      let newbody = App body (Type ty)
+      Trans.lift $ addGlobalBind newf newbody
+      change (Var newf)
+    -- If we don't have a body for the function called, leave it unchanged (it
+    -- should be a primitive function then).
+    Nothing -> return expr
+-- Leave all other expressions unchanged
+typeprop expr = return expr
+-- Perform this transform everywhere
+typeproptop = everywhere ("typeprop", typeprop)
+
 -- TODO: introduce top level let if needed?
 
 --------------------------------
@@ -284,7 +317,7 @@ appsimpltop = everywhere ("appsimpl", appsimpl)
 
 
 -- What transforms to run?
-transforms = [etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [typeproptop, etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
