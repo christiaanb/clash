@@ -302,7 +302,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
           let label = labels!!i
           let sel_name = mkSelectedName scrut label
           let sel_expr = AST.PrimName sel_name
-          return $ mkUncondAssign bndr sel_expr
+          return $ mkUncondAssign (Left bndr) sel_expr
         Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
     _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
@@ -317,35 +317,35 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     true_expr  = (varToVHDLExpr true)
     false_expr  = (varToVHDLExpr false)
   in
-    return $ mkCondAssign bndr cond_expr true_expr false_expr
+    return $ mkCondAssign (Left bndr) cond_expr true_expr false_expr
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
 
 -- Create an unconditional assignment statement
 mkUncondAssign ::
-  CoreBndr -- ^ The signal to assign to
+  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
   -> AST.Expr -- ^ The expression to assign
   -> AST.ConcSm -- ^ The resulting concurrent statement
-mkUncondAssign bndr expr = mkAssign bndr Nothing expr
+mkUncondAssign dst expr = mkAssign dst Nothing expr
 
 -- Create a conditional assignment statement
 mkCondAssign ::
-  CoreBndr -- ^ The signal to assign to
+  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
   -> AST.Expr -- ^ The condition
   -> AST.Expr -- ^ The value when true
   -> AST.Expr -- ^ The value when false
   -> AST.ConcSm -- ^ The resulting concurrent statement
-mkCondAssign bndr cond true false = mkAssign bndr (Just (cond, true)) false
+mkCondAssign dst cond true false = mkAssign dst (Just (cond, true)) false
 
 -- Create a conditional or unconditional assignment statement
 mkAssign ::
-  CoreBndr -> -- ^ The signal to assign to
+  Either CoreBndr AST.VHDLName -> -- ^ The signal to assign to
   Maybe (AST.Expr , AST.Expr) -> -- ^ Optionally, the condition to test for
                                  -- and the value to assign when true.
   AST.Expr -> -- ^ The value to assign when false or no condition
   AST.ConcSm -- ^ The resulting concurrent statement
 
-mkAssign bndr cond false_expr =
+mkAssign dst cond false_expr =
   let
     -- I'm not 100% how this assignment AST works, but this gets us what we
     -- want...
@@ -357,7 +357,9 @@ mkAssign bndr cond false_expr =
           [AST.WhenElse true_wform cond_expr]
       Nothing -> []
     false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-    dst_name  = AST.NSimple (bndrToVHDLId bndr)
+    dst_name  = case dst of
+      Left bndr -> AST.NSimple (bndrToVHDLId bndr)
+      Right name -> name
     assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
   in
     AST.CSSASm assign
