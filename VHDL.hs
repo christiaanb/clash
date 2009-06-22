@@ -300,15 +300,12 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
         Just i -> do
           labels <- getFieldLabels (Id.idType scrut)
           let label = labels!!i
-          let scrut_name = AST.NSimple $ bndrToVHDLId scrut
-          let sel_suffix = AST.SSimple $ label
-          let sel_name = AST.NSelected $ scrut_name AST.:.: sel_suffix 
+          let sel_name = mkSelectedName scrut label
           let sel_expr = AST.PrimName sel_name
           return $ mkUncondAssign bndr sel_expr
         Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
     _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
-
 
 -- Multiple case alt are be conditional assignments and have only wild
 -- binders in the alts and only variables in the case values and a variable
@@ -364,7 +361,17 @@ mkAssign bndr cond false_expr =
     assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
   in
     AST.CSSASm assign
-  
+
+-- Create a record field selector that selects the given label from the record
+-- stored in the given binder.
+mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
+mkSelectedName bndr label =
+  let 
+    sel_prefix = AST.NSimple $ bndrToVHDLId bndr
+    sel_suffix = AST.SSimple $ label
+  in
+    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
+
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
 getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
