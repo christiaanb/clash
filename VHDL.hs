@@ -350,6 +350,7 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     return $ mkCondAssign (Left bndr) cond_expr true_expr false_expr
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
+mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 
 -- Create an unconditional assignment statement
 mkUncondAssign ::
