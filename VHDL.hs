@@ -28,6 +28,7 @@ import qualified Name
 import qualified OccName
 import qualified Var
 import qualified Id
+import qualified IdInfo
 import qualified TyCon
 import qualified DataCon
 import qualified CoreSubst
@@ -248,33 +249,41 @@ mkConcSm ::
   -> VHDLState AST.ConcSm  -- ^ The corresponding VHDL component instantiation.
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
-  signatures <- getA vsSignatures
-  funSignatures <- getA vsNameTable
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-  case (Map.lookup (bndrToString f) funSignatures) of
-    Just funSignature ->
-      let
-        sigs = map (bndrToString.varBndr) args
-        sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
-        func = (snd funSignature) sigsNames
-        src_wform = AST.Wform [AST.WformElem func Nothing]
-        dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
-        assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-      in
-        return $ AST.CSSASm assign
-    Nothing ->
+  case Var.globalIdVarDetails f of
+    IdInfo.VanillaGlobal -> do
+      -- It's a global value imported from elsewhere. These can be builting
+      -- functions.
+      funSignatures <- getA vsNameTable
+      case (Map.lookup (bndrToString f) funSignatures) of
+        Just funSignature ->
+          let
+            sigs = map (bndrToString.varBndr) args
+            sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
+            func = (snd funSignature) sigsNames
+            src_wform = AST.Wform [AST.WformElem func Nothing]
+            dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+            assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+          in
+            return $ AST.CSSASm assign
+        Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
+    IdInfo.NotGlobalId -> do
+      signatures <- getA vsSignatures
+      -- This is a local id, so it should be a function whose definition we
+      -- have and which can be turned into a component instantiation.
       let  
         signature = Maybe.fromMaybe 
           (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup (bndrToString f) signatures)
         entity_id = ent_id signature
         label = bndrToString bndr
-      -- Add a clk port if we have state
-      --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-      --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
+        -- Add a clk port if we have state
+        --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
         portmaps = mkAssocElems args bndr signature
-      in
-        return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+        in
+          return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+    details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -- GHC generates some funny "r = r" bindings in let statements before
 -- simplification. This outputs some dummy ConcSM for these, so things will at
