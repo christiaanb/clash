@@ -279,7 +279,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
           let sel_name = mkSelectedName bndr label in
           mkUncondAssign (Right sel_name) (varToVHDLExpr arg)
     IdInfo.VanillaGlobal -> do
-      -- It's a global value imported from elsewhere. These can be builting
+      -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
       funSignatures <- getA vsNameTable
       case (Map.lookup (bndrToString f) funSignatures) of
