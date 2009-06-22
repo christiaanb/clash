@@ -7,11 +7,14 @@ import qualified Control.Monad.Trans.Writer as Writer
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import qualified Data.Accessor.Template
+import Data.Accessor
+import qualified Data.Map as Map
 import Debug.Trace
 
 -- GHC API
 import CoreSyn
 import qualified UniqSupply
+import qualified VarSet
 import Outputable ( Outputable, showSDoc, ppr )
 
 -- Local imports
@@ -19,11 +22,28 @@ import CoreShow
 import Pretty
 
 data TransformState = TransformState {
-  tsUniqSupply_ :: UniqSupply.UniqSupply
+    tsUniqSupply_ :: UniqSupply.UniqSupply
+  , tsBindings_ :: Map.Map CoreBndr CoreExpr
+  , tsNormalized_ :: VarSet.VarSet -- ^ The binders that have been normalized
 }
 
 $( Data.Accessor.Template.deriveAccessors ''TransformState )
 
-type TransformMonad a = Writer.WriterT Monoid.Any (State.State TransformState) a
+-- A session of multiple transformations over multiple expressions
+type TransformSession = (State.State TransformState)
+-- Wrap a writer around a TransformSession, to run a single transformation
+-- over a single expression and track if the expression was changed.
+type TransformMonad = Writer.WriterT Monoid.Any TransformSession
+
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = CoreExpr -> TransformMonad CoreExpr
+
+-- Finds the value of a global binding, if available
+getGlobalBind :: CoreBndr -> TransformSession (Maybe CoreExpr)
+getGlobalBind bndr = do
+  bindings <- getA tsBindings
+  return $ Map.lookup bndr bindings 
+
+-- Adds a new global binding with the given value
+addGlobalBind :: CoreBndr -> CoreExpr -> TransformSession ()
+addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)

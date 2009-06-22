@@ -11,6 +11,7 @@ import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified "transformers" Control.Monad.Trans as Trans
+import qualified Data.Map as Map
 import Data.Accessor
 
 -- GHC API
@@ -25,6 +26,7 @@ import qualified Type
 import qualified IdInfo
 import qualified CoreUtils
 import qualified CoreSubst
+import qualified VarSet
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -113,16 +115,11 @@ subnotapplied trans (App a b) = do
 -- Let subeverywhere handle all other expressions
 subnotapplied trans expr = subeverywhere (notapplied trans) expr
 
--- Run the given transforms over the given expression
-dotransforms :: [Transform] -> UniqSupply.UniqSupply -> CoreExpr -> CoreExpr
-dotransforms transs uniqSupply = (flip State.evalState initState) . (dotransforms' transs)
-                       where initState = TransformState uniqSupply
-
 -- Runs each of the transforms repeatedly inside the State monad.
-dotransforms' :: [Transform] -> CoreExpr -> State.State TransformState CoreExpr
-dotransforms' transs expr = do
+dotransforms :: [Transform] -> CoreExpr -> TransformSession CoreExpr
+dotransforms transs expr = do
   (expr', changed) <- Writer.runWriterT $ Monad.foldM (flip ($)) expr transs
-  if Monoid.getAny changed then dotransforms' transs expr' else return expr'
+  if Monoid.getAny changed then dotransforms transs expr' else return expr'
 
 -- Inline all let bindings that satisfy the given condition
 inlinebind :: ((CoreBndr, CoreExpr) -> Bool) -> Transform
@@ -160,3 +157,9 @@ mkUnique = Trans.lift $ do
 substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
 substitute replace expr = CoreSubst.substExpr subs expr
     where subs = foldl (\s (b, e) -> CoreSubst.extendIdSubst s b e) CoreSubst.emptySubst replace
+
+-- Run a given TransformSession. Used mostly to setup the right calls and
+-- an initial state.
+runTransformSession :: UniqSupply.UniqSupply -> TransformSession a -> a
+runTransformSession uniqSupply session = State.evalState session initState
+                       where initState = TransformState uniqSupply Map.empty VarSet.emptyVarSet

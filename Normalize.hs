@@ -3,12 +3,14 @@
 -- top level function "normalize", and defines the actual transformation passes that
 -- are performed.
 --
-module Normalize (normalize) where
+module Normalize (normalizeModule) where
 
 -- Standard modules
 import Debug.Trace
 import qualified Maybe
 import qualified Control.Monad as Monad
+import qualified Data.Map as Map
+import Data.Accessor
 
 -- GHC API
 import CoreSyn
@@ -16,7 +18,7 @@ import qualified UniqSupply
 import qualified CoreUtils
 import qualified Type
 import qualified Id
-import qualified UniqSet
+import qualified VarSet
 import qualified CoreFVs
 import Outputable ( showSDoc, ppr, nest )
 
@@ -231,7 +233,7 @@ casevalsimpl expr@(Case scrut b ty alts) = do
       -- based on Just we return here.
       return $ (Just (id, expr), (con, bndrs, Var id))
       -- Find if any of the binders are used by expr
-      where usesvars = (not . UniqSet.isEmptyUniqSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
+      where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
     -- Don't simplify anything else
     doalt alt = return (Nothing, alt)
 -- Leave all other expressions unchanged
@@ -248,7 +250,7 @@ caseremove, caseremovetop :: Transform
 -- Replace a useless case by the value of its single alternative
 caseremove (Case scrut b ty [(con, bndrs, expr)]) | not usesvars = change expr
     -- Find if any of the binders are used by expr
-    where usesvars = (not . UniqSet.isEmptyUniqSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
+    where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
 -- Leave all other expressions unchanged
 caseremove expr = return expr
 -- Perform this transform everywhere
@@ -284,8 +286,54 @@ appsimpltop = everywhere ("appsimpl", appsimpl)
 -- What transforms to run?
 transforms = [etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
--- Normalize a core expression by running transforms until none applies
--- anymore. Uses a UniqSupply to generate new identifiers.
-normalize :: UniqSupply.UniqSupply -> CoreExpr -> CoreExpr
-normalize = dotransforms transforms
+-- Turns the given bind into VHDL
+normalizeModule :: 
+  UniqSupply.UniqSupply -- ^ A UniqSupply we can use
+  -> [(CoreBndr, CoreExpr)]  -- ^ All bindings we know (i.e., in the current module)
+  -> [CoreBndr]  -- ^ The bindings to generate VHDL for (i.e., the top level bindings)
+  -> [Bool] -- ^ For each of the bindings to generate VHDL for, if it is stateful
+  -> [(CoreBndr, CoreExpr)] -- ^ The resulting VHDL
 
+normalizeModule uniqsupply bindings generate_for statefuls = runTransformSession uniqsupply $ do
+  -- Put all the bindings in this module in the tsBindings map
+  putA tsBindings (Map.fromList bindings)
+  -- (Recursively) normalize each of the requested bindings
+  mapM normalizeBind generate_for
+  -- Get all initial bindings and the ones we produced
+  bindings_map <- getA tsBindings
+  let bindings = Map.assocs bindings_map
+  normalized_bindings <- getA tsNormalized
+  -- But return only the normalized bindings
+  return $ filter ((flip VarSet.elemVarSet normalized_bindings) . fst) bindings
+
+normalizeBind :: CoreBndr -> TransformSession ()
+normalizeBind bndr = do
+  normalized_funcs <- getA tsNormalized
+  -- See if this function was normalized already
+  if VarSet.elemVarSet bndr normalized_funcs
+    then
+      -- Yup, don't do it again
+      return ()
+    else do
+      -- Nope, note that it has been and do it.
+      modA tsNormalized (flip VarSet.extendVarSet bndr)
+      expr_maybe <- getGlobalBind bndr
+      case expr_maybe of 
+        Just expr -> do
+          -- Normalize this expression
+          expr' <- dotransforms transforms expr
+          let expr'' = trace ("Before:\n\n" ++ showSDoc ( ppr expr ) ++ "\n\nAfter:\n\n" ++ showSDoc ( ppr expr')) expr'
+          -- And store the normalized version in the session
+          modA tsBindings (Map.insert bndr expr'')
+          -- Find all vars used with a function type. All of these should be global
+          -- binders (i.e., functions used), since any local binders with a function
+          -- type should have been inlined already.
+          let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> trace (showSDoc $ ppr $ Id.idType v) ((Type.isFunTy . snd . Type.splitForAllTys . Id.idType)v)) expr''
+          let used_funcs = VarSet.varSetElems used_funcs_set
+          -- Process each of the used functions recursively
+          mapM normalizeBind (trace (show used_funcs) used_funcs)
+          return ()
+        -- We don't have a value for this binder, let's assume this is a builtin
+        -- function. This might need some extra checking and a nice error
+        -- message).
+        Nothing -> return ()
