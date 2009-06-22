@@ -295,11 +295,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
           let sel_suffix = AST.SSimple $ label
           let sel_name = AST.NSelected $ scrut_name AST.:.: sel_suffix 
           let sel_expr = AST.PrimName sel_name
-          let sel_wform = AST.Wform [AST.WformElem sel_expr Nothing]
-          let dst_name  = AST.NSimple (bndrToVHDLId bndr)
-          -- TODO: Reduce code duplication with the next mkConcSm clause
-          let assign = dst_name AST.:<==: (AST.ConWforms [] sel_wform Nothing)
-          return $ AST.CSSASm assign
+          return $ mkUncondAssign bndr sel_expr
         Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
     _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
@@ -314,16 +310,52 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     cond_expr = (varToVHDLExpr scrut) AST.:=: (conToVHDLExpr con)
     true_expr  = (varToVHDLExpr true)
     false_expr  = (varToVHDLExpr false)
-    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-    true_wform = AST.Wform [AST.WformElem true_expr Nothing]
-    whenelse = AST.WhenElse true_wform cond_expr
-    dst_name  = AST.NSimple (bndrToVHDLId bndr)
-    assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
   in
-    return $ AST.CSSASm assign
+    return $ mkCondAssign bndr cond_expr true_expr false_expr
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
 
+-- Create an unconditional assignment statement
+mkUncondAssign ::
+  CoreBndr -- ^ The signal to assign to
+  -> AST.Expr -- ^ The expression to assign
+  -> AST.ConcSm -- ^ The resulting concurrent statement
+mkUncondAssign bndr expr = mkAssign bndr Nothing expr
+
+-- Create a conditional assignment statement
+mkCondAssign ::
+  CoreBndr -- ^ The signal to assign to
+  -> AST.Expr -- ^ The condition
+  -> AST.Expr -- ^ The value when true
+  -> AST.Expr -- ^ The value when false
+  -> AST.ConcSm -- ^ The resulting concurrent statement
+mkCondAssign bndr cond true false = mkAssign bndr (Just (cond, true)) false
+
+-- Create a conditional or unconditional assignment statement
+mkAssign ::
+  CoreBndr -> -- ^ The signal to assign to
+  Maybe (AST.Expr , AST.Expr) -> -- ^ Optionally, the condition to test for
+                                 -- and the value to assign when true.
+  AST.Expr -> -- ^ The value to assign when false or no condition
+  AST.ConcSm -- ^ The resulting concurrent statement
+
+mkAssign bndr cond false_expr =
+  let
+    -- I'm not 100% how this assignment AST works, but this gets us what we
+    -- want...
+    whenelse = case cond of
+      Just (cond_expr, true_expr) -> 
+        let 
+          true_wform = AST.Wform [AST.WformElem true_expr Nothing] 
+        in
+          [AST.WhenElse true_wform cond_expr]
+      Nothing -> []
+    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
+    dst_name  = AST.NSimple (bndrToVHDLId bndr)
+    assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
+  in
+    AST.CSSASm assign
+  
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
 getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
