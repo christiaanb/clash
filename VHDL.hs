@@ -280,20 +280,23 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
           let sel_name = mkSelectedName bndr label in
           mkUncondAssign (Right sel_name) (varToVHDLExpr arg)
     IdInfo.VanillaGlobal -> do
-      -- It's a global value imported from elsewhere. These can be builting
+      -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
       funSignatures <- getA vsNameTable
       case (Map.lookup (bndrToString f) funSignatures) of
-        Just funSignature ->
-          let
-            sigs = map (bndrToString.varBndr) args
-            sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
-            func = (snd funSignature) sigsNames
-            src_wform = AST.Wform [AST.WformElem func Nothing]
-            dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
-            assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-          in
-            return $ AST.CSSASm assign
+        Just (arg_count, builder) ->
+          if length args == arg_count then
+            let
+              sigs = map (bndrToString.varBndr) args
+              sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
+              func = builder sigsNames
+              src_wform = AST.Wform [AST.WformElem func Nothing]
+              dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+              assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+            in
+              return $ AST.CSSASm assign
+          else
+            error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString args
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
     IdInfo.NotGlobalId -> do
       signatures <- getA vsSignatures
