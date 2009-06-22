@@ -52,7 +52,7 @@ type ElemTypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDef)
 type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
 
 -- A map of a Haskell function to a hardware signature
-type SignatureMap = Map.Map String Entity
+type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, [AST.Expr] -> AST.Expr )

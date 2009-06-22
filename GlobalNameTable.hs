@@ -21,6 +21,6 @@ globalNameTable = mkGlobalNameTable
   , ("head"           , (1, genExprFCall headId                           ) )
   , ("hwxor"          , (2, genExprOp2 AST.Xor                            ) )
   , ("hwand"          , (2, genExprOp2 AST.And                            ) )
-  , ("hwor"           , (2, genExprOp2 AST.And                            ) )
+  , ("hwor"           , (2, genExprOp2 AST.Or                             ) )
   , ("hwnot"          , (1, genExprOp1 AST.Not                            ) )
   ]

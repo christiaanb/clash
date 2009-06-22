@@ -57,7 +57,7 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty Map.empty builtin_funcs globalNameTable
+    init_session = VHDLSession Map.empty Map.empty Map.empty Map.empty globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
@@ -115,13 +115,14 @@ createEntity (fname, expr) = do
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       res' <- mkMap res
-      let ent_decl' = createEntityAST fname args' res'
+      let vhdl_id = mkVHDLBasicId $ bndrToString fname ++ "_" ++ varToStringUniq fname
+      let ent_decl' = createEntityAST vhdl_id args' res'
       let AST.EntityDec entity_id _ = ent_decl' 
       let signature = Entity entity_id args' res'
-      modA vsSignatures (Map.insert (bndrToString fname) signature)
+      modA vsSignatures (Map.insert fname signature)
       return ent_decl'
   where
-    mkMap :: 
+    mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
       -> VHDLState VHDLSignalMapElement
@@ -145,16 +146,15 @@ createEntity (fname, expr) = do
 
   -- | Create the VHDL AST for an entity
 createEntityAST ::
-  CoreSyn.CoreBndr             -- | The name of the function
+  AST.VHDLId                   -- | The name of the function
   -> [VHDLSignalMapElement]    -- | The entity's arguments
   -> VHDLSignalMapElement      -- | The entity's result
   -> AST.EntityDec             -- | The entity with the ent_decl filled in as well
 
-createEntityAST name args res =
+createEntityAST vhdl_id args res =
   AST.EntityDec vhdl_id ports
   where
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
-    vhdl_id = mkVHDLBasicId $ bndrToString name
     ports = Maybe.catMaybes $ 
               map (mkIfaceSigDec AST.In) args
               ++ [mkIfaceSigDec AST.Out res]
@@ -188,11 +188,11 @@ createArchitecture ::
   -> VHDLState AST.ArchBody -- ^ The architecture for this function
 
 createArchitecture (fname, expr) = do
-  --signaturemap <- getA vsSignatures
-  --let signature = Maybe.fromMaybe 
-  --      (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
-  --      (Map.lookup hsfunc signaturemap)
-  let entity_id = mkVHDLBasicId $ bndrToString fname
+  signaturemap <- getA vsSignatures
+  let signature = Maybe.fromMaybe 
+        (error $ "Generating architecture for function " ++ (pprString fname) ++ "without signature? This should not happen!")
+        (Map.lookup fname signaturemap)
+  let entity_id = ent_id signature
   -- Strip off lambda's, these will be arguments
   let (args, letexpr) = CoreSyn.collectBinders expr
   -- There must be a let at top level 
@@ -308,7 +308,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       let  
         signature = Maybe.fromMaybe 
           (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
-          (Map.lookup (bndrToString f) signatures)
+          (Map.lookup f signatures)
         entity_id = ent_id signature
         label = bndrToString bndr
         -- Add a clk port if we have state
@@ -354,6 +354,7 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     return $ mkCondAssign (Left bndr) cond_expr true_expr false_expr
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
+mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 
 -- Create an unconditional assignment statement
 mkUncondAssign ::
@@ -697,34 +698,14 @@ bndrToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varN
 bndrToString ::
   CoreSyn.CoreBndr
   -> String
-
 bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
+
+-- Get the string version a Var's unique
+varToStringUniq = show . Var.varUnique
 
 -- Extracts the string version of the name
 nameToString :: Name.Name -> String
 nameToString = OccName.occNameString . Name.nameOccName
-
--- | A consise representation of a (set of) ports on a builtin function
---type PortMap = HsValueMap (String, AST.TypeMark)
--- | A consise representation of a builtin function
-data BuiltIn = BuiltIn String [(String, AST.TypeMark)] (String, AST.TypeMark)
-
--- | Translate a list of concise representation of builtin functions to a
---   SignatureMap
-mkBuiltins :: [BuiltIn] -> SignatureMap
-mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
-    (name,
-     Entity (VHDL.mkVHDLBasicId name) (map toVHDLSignalMapElement args) (toVHDLSignalMapElement res))
-  )
-
-builtin_hsfuncs = Map.keys builtin_funcs
-builtin_funcs = mkBuiltins
-  [ 
-    BuiltIn "hwxor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwand" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwnot" [("a", VHDL.bit_ty)] ("o", VHDL.bit_ty)
-  ]
 
 recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
 
