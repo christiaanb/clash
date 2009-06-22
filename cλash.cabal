@@ -12,7 +12,7 @@ author:              Christiaan Baaij & Matthijs Kooijman
 stability:           alpha
 maintainer:          christiaan.baaij@gmail.com & matthijs@stdin.nl
 build-depends:       base > 4, syb, ghc, ghc-paths, transformers, haskell98,
-                     ForSyDe, regex-posix ,data-accessor-template, pretty,
+                     ForSyDe > 3.0, regex-posix ,data-accessor-template, pretty,
                      data-accessor, containers, prettyclass, tfp > 0.3, 
                      tfvec, QuickCheck, template-haskell
 

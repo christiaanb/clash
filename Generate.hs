@@ -53,7 +53,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     replaceVar =
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
                               AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
@@ -88,7 +88,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     initVar = 
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
                               AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
@@ -106,7 +106,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     tailVar = 
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
                               AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
@@ -125,7 +125,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     takeVar = 
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                                ((AST.PrimName (AST.NSimple nPar)) AST.:-:
                                 (AST.PrimLit "1"))   ]))
@@ -141,7 +141,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     dropVar = 
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
                               AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:

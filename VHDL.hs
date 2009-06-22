@@ -624,7 +624,7 @@ mk_vector_ty len el_ty ty = do
   elem_types_map <- getA vsElemTypes
   el_ty_tm <- vhdl_ty el_ty
   let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
-  let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
   let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
   case existing_elem_ty of
     Just t -> do
@@ -645,7 +645,8 @@ mk_natural_ty ::
   -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 mk_natural_ty min_bound max_bound ty = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
-  let ty_def = AST.SubtypeIn naturalTM (Nothing)
+  let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
+  let ty_def = AST.SubtypeIn naturalTM (Just range)
   return (ty_id, ty_def)
 
 
