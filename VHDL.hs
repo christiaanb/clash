@@ -114,13 +114,14 @@ createEntity (fname, expr) = do
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       res' <- mkMap res
-      let ent_decl' = createEntityAST fname args' res'
+      let vhdl_id = mkVHDLBasicId $ bndrToString fname
+      let ent_decl' = createEntityAST vhdl_id args' res'
       let AST.EntityDec entity_id _ = ent_decl' 
       let signature = Entity entity_id args' res'
-      modA vsSignatures (Map.insert (bndrToString fname) signature)
+      modA vsSignatures (Map.insert fname signature)
       return ent_decl'
   where
-    mkMap :: 
+    mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
       -> VHDLState VHDLSignalMapElement
@@ -144,16 +145,15 @@ createEntity (fname, expr) = do
 
   -- | Create the VHDL AST for an entity
 createEntityAST ::
-  CoreSyn.CoreBndr             -- | The name of the function
+  AST.VHDLId                   -- | The name of the function
   -> [VHDLSignalMapElement]    -- | The entity's arguments
   -> VHDLSignalMapElement      -- | The entity's result
   -> AST.EntityDec             -- | The entity with the ent_decl filled in as well
 
-createEntityAST name args res =
+createEntityAST vhdl_id args res =
   AST.EntityDec vhdl_id ports
   where
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
-    vhdl_id = mkVHDLBasicId $ bndrToString name
     ports = Maybe.catMaybes $ 
               map (mkIfaceSigDec AST.In) args
               ++ [mkIfaceSigDec AST.Out res]
@@ -187,11 +187,11 @@ createArchitecture ::
   -> VHDLState AST.ArchBody -- ^ The architecture for this function
 
 createArchitecture (fname, expr) = do
-  --signaturemap <- getA vsSignatures
-  --let signature = Maybe.fromMaybe 
-  --      (error $ "Generating architecture for function " ++ (prettyShow hsfunc) ++ "without signature? This should not happen!")
-  --      (Map.lookup hsfunc signaturemap)
-  let entity_id = mkVHDLBasicId $ bndrToString fname
+  signaturemap <- getA vsSignatures
+  let signature = Maybe.fromMaybe 
+        (error $ "Generating architecture for function " ++ (pprString fname) ++ "without signature? This should not happen!")
+        (Map.lookup fname signaturemap)
+  let entity_id = ent_id signature
   -- Strip off lambda's, these will be arguments
   let (args, letexpr) = CoreSyn.collectBinders expr
   -- There must be a let at top level 
@@ -305,7 +305,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       let  
         signature = Maybe.fromMaybe 
           (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
-          (Map.lookup (bndrToString f) signatures)
+          (Map.lookup f signatures)
         entity_id = ent_id signature
         label = bndrToString bndr
         -- Add a clk port if we have state
