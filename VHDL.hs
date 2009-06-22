@@ -30,6 +30,7 @@ import qualified Var
 import qualified Id
 import qualified IdInfo
 import qualified TyCon
+import qualified TcType
 import qualified DataCon
 import qualified CoreSubst
 import qualified CoreUtils
@@ -259,13 +260,15 @@ mkConcSm ::
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+  let valargs' = filter isValArg args
+  let valargs = filter (\(CoreSyn.Var bndr) -> not (Id.isDictId bndr)) valargs'
   case Var.globalIdVarDetails f of
     IdInfo.DataConWorkId dc ->
         -- It's a datacon. Create a record from its arguments.
         -- First, filter out type args. TODO: Is this the best way to do this?
         -- The types should already have been taken into acocunt when creating
         -- the signal, so this should probably work...
-        let valargs = filter isValArg args in
+        --let valargs = filter isValArg args in
         if all is_var valargs then do
           labels <- getFieldLabels (CoreUtils.exprType app)
           let assigns = zipWith mkassign labels valargs
@@ -285,9 +288,9 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       funSignatures <- getA vsNameTable
       case (Map.lookup (bndrToString f) funSignatures) of
         Just (arg_count, builder) ->
-          if length args == arg_count then
+          if length valargs == arg_count then
             let
-              sigs = map (bndrToString.varBndr) args
+              sigs = map (bndrToString.varBndr) valargs
               sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
               func = builder sigsNames
               src_wform = AST.Wform [AST.WformElem func Nothing]
@@ -296,7 +299,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
             in
               return $ AST.CSSASm assign
           else
-            error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString args
+            error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
     IdInfo.NotGlobalId -> do
       signatures <- getA vsSignatures
@@ -619,7 +622,7 @@ mk_vector_ty ::
 mk_vector_ty len el_ty ty = do
   elem_types_map <- getA vsElemTypes
   el_ty_tm <- vhdl_ty el_ty
-  let ty_id = mkVHDLExtId $ "vector_0_to_" ++ (show len) ++ "-" ++ (show el_ty_tm)
+  let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
   let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
   case existing_elem_ty of
@@ -627,7 +630,7 @@ mk_vector_ty len el_ty ty = do
       let ty_def = AST.SubtypeIn t (Just range)
       return (ty_id, ty_def)
     Nothing -> do
-      let vec_id = mkVHDLExtId $ "vector_" ++ (show el_ty_tm)
+      let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
       let vec_def = AST.TDA $ AST.UnconsArrayDef [naturalTM] el_ty_tm
       modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
       modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns el_ty_tm vec_id)) 

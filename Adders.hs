@@ -172,8 +172,8 @@ highordtest = \x ->
              in
                 \c d -> op' d c
 
-functiontest :: TFVec D4 Bit -> RangedWord D3 -> Bit
-functiontest = \v i -> let r = v!i in r
+functiontest :: TFVec D4 Bit -> TFVec D5 Bit -> RangedWord D3 -> RangedWord D4 -> (Bit, Bit)
+functiontest = \v1 v2 i1 i2 -> let r1 = v1!i1 ; r2 = v2!i2 in (r1,r2)
 
 highordtest2 = \a b ->
          case a of
