@@ -114,7 +114,7 @@ createEntity (fname, expr) = do
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       res' <- mkMap res
-      let vhdl_id = mkVHDLBasicId $ bndrToString fname
+      let vhdl_id = mkVHDLBasicId $ bndrToString fname ++ "_" ++ varToStringUniq fname
       let ent_decl' = createEntityAST vhdl_id args' res'
       let AST.EntityDec entity_id _ = ent_decl' 
       let signature = Entity entity_id args' res'
@@ -695,8 +695,10 @@ bndrToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varN
 bndrToString ::
   CoreSyn.CoreBndr
   -> String
-
 bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
+
+-- Get the string version a Var's unique
+varToStringUniq = show . Var.varUnique
 
 -- Extracts the string version of the name
 nameToString :: Name.Name -> String
