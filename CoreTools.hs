@@ -95,6 +95,13 @@ tfvec_len ty =
   where 
     (tycon, args) = Type.splitTyConApp ty
     [len, el_ty] = args
+    
+-- | Get the element type of a TFVec type
+tfvec_elem :: Type.Type -> Type.Type
+tfvec_elem ty = el_ty
+  where
+    (tycon, args) = Type.splitTyConApp ty
+    [len, el_ty] = args
 
 -- Is this a wild binder?
 is_wild :: CoreSyn.CoreBndr -> Bool

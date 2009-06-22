@@ -56,11 +56,12 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
+    init_session = VHDLSession Map.empty Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
     ty_decls = map mktydecl $ Map.elems (final_session ^. vsTypes)
+    vec_decls = map (\(v_id, v_def) -> AST.PDITD $ AST.TypeDec v_id v_def) (Map.elems (final_session ^. vsElemTypes))
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
@@ -69,7 +70,7 @@ createDesignFiles binds =
     full_context =
       mkUseAll ["work", "types"]
       : ieee_context
-    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (ty_decls ++ subProgSpecs)
+    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (vec_decls ++ ty_decls ++ subProgSpecs)
     type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
     subProgSpecs = concat (map subProgSpec tyfun_decls)
     subProgSpec = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec)
@@ -568,11 +569,11 @@ construct_vhdl_ty ty = do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
         "TFVec" -> do
-          res <- mk_vector_ty (tfvec_len ty) ty
-          return $ Just $ (Arrow.second Left) res
-        "SizedWord" -> do
-          res <- mk_vector_ty (sized_word_len ty) ty
-          return $ Just $ (Arrow.second Left) res
+          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty) ty
+          return $ Just $ (Arrow.second Right) res
+        -- "SizedWord" -> do
+        --   res <- mk_vector_ty (sized_word_len ty) ty
+        --   return $ Just $ (Arrow.second Left) res
         "RangedWord" -> do 
           res <- mk_natural_ty 0 (ranged_word_bound ty) ty
           return $ Just $ (Arrow.second Right) res
@@ -612,17 +613,27 @@ mk_tycon_ty tycon args =
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Int -- ^ The length of the vector
+  -> Type.Type -- ^ The Haskell element type of the Vector
   -> Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> VHDLState (AST.TypeMark, AST.TypeDef) -- The typemark created.
+  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 
-mk_vector_ty len ty = do
-  -- Assume there is a single type argument
-  let ty_id = mkVHDLExtId $ "vector_" ++ (show len)
-  -- TODO: Use el_ty
+mk_vector_ty len el_ty ty = do
+  elem_types_map <- getA vsElemTypes
+  el_ty_tm <- vhdl_ty el_ty
+  let ty_id = mkVHDLExtId $ "vector_0_to_" ++ (show len) ++ "-" ++ (show el_ty_tm)
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-  let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
-  modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns std_logic_ty ty_id))
-  return (ty_id, ty_def)
+  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
+  case existing_elem_ty of
+    Just t -> do
+      let ty_def = AST.SubtypeIn t (Just range)
+      return (ty_id, ty_def)
+    Nothing -> do
+      let vec_id = mkVHDLExtId $ "vector_" ++ (show el_ty_tm)
+      let vec_def = AST.TDA $ AST.UnconsArrayDef [naturalTM] el_ty_tm
+      modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
+      modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
+      let ty_def = AST.SubtypeIn vec_id (Just range)
+      return (ty_id, ty_def)
 
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
