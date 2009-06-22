@@ -3,6 +3,17 @@ module Generate where
 import qualified ForSyDe.Backend.VHDL.AST as AST
 import Constants
 
+-- | Generate a binary operator application. The first argument should be a
+-- constructor from the AST.Expr type, e.g. AST.And.
+genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
+genExprOp2 op [arg1, arg2] = op arg1 arg2
+genExprOp2 _ _ = error "Generate.genExprOp2 wrong number of argumetns"
+
+-- | Generate a unary operator application
+genExprOp1 :: (AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
+genExprOp1 op [arg] = op arg
+genExprOp1 _ _ = error "Generate.genExprOp1 wrong number of argumetns"
+
 -- | Generate a function call from the Function Name and a list of expressions
 --   (its arguments)
 genExprFCall :: AST.VHDLId -> [AST.Expr] -> AST.Expr
