@@ -27,8 +27,12 @@ import qualified Type
 import qualified Name
 import qualified OccName
 import qualified Var
+import qualified Id
+import qualified IdInfo
 import qualified TyCon
 import qualified DataCon
+import qualified CoreSubst
+import qualified CoreUtils
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
@@ -52,12 +56,11 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty Map.empty builtin_funcs globalNameTable
+    init_session = VHDLSession Map.empty Map.empty builtin_funcs globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
-    ty_decls = Map.elems (final_session ^. vsTypes)
-    subty_decls = Map.elems (final_session ^. vsSubTypes)
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
+    ty_decls = map mktydecl $ Map.elems (final_session ^. vsTypes)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
@@ -66,12 +69,13 @@ createDesignFiles binds =
     full_context =
       mkUseAll ["work", "types"]
       : ieee_context
-    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (packageTypeDecs ++ packageSubtypeDecs ++ subProgSpecs)
+    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (ty_decls ++ subProgSpecs)
     type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
-    packageTypeDecs = map (AST.PDITD . snd) ty_decls
-    packageSubtypeDecs = map (AST.PDISD . snd) subty_decls
     subProgSpecs = concat (map subProgSpec tyfun_decls)
     subProgSpec = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec)
+    mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
+    mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
+    mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def
 
 -- Create a use foo.bar.all statement. Takes a list of components in the used
 -- name. Must contain at least two components
@@ -253,41 +257,82 @@ mkConcSm ::
   -> VHDLState AST.ConcSm  -- ^ The corresponding VHDL component instantiation.
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
-  signatures <- getA vsSignatures
-  funSignatures <- getA vsNameTable
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-  case (Map.lookup (bndrToString f) funSignatures) of
-    Just funSignature ->
-      let
-        sigs = map (bndrToString.varBndr) args
-        sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
-        func = (snd funSignature) sigsNames
-        src_wform = AST.Wform [AST.WformElem func Nothing]
-        dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
-        assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-      in
-        return $ AST.CSSASm assign
-    Nothing ->
+  case Var.globalIdVarDetails f of
+    IdInfo.DataConWorkId dc ->
+        -- It's a datacon. Create a record from its arguments.
+        -- First, filter out type args. TODO: Is this the best way to do this?
+        -- The types should already have been taken into acocunt when creating
+        -- the signal, so this should probably work...
+        let valargs = filter isValArg args in
+        if all is_var valargs then do
+          labels <- getFieldLabels (CoreUtils.exprType app)
+          let assigns = zipWith mkassign labels valargs
+          let block_id = bndrToVHDLId bndr
+          let block = AST.BlockSm block_id [] (AST.PMapAspect []) [] assigns
+          return $ AST.CSBSm block
+        else
+          error $ "VHDL.mkConcSm Not in normal form: One ore more complex arguments: " ++ pprString args
+      where
+        mkassign :: AST.VHDLId -> CoreExpr -> AST.ConcSm
+        mkassign label (Var arg) =
+          let sel_name = mkSelectedName bndr label in
+          mkUncondAssign (Right sel_name) (varToVHDLExpr arg)
+    IdInfo.VanillaGlobal -> do
+      -- It's a global value imported from elsewhere. These can be builting
+      -- functions.
+      funSignatures <- getA vsNameTable
+      case (Map.lookup (bndrToString f) funSignatures) of
+        Just funSignature ->
+          let
+            sigs = map (bndrToString.varBndr) args
+            sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
+            func = (snd funSignature) sigsNames
+            src_wform = AST.Wform [AST.WformElem func Nothing]
+            dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+            assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+          in
+            return $ AST.CSSASm assign
+        Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
+    IdInfo.NotGlobalId -> do
+      signatures <- getA vsSignatures
+      -- This is a local id, so it should be a function whose definition we
+      -- have and which can be turned into a component instantiation.
       let  
         signature = Maybe.fromMaybe 
           (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup (bndrToString f) signatures)
         entity_id = ent_id signature
         label = bndrToString bndr
-      -- Add a clk port if we have state
-      --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-      --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
+        -- Add a clk port if we have state
+        --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
         portmaps = mkAssocElems args bndr signature
-      in
-        return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+        in
+          return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+    details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -- GHC generates some funny "r = r" bindings in let statements before
 -- simplification. This outputs some dummy ConcSM for these, so things will at
 -- least compile for now.
 mkConcSm (bndr, CoreSyn.Var _) = return $ AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []
 
--- A single alt case must be a selector
-mkConcSm (bndr, (Case (Var scrut) b ty [alt])) = error "Single case alt not supported yet"
+-- A single alt case must be a selector. This means thee scrutinee is a simple
+-- variable, the alternative is a dataalt with a single non-wild binder that
+-- is also returned.
+mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
+  case alt of
+    (DataAlt dc, bndrs, (Var sel_bndr)) -> do
+      case List.elemIndex sel_bndr bndrs of
+        Just i -> do
+          labels <- getFieldLabels (Id.idType scrut)
+          let label = labels!!i
+          let sel_name = mkSelectedName scrut label
+          let sel_expr = AST.PrimName sel_name
+          return $ mkUncondAssign (Left bndr) sel_expr
+        Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
+      
+    _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
 
 -- Multiple case alt are be conditional assignments and have only wild
 -- binders in the alts and only variables in the case values and a variable
@@ -298,15 +343,75 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     cond_expr = (varToVHDLExpr scrut) AST.:=: (conToVHDLExpr con)
     true_expr  = (varToVHDLExpr true)
     false_expr  = (varToVHDLExpr false)
-    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-    true_wform = AST.Wform [AST.WformElem true_expr Nothing]
-    whenelse = AST.WhenElse true_wform cond_expr
-    dst_name  = AST.NSimple (bndrToVHDLId bndr)
-    assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
   in
-    return $ AST.CSSASm assign
+    return $ mkCondAssign (Left bndr) cond_expr true_expr false_expr
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
+
+-- Create an unconditional assignment statement
+mkUncondAssign ::
+  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  -> AST.Expr -- ^ The expression to assign
+  -> AST.ConcSm -- ^ The resulting concurrent statement
+mkUncondAssign dst expr = mkAssign dst Nothing expr
+
+-- Create a conditional assignment statement
+mkCondAssign ::
+  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  -> AST.Expr -- ^ The condition
+  -> AST.Expr -- ^ The value when true
+  -> AST.Expr -- ^ The value when false
+  -> AST.ConcSm -- ^ The resulting concurrent statement
+mkCondAssign dst cond true false = mkAssign dst (Just (cond, true)) false
+
+-- Create a conditional or unconditional assignment statement
+mkAssign ::
+  Either CoreBndr AST.VHDLName -> -- ^ The signal to assign to
+  Maybe (AST.Expr , AST.Expr) -> -- ^ Optionally, the condition to test for
+                                 -- and the value to assign when true.
+  AST.Expr -> -- ^ The value to assign when false or no condition
+  AST.ConcSm -- ^ The resulting concurrent statement
+
+mkAssign dst cond false_expr =
+  let
+    -- I'm not 100% how this assignment AST works, but this gets us what we
+    -- want...
+    whenelse = case cond of
+      Just (cond_expr, true_expr) -> 
+        let 
+          true_wform = AST.Wform [AST.WformElem true_expr Nothing] 
+        in
+          [AST.WhenElse true_wform cond_expr]
+      Nothing -> []
+    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
+    dst_name  = case dst of
+      Left bndr -> AST.NSimple (bndrToVHDLId bndr)
+      Right name -> name
+    assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
+  in
+    AST.CSSASm assign
+
+-- Create a record field selector that selects the given label from the record
+-- stored in the given binder.
+mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
+mkSelectedName bndr label =
+  let 
+    sel_prefix = AST.NSimple $ bndrToVHDLId bndr
+    sel_suffix = AST.SSimple $ label
+  in
+    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
+
+-- Finds the field labels for VHDL type generated for the given Core type,
+-- which must result in a record type.
+getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
+getFieldLabels ty = do
+  -- Ensure that the type is generated (but throw away it's VHDLId)
+  vhdl_ty ty
+  -- Get the types map, lookup and unpack the VHDL TypeDef
+  types <- getA vsTypes
+  case Map.lookup (OrdType ty) types of
+    Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
+    _ -> error $ "VHDL.getFieldLabels Type not found or not a record type? This should not happen! Type: " ++ (show ty)
 
 -- Turn a variable reference into a AST expression
 varToVHDLExpr :: Var.Var -> AST.Expr
@@ -443,25 +548,68 @@ vhdl_ty ty = do
     Just t -> return t
     -- No type yet, try to construct it
     Nothing -> do
-      let new_ty = do
-            -- Use the Maybe Monad for failing when one of these fails
-            (tycon, args) <- Type.splitTyConApp_maybe ty
-            let name = Name.getOccString (TyCon.tyConName tycon)
-            case name of
-              "TFVec" -> Just $ mk_vector_ty (tfvec_len ty) ty
-              "SizedWord" -> Just $ mk_vector_ty (sized_word_len ty) ty
-              "RangedWord" -> Just $ mk_natural_ty 0 (ranged_word_bound ty) ty
-              otherwise -> Nothing
-      -- Return new_ty when a new type was successfully created
-      Maybe.fromMaybe 
-        (error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty))
-        new_ty
+      newty_maybe <- (construct_vhdl_ty ty)
+      case newty_maybe of
+        Just (ty_id, ty_def) -> do
+          -- TODO: Check name uniqueness
+          modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          return ty_id
+        Nothing -> error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty)
+
+-- Construct a new VHDL type for the given Haskell type.
+construct_vhdl_ty :: Type.Type -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+construct_vhdl_ty ty = do
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "TFVec" -> do
+          res <- mk_vector_ty (tfvec_len ty) ty
+          return $ Just $ (Arrow.second Left) res
+        "SizedWord" -> do
+          res <- mk_vector_ty (sized_word_len ty) ty
+          return $ Just $ (Arrow.second Left) res
+        "RangedWord" -> do 
+          res <- mk_natural_ty 0 (ranged_word_bound ty) ty
+          return $ Just $ (Arrow.second Right) res
+        -- Create a custom type from this tycon
+        otherwise -> mk_tycon_ty tycon args
+    Nothing -> return $ Nothing
+
+-- | Create VHDL type for a custom tycon
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty tycon args =
+  case TyCon.tyConDataCons tycon of
+    -- Not an algebraic type
+    [] -> error $ "Only custom algebraic types are supported: " ++  (showSDoc $ ppr tycon)
+    [dc] -> do
+      let arg_tys = DataCon.dataConRepArgTys dc
+      -- TODO: CoreSubst docs say each Subs can be applied only once. Is this a
+      -- violation? Or does it only mean not to apply it again to the same
+      -- subject?
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      elem_tys <- mapM vhdl_ty real_arg_tys
+      let elems = zipWith AST.ElementDec recordlabels elem_tys
+      -- For a single construct datatype, build a record with one field for
+      -- each argument.
+      -- TODO: Add argument type ids to this, to ensure uniqueness
+      -- TODO: Special handling for tuples?
+      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+      let ty_def = AST.TDR $ AST.RecordTypeDef elems
+      return $ Just (ty_id, Left ty_def)
+    dcs -> error $ "Only single constructor datatypes supported: " ++  (showSDoc $ ppr tycon)
+  where
+    -- Create a subst that instantiates all types passed to the tycon
+    -- TODO: I'm not 100% sure that this is the right way to do this. It seems
+    -- to work so far, though..
+    tyvars = TyCon.tyConTyVars tycon
+    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
 
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Int -- ^ The length of the vector
   -> Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> VHDLState AST.TypeMark -- The typemark created.
+  -> VHDLState (AST.TypeMark, AST.TypeDef) -- The typemark created.
 
 mk_vector_ty len ty = do
   -- Assume there is a single type argument
@@ -469,24 +617,18 @@ mk_vector_ty len ty = do
   -- TODO: Use el_ty
   let range = AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
   let ty_def = AST.TDA $ AST.ConsArrayDef range std_logic_ty
-  let ty_dec = AST.TypeDec ty_id ty_def
-  -- TODO: Check name uniqueness
-  --State.modify (Map.insert (OrdType ty) (ty_id, ty_dec))
-  modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
   modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns std_logic_ty ty_id))
-  return ty_id
+  return (ty_id, ty_def)
 
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
   -> Int -- ^ The maximum bound (> minimum bound)
   -> Type.Type -- ^ The Haskell type to create a VHDL type for
-  -> VHDLState AST.TypeMark -- The typemark created.
+  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 mk_natural_ty min_bound max_bound ty = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
   let ty_def = AST.SubtypeIn naturalTM (Nothing)
-  let ty_dec = AST.SubtypeDec ty_id ty_def
-  modA vsSubTypes (Map.insert (OrdType ty) (ty_id, ty_dec))
-  return ty_id
+  return (ty_id, ty_def)
 
 
 builtin_types = 
@@ -541,6 +683,10 @@ bndrToString ::
 
 bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
 
+-- Extracts the string version of the name
+nameToString :: Name.Name -> String
+nameToString = OccName.occNameString . Name.nameOccName
+
 -- | A consise representation of a (set of) ports on a builtin function
 --type PortMap = HsValueMap (String, AST.TypeMark)
 -- | A consise representation of a builtin function
@@ -562,6 +708,8 @@ builtin_funcs = mkBuiltins
     BuiltIn "hwor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
     BuiltIn "hwnot" [("a", VHDL.bit_ty)] ("o", VHDL.bit_ty)
   ]
+
+recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
 
 -- | Map a port specification of a builtin function to a VHDL Signal to put in
 --   a VHDLSignalMap

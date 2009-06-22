@@ -43,6 +43,48 @@ mkInternalVar str ty = do
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkLocalIdVar name ty IdInfo.vanillaIdInfo
 
+-- Create a new type variable with the given name and kind. A Unique is
+-- appended to the given name, to ensure uniqueness (not strictly neccesary,
+-- since the Unique is also stored in the name, but this ensures variable
+-- names are unique in the output).
+mkTypeVar :: String -> Type.Kind -> TransformMonad Var.Var
+mkTypeVar str kind = do
+  uniq <- mkUnique
+  let occname = OccName.mkVarOcc (str ++ show uniq)
+  let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
+  return $ Var.mkTyVar name kind
+
+-- Creates a binder for the given expression with the given name. This
+-- works for both value and type level expressions, so it can return a Var or
+-- TyVar (which is just an alias for Var).
+mkBinderFor :: CoreExpr -> String -> TransformMonad Var.Var
+mkBinderFor (Type ty) string = mkTypeVar string (Type.typeKind ty)
+mkBinderFor expr string = mkInternalVar string (CoreUtils.exprType expr)
+
+-- Creates a reference to the given variable. This works for both a normal
+-- variable as well as a type variable
+mkReferenceTo :: Var.Var -> CoreExpr
+mkReferenceTo var | Var.isTyVar var = (Type $ Type.mkTyVarTy var)
+                  | otherwise       = (Var var)
+
+cloneVar :: Var.Var -> TransformMonad Var.Var
+cloneVar v = do
+  uniq <- mkUnique
+  -- Swap out the unique, and reset the IdInfo (I'm not 100% sure what it
+  -- contains, but vannillaIdInfo is always correct, since it means "no info").
+  return $ Var.lazySetVarIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
+
+-- Creates a new function with the same name as the given binder (but with a
+-- new unique) and with the given function body. Returns the new binder for
+-- this function.
+mkFunction :: CoreBndr -> CoreExpr -> TransformMonad CoreBndr
+mkFunction bndr body = do
+  let ty = CoreUtils.exprType body
+  id <- cloneVar bndr
+  let newid = Var.setVarType id ty
+  Trans.lift $ addGlobalBind newid body
+  return newid
+
 -- Apply the given transformation to all expressions in the given expression,
 -- including the expression itself.
 everywhere :: (String, Transform) -> Transform
@@ -56,11 +98,16 @@ applyboth first (name, second) expr  = do
   expr' <- first expr
   -- Apply the second
   (expr'', changed) <- Writer.listen $ second expr'
-  if Monoid.getAny changed 
+  if Monoid.getAny $
+  --      trace ("Trying to apply transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n") $
+        changed 
     then 
-      trace ("Transform " ++ name ++ " changed from:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n" ++ "\nTo:\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
-      applyboth first (name, second) expr'' 
+--      trace ("Applying transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n") $
+ --     trace ("Result of applying " ++ name ++ ":\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
+      applyboth first (name, second) $
+        expr'' 
     else 
+    --  trace ("No changes") $
       return expr''
 
 -- Apply the given transformation to all direct subexpressions (only), not the
@@ -156,7 +203,7 @@ mkUnique = Trans.lift $ do
 -- given expression.
 substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
 substitute replace expr = CoreSubst.substExpr subs expr
-    where subs = foldl (\s (b, e) -> CoreSubst.extendIdSubst s b e) CoreSubst.emptySubst replace
+    where subs = foldl (\s (b, e) -> CoreSubst.extendSubst s b e) CoreSubst.emptySubst replace
 
 -- Run a given TransformSession. Used mostly to setup the right calls and
 -- an initial state.

@@ -3,7 +3,10 @@
 -- Core and Haskell (it uses HsTools for this), but only the functions that
 -- know about various libraries and know which functions to call.
 module CoreTools where
-  
+
+--Standard modules
+import qualified Maybe
+
 -- GHC API
 import qualified GHC
 import qualified Type
@@ -19,8 +22,10 @@ import qualified DynFlags
 import qualified SrcLoc
 import qualified CoreSyn
 import qualified Var
+import qualified VarSet
 import qualified Unique
 import qualified CoreUtils
+import qualified CoreFVs
 
 import GhcTools
 import HsTools
@@ -106,4 +111,27 @@ is_lam _ = False
 
 -- Is the given core expression of a function type?
 is_fun :: CoreSyn.CoreExpr -> Bool
-is_fun = Type.isFunTy . CoreUtils.exprType
+-- Treat Type arguments differently, because exprType is not defined for them.
+is_fun (CoreSyn.Type _) = False
+is_fun expr = (Type.isFunTy . CoreUtils.exprType) expr
+
+-- Is the given core expression polymorphic (i.e., does it accept type
+-- arguments?).
+is_poly :: CoreSyn.CoreExpr -> Bool
+-- Treat Type arguments differently, because exprType is not defined for them.
+is_poly (CoreSyn.Type _) = False
+is_poly expr = (Maybe.isJust . Type.splitForAllTy_maybe . CoreUtils.exprType) expr
+
+-- Is the given core expression a variable reference?
+is_var :: CoreSyn.CoreExpr -> Bool
+is_var (CoreSyn.Var _) = True
+is_var _ = False
+
+-- Can the given core expression be applied to something? This is true for
+-- applying to a value as well as a type.
+is_applicable :: CoreSyn.CoreExpr -> Bool
+is_applicable expr = is_fun expr || is_poly expr
+
+-- Does the given CoreExpr have any free type vars?
+has_free_tyvars :: CoreSyn.CoreExpr -> Bool
+has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
