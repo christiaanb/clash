@@ -32,6 +32,7 @@ import qualified IdInfo
 import qualified TyCon
 import qualified DataCon
 import qualified CoreSubst
+import qualified CoreUtils
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
@@ -251,6 +252,25 @@ mkConcSm ::
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
   case Var.globalIdVarDetails f of
+    IdInfo.DataConWorkId dc ->
+        -- It's a datacon. Create a record from its arguments.
+        -- First, filter out type args. TODO: Is this the best way to do this?
+        -- The types should already have been taken into acocunt when creating
+        -- the signal, so this should probably work...
+        let valargs = filter isValArg args in
+        if all is_var valargs then do
+          labels <- getFieldLabels (CoreUtils.exprType app)
+          let assigns = zipWith mkassign labels valargs
+          let block_id = bndrToVHDLId bndr
+          let block = AST.BlockSm block_id [] (AST.PMapAspect []) [] assigns
+          return $ AST.CSBSm block
+        else
+          error $ "VHDL.mkConcSm Not in normal form: One ore more complex arguments: " ++ pprString args
+      where
+        mkassign :: AST.VHDLId -> CoreExpr -> AST.ConcSm
+        mkassign label (Var arg) =
+          let sel_name = mkSelectedName bndr label in
+          mkUncondAssign (Right sel_name) (varToVHDLExpr arg)
     IdInfo.VanillaGlobal -> do
       -- It's a global value imported from elsewhere. These can be builting
       -- functions.
