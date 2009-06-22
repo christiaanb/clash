@@ -56,7 +56,7 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty Map.empty builtin_funcs globalNameTable
+    init_session = VHDLSession Map.empty Map.empty Map.empty Map.empty globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
@@ -701,28 +701,6 @@ bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
 -- Extracts the string version of the name
 nameToString :: Name.Name -> String
 nameToString = OccName.occNameString . Name.nameOccName
-
--- | A consise representation of a (set of) ports on a builtin function
---type PortMap = HsValueMap (String, AST.TypeMark)
--- | A consise representation of a builtin function
-data BuiltIn = BuiltIn String [(String, AST.TypeMark)] (String, AST.TypeMark)
-
--- | Translate a list of concise representation of builtin functions to a
---   SignatureMap
-mkBuiltins :: [BuiltIn] -> SignatureMap
-mkBuiltins = Map.fromList . map (\(BuiltIn name args res) ->
-    (name,
-     Entity (VHDL.mkVHDLBasicId name) (map toVHDLSignalMapElement args) (toVHDLSignalMapElement res))
-  )
-
-builtin_hsfuncs = Map.keys builtin_funcs
-builtin_funcs = mkBuiltins
-  [ 
-    BuiltIn "hwxor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwand" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwor" [("a", VHDL.bit_ty), ("b", VHDL.bit_ty)] ("o", VHDL.bit_ty),
-    BuiltIn "hwnot" [("a", VHDL.bit_ty)] ("o", VHDL.bit_ty)
-  ]
 
 recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
 
