@@ -17,8 +17,8 @@ mkGlobalNameTable = Map.fromList
 
 globalNameTable :: NameTable
 globalNameTable = mkGlobalNameTable
-  [ ("!"              , (2, genExprFCall2L exId                           ) )
-  , ("head"           , (1, genExprFCall1L headId                         ) )
+  [ ("!"              , (2, genExprFCall exId                             ) )
+  , ("head"           , (1, genExprFCall headId                           ) )
   , ("hwxor"          , (2, genExprOp2 AST.Xor                            ) )
   , ("hwand"          , (2, genExprOp2 AST.And                            ) )
   , ("hwor"           , (2, genExprOp2 AST.And                            ) )

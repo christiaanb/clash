@@ -7,12 +7,10 @@ import Constants
 -- constructor from the AST.Expr type, e.g. AST.And.
 genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
 genExprOp2 op [arg1, arg2] = op arg1 arg2
-genExprOp2 _ _ = error "Generate.genExprOp2 wrong number of argumetns"
 
 -- | Generate a unary operator application
 genExprOp1 :: (AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
 genExprOp1 op [arg] = op arg
-genExprOp1 _ _ = error "Generate.genExprOp1 wrong number of argumetns"
 
 -- | Generate a function call from the Function Name and a list of expressions
 --   (its arguments)
@@ -20,16 +18,6 @@ genExprFCall :: AST.VHDLId -> [AST.Expr] -> AST.Expr
 genExprFCall fName args = 
    AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
-
--- | List version of genExprFCall1
-genExprFCall1L :: AST.VHDLId -> [AST.Expr] -> AST.Expr
-genExprFCall1L fName [arg] = genExprFCall fName [arg]
-genExprFCall1L _ _ = error "Generate.genExprFCall1L incorrect length"
-
--- | List version of genExprFCall2
-genExprFCall2L :: AST.VHDLId -> [AST.Expr] -> AST.Expr
-genExprFCall2L fName [arg1, arg2] = genExprFCall fName [arg1,arg2]
-genExprFCall2L _ _ = error "Generate.genExprFCall2L incorrect length"
 
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
