@@ -70,6 +70,20 @@ beta expr = return expr
 betatop = everywhere ("beta", beta)
 
 --------------------------------
+-- Cast propagation
+--------------------------------
+-- Try to move casts as much downward as possible.
+castprop, castproptop :: Transform
+castprop (Cast (Let binds expr) ty) = change $ Let binds (Cast expr ty)
+castprop expr@(Cast (Case scrut b _ alts) ty) = change (Case scrut b ty alts')
+  where
+    alts' = map (\(con, bndrs, expr) -> (con, bndrs, (Cast expr ty))) alts
+-- Leave all other expressions unchanged
+castprop expr = return expr
+-- Perform this transform everywhere
+castproptop = everywhere ("castprop", castprop)
+
+--------------------------------
 -- let recursification
 --------------------------------
 letrec, letrectop :: Transform
@@ -407,7 +421,7 @@ funproptop = everywhere ("funprop", funprop)
 
 
 -- What transforms to run?
-transforms = [typeproptop, funproptop, etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [typeproptop, funproptop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
