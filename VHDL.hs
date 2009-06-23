@@ -199,10 +199,12 @@ createArchitecture (fname, expr) = do
   -- Strip off lambda's, these will be arguments
   let (args, letexpr) = CoreSyn.collectBinders expr
   -- There must be a let at top level 
-  let (CoreSyn.Let (CoreSyn.Rec binds) res) = letexpr
+  let (CoreSyn.Let (CoreSyn.Rec binds) (Var res)) = letexpr
 
-  -- Create signal declarations for all internal and state signals
-  sig_dec_maybes <- mapM (mkSigDec' . fst) binds
+  -- Create signal declarations for all binders in the let expression, except
+  -- for the output port (that will already have an output port declared in
+  -- the entity).
+  sig_dec_maybes <- mapM (mkSigDec' . fst) (filter ((/=res).fst) binds)
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
 
   statements <- Monad.mapM mkConcSm binds
