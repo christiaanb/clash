@@ -63,6 +63,9 @@ createDesignFiles binds =
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
     ty_decls = map mktydecl $ Map.elems (final_session ^. vsTypes)
     vec_decls = map (\(v_id, v_def) -> AST.PDITD $ AST.TypeDec v_id v_def) (Map.elems (final_session ^. vsElemTypes))
+    tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
+    tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) highId Nothing)
+    tfvec_index_def = AST.SubtypeIn integerTM (Just tfvec_range)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
@@ -71,7 +74,7 @@ createDesignFiles binds =
     full_context =
       mkUseAll ["work", "types"]
       : ieee_context
-    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") (vec_decls ++ ty_decls ++ subProgSpecs)
+    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ vec_decls ++ ty_decls ++ subProgSpecs)
     type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
     subProgSpecs = concat (map subProgSpec tyfun_decls)
     subProgSpec = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec)
@@ -572,13 +575,13 @@ construct_vhdl_ty ty = do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
         "TFVec" -> do
-          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty) ty
+          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty)
           return $ Just $ (Arrow.second Right) res
         -- "SizedWord" -> do
         --   res <- mk_vector_ty (sized_word_len ty) ty
         --   return $ Just $ (Arrow.second Left) res
         "RangedWord" -> do 
-          res <- mk_natural_ty 0 (ranged_word_bound ty) ty
+          res <- mk_natural_ty 0 (ranged_word_bound ty)
           return $ Just $ (Arrow.second Right) res
         -- Create a custom type from this tycon
         otherwise -> mk_tycon_ty tycon args
@@ -617,10 +620,9 @@ mk_tycon_ty tycon args =
 mk_vector_ty ::
   Int -- ^ The length of the vector
   -> Type.Type -- ^ The Haskell element type of the Vector
-  -> Type.Type -- ^ The Haskell type to create a VHDL type for
   -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 
-mk_vector_ty len el_ty ty = do
+mk_vector_ty len el_ty = do
   elem_types_map <- getA vsElemTypes
   el_ty_tm <- vhdl_ty el_ty
   let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
@@ -632,24 +634,22 @@ mk_vector_ty len el_ty ty = do
       return (ty_id, ty_def)
     Nothing -> do
       let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
-      let vec_def = AST.TDA $ AST.UnconsArrayDef [naturalTM] el_ty_tm
+      let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
       modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
-      modA vsTypeFuns (Map.insert (OrdType ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
+      modA vsTypeFuns (Map.insert (OrdType el_ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
       let ty_def = AST.SubtypeIn vec_id (Just range)
       return (ty_id, ty_def)
 
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
   -> Int -- ^ The maximum bound (> minimum bound)
-  -> Type.Type -- ^ The Haskell type to create a VHDL type for
   -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
-mk_natural_ty min_bound max_bound ty = do
+mk_natural_ty min_bound max_bound = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
   let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
   let ty_def = AST.SubtypeIn naturalTM (Just range)
   return (ty_id, ty_def)
-
-
+  
 builtin_types = 
   Map.fromList [
     ("Bit", std_logic_ty),

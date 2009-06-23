@@ -39,6 +39,10 @@ rangeId :: AST.VHDLId
 rangeId = AST.unsafeVHDLBasicId "range"
 
 
+-- | high attribute identifier
+highId :: AST.VHDLId
+highId = AST.unsafeVHDLBasicId "high"
+
 -- | range attribute identifier
 imageId :: AST.VHDLId
 imageId = AST.unsafeVHDLBasicId "image"
@@ -172,3 +176,7 @@ tfvec_indexTM = AST.unsafeVHDLBasicId "tfvec_index"
 -- | natural AST. TypeMark
 naturalTM :: AST.TypeMark
 naturalTM = AST.unsafeVHDLBasicId "natural"
+
+-- | integer TypeMark
+integerTM :: AST.TypeMark
+integerTM = AST.unsafeVHDLBasicId "integer"
