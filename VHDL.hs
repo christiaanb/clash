@@ -294,17 +294,30 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
       funSignatures <- getA vsNameTable
+      signatures <- getA vsSignatures
       case (Map.lookup (bndrToString f) funSignatures) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
-            let
-              sigs = map (varToVHDLExpr.varBndr) valargs
-              func = builder sigs
-              src_wform = AST.Wform [AST.WformElem func Nothing]
-              dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
-              assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-            in
-              return [AST.CSSASm assign]
+            case builder of
+              Left funBuilder ->
+                let
+                  sigs = map (varToVHDLExpr.varBndr) valargs
+                  func = funBuilder sigs
+                  src_wform = AST.Wform [AST.WformElem func Nothing]
+                  dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+                  assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+                in
+                  return [AST.CSSASm assign]
+              Right genBuilder ->
+                let
+                  sigs = map varBndr valargs
+                  signature = Maybe.fromMaybe
+                    (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
+                    (Map.lookup (head sigs) signatures)
+                  arg_names = map (mkVHDLExtId . bndrToString) (tail sigs)
+                  dst_name = mkVHDLExtId (bndrToString bndr)
+                  genSm = genBuilder 4 signature (arg_names ++ [dst_name])  
+                in return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f

@@ -27,12 +27,11 @@ genExprFCall fName args =
 genMapCall :: 
   Int -- | The length of the vector 
   -> Entity -- | The entity to map
-  -> AST.VHDLId -- | The input vector
-  -> AST.VHDLId -- | The output vector
+  -> [AST.VHDLId] -- | The vectors
   -> AST.GenerateSm -- | The resulting generate statement
-genMapCall len entity arg res = genSm
+genMapCall len entity [arg, res] = genSm
   where
-    label = AST.unsafeVHDLBasicId "mapVector"
+    label = AST.unsafeVHDLBasicId ("mapVector" ++ (AST.fromVHDLId res))
     nPar  = AST.unsafeVHDLBasicId "n"
     range = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
     genScheme = AST.ForGn nPar range
@@ -63,7 +62,8 @@ genUnconsVectorFuns elemTM vectorTM  =
   , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
   , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]    
   , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]
-  , AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr]    
+  , AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr]
+  , AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet] 
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -211,3 +211,14 @@ genUnconsVectorFuns elemTM vectorTM  =
                           (AST.PrimLit "-1")]))
               Nothing
     emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
+    singletonSpec = AST.Function singletonId [AST.IfaceVarDec aPar elemTM ] 
+                                         vectorTM
+    -- variable res : fsvec_x (0 to 0) := (others => a);
+    singletonVar = 
+      AST.VarDec resId 
+             (AST.SubtypeIn vectorTM
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "0")]))
+             (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
+                                          (AST.PrimName $ AST.NSimple aPar)])
+    singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
