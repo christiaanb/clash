@@ -146,22 +146,22 @@ subeverywhere trans (Case scrut b t alts) = do
 
 subeverywhere trans expr = return expr
 
--- Apply the given transformation to all expressions, except for every first
--- argument of an application.
-notapplied :: (String, Transform) -> Transform
-notapplied trans = applyboth (subnotapplied trans) trans
+-- Apply the given transformation to all expressions, except for direct
+-- arguments of an application
+notappargs :: (String, Transform) -> Transform
+notappargs trans = applyboth (subnotappargs trans) trans
 
 -- Apply the given transformation to all (direct and indirect) subexpressions
--- (but not the expression itself), except for the first argument of an
--- applicfirst argument of an application
-subnotapplied :: (String, Transform) -> Transform
-subnotapplied trans (App a b) = do
-  a' <- subnotapplied trans a
-  b' <- notapplied trans b
+-- (but not the expression itself), except for direct arguments of an
+-- application
+subnotappargs :: (String, Transform) -> Transform
+subnotappargs trans (App a b) = do
+  a' <- subnotappargs trans a
+  b' <- subnotappargs trans b
   return $ App a' b'
 
 -- Let subeverywhere handle all other expressions
-subnotapplied trans expr = subeverywhere (notapplied trans) expr
+subnotappargs trans expr = subeverywhere (notappargs trans) expr
 
 -- Runs each of the transforms repeatedly inside the State monad.
 dotransforms :: [Transform] -> CoreExpr -> TransformSession CoreExpr
