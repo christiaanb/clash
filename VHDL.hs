@@ -350,7 +350,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
 -- first is the default case, if there is any.
 mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) =
   let
-    cond_expr = (varToVHDLExpr scrut) AST.:=: (conToVHDLExpr con)
+    cond_expr = (varToVHDLExpr scrut) AST.:=: (altconToVHDLExpr con)
     true_expr  = (varToVHDLExpr true)
     false_expr  = (varToVHDLExpr false)
   in
@@ -426,13 +426,26 @@ getFieldLabels ty = do
 
 -- Turn a variable reference into a AST expression
 varToVHDLExpr :: Var.Var -> AST.Expr
-varToVHDLExpr var = AST.PrimName $ AST.NSimple $ bndrToVHDLId var
+varToVHDLExpr var = 
+  case Id.isDataConWorkId_maybe var of
+    Just dc -> dataconToVHDLExpr dc
+    -- This is a dataconstructor.
+    -- Not a datacon, just another signal. Perhaps we should check for
+    -- local/global here as well?
+    Nothing -> AST.PrimName $ AST.NSimple $ bndrToVHDLId var
 
--- Turn a constructor into an AST expression. For dataconstructors, this is
--- only the constructor itself, not any arguments it has. Should not be called
--- with a DEFAULT constructor.
-conToVHDLExpr :: CoreSyn.AltCon -> AST.Expr
-conToVHDLExpr (DataAlt dc) = AST.PrimLit lit
+-- Turn a alternative constructor into an AST expression. For
+-- dataconstructors, this is only the constructor itself, not any arguments it
+-- has. Should not be called with a DEFAULT constructor.
+altconToVHDLExpr :: CoreSyn.AltCon -> AST.Expr
+altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
+
+altconToVHDLExpr (LitAlt _) = error "VHDL.conToVHDLExpr Literals not support in case alternatives yet"
+altconToVHDLExpr DEFAULT = error "VHDL.conToVHDLExpr DEFAULT alternative should not occur here!"
+
+-- Turn a datacon (without arguments!) into a VHDL expression.
+dataconToVHDLExpr :: DataCon.DataCon -> AST.Expr
+dataconToVHDLExpr dc = AST.PrimLit lit
   where
     tycon = DataCon.dataConTyCon dc
     tyname = TyCon.tyConName tycon
@@ -441,9 +454,6 @@ conToVHDLExpr (DataAlt dc) = AST.PrimLit lit
       -- TODO: Do something more robust than string matching
       "Bit"      -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
       "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
-conToVHDLExpr (LitAlt _) = error "VHDL.conToVHDLExpr Literals not support in case alternatives yet"
-conToVHDLExpr DEFAULT = error "VHDL.conToVHDLExpr DEFAULT alternative should not occur here!"
-
 
 
 {-
