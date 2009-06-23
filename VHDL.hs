@@ -289,18 +289,31 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
       funSignatures <- getA vsNameTable
+      entSignatures <- getA vsSignatures
       case (Map.lookup (bndrToString f) funSignatures) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
-            let
-              sigs = map (bndrToString.varBndr) valargs
-              sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
-              func = builder sigsNames
-              src_wform = AST.Wform [AST.WformElem func Nothing]
-              dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
-              assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-            in
-              return [AST.CSSASm assign]
+            case builder of
+              Left funBuilder ->
+                let
+                  sigs = map (bndrToString.varBndr) valargs
+                  sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
+                  func = funBuilder sigsNames
+                  src_wform = AST.Wform [AST.WformElem func Nothing]
+                  dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+                  assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+                in
+                  return [AST.CSSASm assign]
+              Right genBuilder ->
+                let
+                  sigs = map (varBndr) valargs
+                  signature = Maybe.fromMaybe
+                    (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
+                    (Map.lookup (head sigs) entSignatures)
+                  arg_name = mkVHDLExtId (bndrToString (last sigs))
+                  dst_name = mkVHDLExtId (bndrToString bndr)
+                  genSm = genBuilder 4 signature [arg_name, dst_name]  
+                in return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f

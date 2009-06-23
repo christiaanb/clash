@@ -27,10 +27,9 @@ genExprFCall fName args =
 genMapCall :: 
   Int -- | The length of the vector 
   -> Entity -- | The entity to map
-  -> AST.VHDLId -- | The input vector
-  -> AST.VHDLId -- | The output vector
+  -> [AST.VHDLId] -- | The vectors
   -> AST.GenerateSm -- | The resulting generate statement
-genMapCall len entity arg res = genSm
+genMapCall len entity [arg, res] = genSm
   where
     label = AST.unsafeVHDLBasicId "mapVector"
     nPar  = AST.unsafeVHDLBasicId "n"
