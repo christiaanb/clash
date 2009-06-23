@@ -264,6 +264,11 @@ mkConcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
   -> VHDLState [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
 
+
+-- Ignore Cast expressions, they should not longer have any meaning as long as
+-- the type works out.
+mkConcSm (bndr, Cast expr ty) = mkConcSm (bndr, expr)
+
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
   let valargs' = filter isValArg args

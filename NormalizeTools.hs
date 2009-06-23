@@ -142,9 +142,16 @@ subeverywhere trans (Case scrut b t alts) = do
     transalt (con, binders, expr) = do
       expr' <- trans expr
       return (con, binders, expr')
-      
 
-subeverywhere trans expr = return expr
+subeverywhere trans (Var x) = return $ Var x
+subeverywhere trans (Lit x) = return $ Lit x
+subeverywhere trans (Type x) = return $ Type x
+
+subeverywhere trans (Cast expr ty) = do
+  expr' <- trans expr
+  return $ Cast expr' ty
+
+subeverywhere trans expr = error $ "NormalizeTools.subeverywhere Unsupported expression: " ++ show expr
 
 -- Apply the given transformation to all expressions, except for direct
 -- arguments of an application

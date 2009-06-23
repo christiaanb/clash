@@ -44,7 +44,6 @@ import Pretty
 --------------------------------
 eta, etatop :: Transform
 eta expr | is_fun expr && not (is_lam expr) = do
-eta expr | is_fun expr && not (is_lam expr) = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   id <- mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
@@ -69,6 +68,20 @@ beta (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
 beta expr = return expr
 -- Perform this transform everywhere
 betatop = everywhere ("beta", beta)
+
+--------------------------------
+-- Cast propagation
+--------------------------------
+-- Try to move casts as much downward as possible.
+castprop, castproptop :: Transform
+castprop (Cast (Let binds expr) ty) = change $ Let binds (Cast expr ty)
+castprop expr@(Cast (Case scrut b _ alts) ty) = change (Case scrut b ty alts')
+  where
+    alts' = map (\(con, bndrs, expr) -> (con, bndrs, (Cast expr ty))) alts
+-- Leave all other expressions unchanged
+castprop expr = return expr
+-- Perform this transform everywhere
+castproptop = everywhere ("castprop", castprop)
 
 --------------------------------
 -- let recursification
@@ -408,7 +421,7 @@ funproptop = everywhere ("funprop", funprop)
 
 
 -- What transforms to run?
-transforms = [typeproptop, funproptop, etatop, betatop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [typeproptop, funproptop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
