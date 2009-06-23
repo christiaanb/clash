@@ -62,7 +62,8 @@ genUnconsVectorFuns elemTM vectorTM  =
   , AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet]         
   , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
   , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]    
-  , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]     
+  , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]
+  , AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr]    
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -201,3 +202,12 @@ genUnconsVectorFuns elemTM vectorTM  =
                    ((AST.PrimName $ AST.NSimple aPar) AST.:&: 
                     (AST.PrimName $ AST.NSimple vecPar))
     plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    emptySpec = AST.Function emptyId [] vectorTM
+    emptyVar = 
+          AST.VarDec resId 
+              (AST.SubtypeIn vectorTM
+                (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                 [AST.ToRange (AST.PrimLit "0")
+                          (AST.PrimLit "-1")]))
+              Nothing
+    emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
