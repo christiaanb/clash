@@ -310,7 +310,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
           (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup f signatures)
         entity_id = ent_id signature
-        label = bndrToString bndr
+        label = "comp_ins_" ++ bndrToString bndr
         -- Add a clk port if we have state
         --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
         --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
