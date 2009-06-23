@@ -1,5 +1,6 @@
 module Translator where
 import qualified Directory
+import qualified System.FilePath as FilePath
 import qualified List
 import Debug.Trace
 import qualified Control.Arrow as Arrow
@@ -60,6 +61,7 @@ makeVHDL filename name stateful = do
   vhdl <- moduleToVHDL core [(name, stateful)]
   -- Write VHDL to file
   let dir = "./vhdl/" ++ name ++ "/"
+  prepareDir dir
   mapM (writeVHDL dir) vhdl
   return ()
 
@@ -98,13 +100,25 @@ moduleToVHDL core list = do
   return vhdl
   where
 
+-- | Prepares the directory for writing VHDL files. This means creating the
+--   dir if it does not exist and removing all existing .vhdl files from it.
+prepareDir :: String -> IO()
+prepareDir dir = do
+  -- Create the dir if needed
+  exists <- Directory.doesDirectoryExist dir
+  Monad.unless exists $ Directory.createDirectory dir
+  -- Find all .vhdl files in the directory
+  files <- Directory.getDirectoryContents dir
+  let to_remove = filter ((==".vhdl") . FilePath.takeExtension) files
+  -- Prepend the dirname to the filenames
+  let abs_to_remove = map (FilePath.combine dir) to_remove
+  -- Remove the files
+  mapM_ Directory.removeFile abs_to_remove
+
 -- | Write the given design file to a file with the given name inside the
 --   given dir
 writeVHDL :: String -> (AST.VHDLId, AST.DesignFile) -> IO ()
 writeVHDL dir (name, vhdl) = do
-  -- Create the dir if needed
-  exists <- Directory.doesDirectoryExist dir
-  Monad.unless exists $ Directory.createDirectory dir
   -- Find the filename
   let fname = dir ++ (AST.fromVHDLId name) ++ ".vhdl"
   -- Write the file
