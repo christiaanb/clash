@@ -311,13 +311,15 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
                   return [AST.CSSASm assign]
               Right genBuilder ->
                 let
+                  ty = Var.varType bndr
+                  len = tfvec_len ty 
                   sigs = map varBndr valargs
                   signature = Maybe.fromMaybe
                     (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
                     (Map.lookup (head sigs) signatures)
                   arg_names = map (mkVHDLExtId . bndrToString) (tail sigs)
                   dst_name = mkVHDLExtId (bndrToString bndr)
-                  genSm = genBuilder 4 signature (arg_names ++ [dst_name])  
+                  genSm = genBuilder len signature (arg_names ++ [dst_name])  
                 in return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs

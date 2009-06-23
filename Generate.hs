@@ -31,23 +31,35 @@ genMapCall ::
   -> AST.GenerateSm -- | The resulting generate statement
 genMapCall len entity [arg, res] = genSm
   where
-    label = AST.unsafeVHDLBasicId ("mapVector" ++ (AST.fromVHDLId res))
+    label = mkVHDLExtId ("mapVector" ++ (AST.fromVHDLId res))
     nPar  = AST.unsafeVHDLBasicId "n"
     range = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
     genScheme = AST.ForGn nPar range
     entity_id = ent_id entity
     argport = map (Monad.liftM fst) (ent_args entity)
     resport = (Monad.liftM fst) (ent_res entity)
-    inport = mkAssocElem (head argport) arg
-    outport = mkAssocElem resport res
-    portmaps = Maybe.catMaybes [inport,outport]
+    inport = mkAssocElemI (head argport) arg
+    outport = mkAssocElemI resport res
+    clk_port = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+    portmaps = Maybe.catMaybes [inport,outport,clk_port]
+    portname = mkVHDLExtId ("map" ++ (AST.fromVHDLId entity_id))
     portmap = AST.CSISm $ AST.CompInsSm (AST.unsafeVHDLBasicId "map12") (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
     genSm = AST.GenerateSm label genScheme [] [portmap]
     -- | Create an VHDL port -> signal association
-    mkAssocElem :: Maybe AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
-    mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
+    mkAssocElemI :: Maybe AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
+    mkAssocElemI (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
                     (AST.NSimple signal) [AST.PrimName $ AST.NSimple nPar])))
+    mkAssocElemI Nothing _ = Nothing
+    mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
+    mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLExtId signal))) 
     mkAssocElem Nothing _ = Nothing
+    mkVHDLExtId :: String -> AST.VHDLId
+    mkVHDLExtId s = 
+      AST.unsafeVHDLExtId $ strip_invalid s
+      where 
+        -- Allowed characters, taken from ForSyde's mkVHDLExtId
+        allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
+        strip_invalid = filter (`elem` allowed)
 
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
