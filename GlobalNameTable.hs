@@ -28,6 +28,7 @@ globalNameTable = mkGlobalNameTable
   , ("+>"             , (2, Left $ genExprFCall plusgtId                  ) )
   , ("map"            , (2, Right $ genMapCall                            ) )
   , ("empty"          , (0, Left $ genExprFCall emptyId                   ) )
+  , ("singleton"      , (1, Left $ genExprFCall singletonId               ) )
   , ("hwxor"          , (2, Left $ genExprOp2 AST.Xor                     ) )
   , ("hwand"          , (2, Left $ genExprOp2 AST.And                     ) )
   , ("hwor"           , (2, Left $ genExprOp2 AST.Or                      ) )

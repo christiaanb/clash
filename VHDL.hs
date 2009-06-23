@@ -289,7 +289,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
       funSignatures <- getA vsNameTable
-      entSignatures <- getA vsSignatures
+      signatures <- getA vsSignatures
       case (Map.lookup (bndrToString f) funSignatures) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
@@ -306,13 +306,13 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
                   return [AST.CSSASm assign]
               Right genBuilder ->
                 let
-                  sigs = map (varBndr) valargs
+                  sigs = map varBndr valargs
                   signature = Maybe.fromMaybe
                     (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
-                    (Map.lookup (head sigs) entSignatures)
-                  arg_name = mkVHDLExtId (bndrToString (last sigs))
+                    (Map.lookup (head sigs) signatures)
+                  arg_names = map (mkVHDLExtId . bndrToString) (tail sigs)
                   dst_name = mkVHDLExtId (bndrToString bndr)
-                  genSm = genBuilder 4 signature [arg_name, dst_name]  
+                  genSm = genBuilder 4 signature (arg_names ++ [dst_name])  
                 in return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
