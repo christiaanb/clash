@@ -44,12 +44,13 @@ import Pretty
 --------------------------------
 eta, etatop :: Transform
 eta expr | is_fun expr && not (is_lam expr) = do
+eta expr | is_fun expr && not (is_lam expr) = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   id <- mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta e = return e
-etatop = notapplied ("eta", eta)
+etatop = notappargs ("eta", eta)
 
 --------------------------------
 -- β-reduction
