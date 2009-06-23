@@ -1,7 +1,11 @@
 module Generate where
-  
+
+import qualified Control.Monad as Monad
+import qualified Maybe
+
 import qualified ForSyDe.Backend.VHDL.AST as AST
 import Constants
+import VHDLTypes
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
@@ -19,6 +23,33 @@ genExprFCall fName args =
    AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 
+-- | Generate a generate statement for the builtin function "map"
+genMapCall :: 
+  Int -- | The length of the vector 
+  -> Entity -- | The entity to map
+  -> AST.VHDLId -- | The input vector
+  -> AST.VHDLId -- | The output vector
+  -> AST.GenerateSm -- | The resulting generate statement
+genMapCall len entity arg res = genSm
+  where
+    label = AST.unsafeVHDLBasicId "mapVector"
+    nPar  = AST.unsafeVHDLBasicId "n"
+    range = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+    genScheme = AST.ForGn nPar range
+    entity_id = ent_id entity
+    argport = map (Monad.liftM fst) (ent_args entity)
+    resport = (Monad.liftM fst) (ent_res entity)
+    inport = mkAssocElem (head argport) arg
+    outport = mkAssocElem resport res
+    portmaps = Maybe.catMaybes [inport,outport]
+    portmap = AST.CSISm $ AST.CompInsSm (AST.unsafeVHDLBasicId "map12") (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+    genSm = AST.GenerateSm label genScheme [] [portmap]
+    -- | Create an VHDL port -> signal association
+    mkAssocElem :: Maybe AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
+    mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
+                    (AST.NSimple signal) [AST.PrimName $ AST.NSimple nPar])))
+    mkAssocElem Nothing _ = Nothing
+
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
                     -> [AST.SubProgBody]
@@ -30,7 +61,8 @@ genUnconsVectorFuns elemTM vectorTM  =
   , AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet]         
   , AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet]         
   , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
-  , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]         
+  , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]    
+  , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]     
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -154,3 +186,18 @@ genUnconsVectorFuns elemTM vectorTM  =
                                   AST.AttribName (AST.NSimple vecPar) lengthId Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     dropRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    plusgtSpec = AST.Function plusgtId [AST.IfaceVarDec aPar   elemTM,
+                                       AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    -- variable res : fsvec_x (0 to vec'length);
+    plusgtVar = 
+      AST.VarDec resId 
+             (AST.SubtypeIn vectorTM
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                [AST.ToRange (AST.PrimLit "0")
+                        (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) lengthId Nothing))]))
+             Nothing
+    plusgtExpr = AST.NSimple resId AST.:= 
+                   ((AST.PrimName $ AST.NSimple aPar) AST.:&: 
+                    (AST.PrimName $ AST.NSimple vecPar))
+    plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)

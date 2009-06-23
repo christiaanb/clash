@@ -25,6 +25,7 @@ globalNameTable = mkGlobalNameTable
   , ("init"           , (1, genExprFCall initId                           ) )
   , ("take"           , (2, genExprFCall takeId                           ) )
   , ("drop"           , (2, genExprFCall dropId                           ) )
+  , ("+>"             , (2, genExprFCall plusgtId                         ) )
   , ("hwxor"          , (2, genExprOp2 AST.Xor                            ) )
   , ("hwand"          , (2, genExprOp2 AST.And                            ) )
   , ("hwor"           , (2, genExprOp2 AST.Or                             ) )
