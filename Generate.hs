@@ -76,6 +76,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]
   , AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr]
   , AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet] 
+  , AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr]
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -234,3 +235,17 @@ genUnconsVectorFuns elemTM vectorTM  =
              (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
                                           (AST.PrimName $ AST.NSimple aPar)])
     singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    copySpec = AST.Function copyId [AST.IfaceVarDec nPar   naturalTM,
+                                   AST.IfaceVarDec aPar   elemTM   ] vectorTM 
+    -- variable res : fsvec_x (0 to n-1) := (others => a);
+    copyVar = 
+      AST.VarDec resId 
+             (AST.SubtypeIn vectorTM
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                [AST.ToRange (AST.PrimLit "0")
+                            ((AST.PrimName (AST.NSimple nPar)) AST.:-:
+                             (AST.PrimLit "1"))   ]))
+             (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
+                                          (AST.PrimName $ AST.NSimple aPar)])
+    -- return res
+    copyExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
