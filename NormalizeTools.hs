@@ -119,6 +119,11 @@ subeverywhere trans (App a b) = do
   b' <- trans b
   return $ App a' b'
 
+subeverywhere trans (Let (NonRec b bexpr) expr) = do
+  bexpr' <- trans bexpr
+  expr' <- trans expr
+  return $ Let (NonRec b bexpr') expr'
+
 subeverywhere trans (Let (Rec binds) expr) = do
   expr' <- trans expr
   binds' <- mapM transbind binds
