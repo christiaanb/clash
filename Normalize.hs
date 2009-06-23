@@ -140,7 +140,7 @@ letflattop = everywhere ("letflat", letflat)
 --------------------------------
 -- Remove a = b bindings from let expressions everywhere
 letremovetop :: Transform
-letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v) -> True; otherwise -> False))
+letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v) | not $ Id.isDataConWorkId v -> True; otherwise -> False))
 
 --------------------------------
 -- Function inlining
@@ -288,8 +288,9 @@ caseremovetop = everywhere ("caseremove", caseremove)
 --------------------------------
 -- Make sure that all arguments in an application are simple variables.
 appsimpl, appsimpltop :: Transform
--- Don't simplify arguments that are already simple
-appsimpl expr@(App f (Var _)) = return expr
+-- Don't simplify arguments that are already simple. Do simplify datacons,
+-- however, since we can't portmap literals.
+appsimpl expr@(App f (Var v)) | not $ Id.isDataConWorkId v = return expr
 -- Simplify all non-applicable (to prevent loops with inlinefun) arguments,
 -- except for type arguments (since a let can't bind type vars, only a lambda
 -- can). Do this by introducing a new Let that binds the argument and passing
