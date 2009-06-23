@@ -274,10 +274,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         --let valargs = filter isValArg args in
         if all is_var valargs then do
           labels <- getFieldLabels (CoreUtils.exprType app)
-          let assigns = zipWith mkassign labels valargs
-          let block_id = bndrToVHDLId bndr
-          let block = AST.BlockSm block_id [] (AST.PMapAspect []) [] assigns
-          return [AST.CSBSm block]
+          return $ zipWith mkassign labels valargs
         else
           error $ "VHDL.mkConcSm Not in normal form: One ore more complex arguments: " ++ pprString args
       where
