@@ -319,11 +319,6 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
           return [AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)]
     details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
--- GHC generates some funny "r = r" bindings in let statements before
--- simplification. This outputs some dummy ConcSM for these, so things will at
--- least compile for now.
-mkConcSm (bndr, CoreSyn.Var _) = return [AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []]
-
 -- A single alt case must be a selector. This means thee scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
 -- is also returned.
