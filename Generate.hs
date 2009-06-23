@@ -1,11 +1,21 @@
 module Generate where
 
+-- Standard modules
 import qualified Control.Monad as Monad
 import qualified Maybe
 
+-- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
+
+-- GHC API
+import CoreSyn
+import qualified Var
+
+-- Local imports
 import Constants
 import VHDLTypes
+import VHDLTools
+import CoreTools
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
@@ -25,41 +35,31 @@ genExprFCall fName args =
 
 -- | Generate a generate statement for the builtin function "map"
 genMapCall :: 
-  Int -- | The length of the vector 
-  -> Entity -- | The entity to map
-  -> [AST.VHDLId] -- | The vectors
+  Entity -- | The entity to map
+  -> [CoreSyn.CoreBndr] -- | The vectors
   -> AST.GenerateSm -- | The resulting generate statement
-genMapCall len entity [arg, res] = genSm
+genMapCall entity [arg, res] = genSm
   where
-    label = mkVHDLExtId ("mapVector" ++ (AST.fromVHDLId res))
-    nPar  = AST.unsafeVHDLBasicId "n"
-    range = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
-    genScheme = AST.ForGn nPar range
-    entity_id = ent_id entity
-    argport = map (Monad.liftM fst) (ent_args entity)
-    resport = (Monad.liftM fst) (ent_res entity)
-    inport = mkAssocElemI (head argport) arg
-    outport = mkAssocElemI resport res
-    clk_port = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-    portmaps = Maybe.catMaybes [inport,outport,clk_port]
-    portname = mkVHDLExtId ("map" ++ (AST.fromVHDLId entity_id))
-    portmap = AST.CSISm $ AST.CompInsSm (AST.unsafeVHDLBasicId "map12") (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
-    genSm = AST.GenerateSm label genScheme [] [portmap]
-    -- | Create an VHDL port -> signal association
-    mkAssocElemI :: Maybe AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
-    mkAssocElemI (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
-                    (AST.NSimple signal) [AST.PrimName $ AST.NSimple nPar])))
-    mkAssocElemI Nothing _ = Nothing
-    mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
-    mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLExtId signal))) 
-    mkAssocElem Nothing _ = Nothing
-    mkVHDLExtId :: String -> AST.VHDLId
-    mkVHDLExtId s = 
-      AST.unsafeVHDLExtId $ strip_invalid s
-      where 
-        -- Allowed characters, taken from ForSyde's mkVHDLExtId
-        allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
-        strip_invalid = filter (`elem` allowed)
+    -- Setup the generate scheme
+    len         = getVectorLen res
+    label       = mkVHDLExtId ("mapVector" ++ (bndrToString res))
+    nPar        = AST.unsafeVHDLBasicId "n"
+    range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+    genScheme   = AST.ForGn nPar range
+    -- Get the entity name and port names
+    entity_id   = ent_id entity
+    argport     = map (Monad.liftM fst) (ent_args entity)
+    resport     = (Monad.liftM fst) (ent_res entity)
+    -- Assign the ports
+    inport      = mkAssocElemIndexed (head argport) (bndrToString arg) nPar
+    outport     = mkAssocElemIndexed resport (bndrToString res) nPar
+    clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+    portassigns = Maybe.catMaybes [inport,outport,clk_port]
+    -- Generate the portmap
+    mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
+    compins     = genComponentInst mapLabel entity_id portassigns
+    -- Return the generate functions
+    genSm       = AST.GenerateSm label genScheme [] [compins]
 
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector

@@ -4,19 +4,14 @@
 module VHDL where
 
 -- Standard modules
-import qualified Data.Foldable as Foldable
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Maybe
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
-import qualified Data.Traversable as Traversable
 import qualified Data.Monoid as Monoid
 import Data.Accessor
-import qualified Data.Accessor.MonadState as MonadState
-import Text.Regex.Posix
-import Debug.Trace
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -25,12 +20,10 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 import CoreSyn
 import qualified Type
 import qualified Name
-import qualified OccName
 import qualified Var
 import qualified Id
 import qualified IdInfo
 import qualified TyCon
-import qualified TcType
 import qualified DataCon
 import qualified CoreSubst
 import qualified CoreUtils
@@ -38,10 +31,7 @@ import Outputable ( showSDoc, ppr )
 
 -- Local imports
 import VHDLTypes
-import Flatten
-import FlattenTypes
-import TranslatorTypes
-import HsValueMap
+import VHDLTools
 import Pretty
 import CoreTools
 import Constants
@@ -165,7 +155,7 @@ createEntityAST vhdl_id args res =
     -- Add a clk port if we have state
     clk_port = if True -- hasState hsfunc
       then
-        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In VHDL.std_logic_ty
+        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logic_ty
       else
         Nothing
 
@@ -178,12 +168,14 @@ mkIfaceSigDec ::
 mkIfaceSigDec mode (Just (id, ty)) = Just $ AST.IfaceSigDec id mode ty
 mkIfaceSigDec _ Nothing = Nothing
 
+{-
 -- | Generate a VHDL entity name for the given hsfunc
 mkEntityId hsfunc =
   -- TODO: This doesn't work for functions with multiple signatures!
   -- Use a Basic Id, since using extended id's for entities throws off
   -- precision and causes problems when generating filenames.
   mkVHDLBasicId $ hsFuncName hsfunc
+-}
 
 -- | Create an architecture for a given function
 createArchitecture ::
@@ -211,11 +203,12 @@ createArchitecture (fname, expr) = do
   let statements = concat statementss
   return $ AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
-    procs = map mkStateProcSm [] -- (makeStatePairs flatfunc)
+    procs = [] --map mkStateProcSm [] -- (makeStatePairs flatfunc)
     procs' = map AST.CSPSm procs
     -- mkSigDec only uses vsTypes from the state
     mkSigDec' = mkSigDec
 
+{-
 -- | Looks up all pairs of old state, new state signals, together with
 --   the state id they represent.
 makeStatePairs :: FlatFunction -> [(StateId, SignalInfo, SignalInfo)]
@@ -243,6 +236,15 @@ mkStateProcSm (num, old, new) =
     rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
     statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
 
+-- | Creates a VHDL Id from a named SignalInfo. Errors out if the SignalInfo
+--   is not named.
+getSignalId :: SignalInfo -> AST.VHDLId
+getSignalId info =
+  mkVHDLExtId $ Maybe.fromMaybe
+    (error $ "Unnamed signal? This should not happen!")
+    (sigName info)
+-}
+   
 mkSigDec :: CoreSyn.CoreBndr -> VHDLState (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
@@ -250,14 +252,6 @@ mkSigDec bndr =
     return $ Just (AST.SigDec (bndrToVHDLId bndr) type_mark Nothing)
   else
     return Nothing
-
--- | Creates a VHDL Id from a named SignalInfo. Errors out if the SignalInfo
---   is not named.
-getSignalId :: SignalInfo -> AST.VHDLId
-getSignalId info =
-    mkVHDLExtId $ Maybe.fromMaybe
-      (error $ "Unnamed signal? This should not happen!")
-      (sigName info)
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
@@ -316,15 +310,12 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
                   return [AST.CSSASm assign]
               Right genBuilder ->
                 let
-                  ty = Var.varType bndr
-                  len = tfvec_len ty 
                   sigs = map varBndr valargs
                   signature = Maybe.fromMaybe
                     (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
                     (Map.lookup (head sigs) signatures)
-                  arg_names = map (mkVHDLExtId . bndrToString) (tail sigs)
-                  dst_name = mkVHDLExtId (bndrToString bndr)
-                  genSm = genBuilder len signature (arg_names ++ [dst_name])  
+                  arg = tail sigs
+                  genSm = genBuilder signature (arg ++ [bndr])  
                 in return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
@@ -345,7 +336,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
         portmaps = clk_port : mkAssocElems args bndr signature
         in
-          return [AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)]
+          return [genComponentInst label entity_id portmaps]
     details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -- A single alt case must be a selector. This means thee scrutinee is a simple
@@ -380,59 +371,6 @@ mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form:
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 
--- Create an unconditional assignment statement
-mkUncondAssign ::
-  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
-  -> AST.Expr -- ^ The expression to assign
-  -> AST.ConcSm -- ^ The resulting concurrent statement
-mkUncondAssign dst expr = mkAssign dst Nothing expr
-
--- Create a conditional assignment statement
-mkCondAssign ::
-  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
-  -> AST.Expr -- ^ The condition
-  -> AST.Expr -- ^ The value when true
-  -> AST.Expr -- ^ The value when false
-  -> AST.ConcSm -- ^ The resulting concurrent statement
-mkCondAssign dst cond true false = mkAssign dst (Just (cond, true)) false
-
--- Create a conditional or unconditional assignment statement
-mkAssign ::
-  Either CoreBndr AST.VHDLName -> -- ^ The signal to assign to
-  Maybe (AST.Expr , AST.Expr) -> -- ^ Optionally, the condition to test for
-                                 -- and the value to assign when true.
-  AST.Expr -> -- ^ The value to assign when false or no condition
-  AST.ConcSm -- ^ The resulting concurrent statement
-
-mkAssign dst cond false_expr =
-  let
-    -- I'm not 100% how this assignment AST works, but this gets us what we
-    -- want...
-    whenelse = case cond of
-      Just (cond_expr, true_expr) -> 
-        let 
-          true_wform = AST.Wform [AST.WformElem true_expr Nothing] 
-        in
-          [AST.WhenElse true_wform cond_expr]
-      Nothing -> []
-    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-    dst_name  = case dst of
-      Left bndr -> AST.NSimple (bndrToVHDLId bndr)
-      Right name -> name
-    assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
-  in
-    AST.CSSASm assign
-
--- Create a record field selector that selects the given label from the record
--- stored in the given binder.
-mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
-mkSelectedName bndr label =
-  let 
-    sel_prefix = AST.NSimple $ bndrToVHDLId bndr
-    sel_suffix = AST.SSimple $ label
-  in
-    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
-
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
 getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
@@ -444,38 +382,6 @@ getFieldLabels ty = do
   case Map.lookup (OrdType ty) types of
     Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     _ -> error $ "VHDL.getFieldLabels Type not found or not a record type? This should not happen! Type: " ++ (show ty)
-
--- Turn a variable reference into a AST expression
-varToVHDLExpr :: Var.Var -> AST.Expr
-varToVHDLExpr var = 
-  case Id.isDataConWorkId_maybe var of
-    Just dc -> dataconToVHDLExpr dc
-    -- This is a dataconstructor.
-    -- Not a datacon, just another signal. Perhaps we should check for
-    -- local/global here as well?
-    Nothing -> AST.PrimName $ AST.NSimple $ bndrToVHDLId var
-
--- Turn a alternative constructor into an AST expression. For
--- dataconstructors, this is only the constructor itself, not any arguments it
--- has. Should not be called with a DEFAULT constructor.
-altconToVHDLExpr :: CoreSyn.AltCon -> AST.Expr
-altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
-
-altconToVHDLExpr (LitAlt _) = error "VHDL.conToVHDLExpr Literals not support in case alternatives yet"
-altconToVHDLExpr DEFAULT = error "VHDL.conToVHDLExpr DEFAULT alternative should not occur here!"
-
--- Turn a datacon (without arguments!) into a VHDL expression.
-dataconToVHDLExpr :: DataCon.DataCon -> AST.Expr
-dataconToVHDLExpr dc = AST.PrimLit lit
-  where
-    tycon = DataCon.dataConTyCon dc
-    tyname = TyCon.tyConName tycon
-    dcname = DataCon.dataConName dc
-    lit = case Name.getOccString tyname of
-      -- TODO: Do something more robust than string matching
-      "Bit"      -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
-      "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
-
 
 {-
 mkConcSm sigs (UncondDef src dst) _ = do
@@ -515,37 +421,12 @@ mkConcSm sigs (CondDef cond true false dst) _ =
     assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
   in
     return $ AST.CSSASm assign
--}
--- | Turn a SignalId into a VHDL Expr
+
+| Turn a SignalId into a VHDL Expr
 mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
 mkIdExpr sigs id =
   let src_name  = AST.NSimple (getSignalId $ signalInfo sigs id) in
   AST.PrimName src_name
-
-mkAssocElems :: 
-  [CoreSyn.CoreExpr]            -- | The argument that are applied to function
-  -> CoreSyn.CoreBndr           -- | The binder in which to store the result
-  -> Entity                     -- | The entity to map against.
-  -> [AST.AssocElem]            -- | The resulting port maps
-
-mkAssocElems args res entity =
-    -- Create the actual AssocElems
-    Maybe.catMaybes $ zipWith mkAssocElem ports sigs
-  where
-    -- Turn the ports and signals from a map into a flat list. This works,
-    -- since the maps must have an identical form by definition. TODO: Check
-    -- the similar form?
-    arg_ports = ent_args entity
-    res_port  = ent_res entity
-    -- Extract the id part from the (id, type) tuple
-    ports     = map (Monad.liftM fst) (res_port : arg_ports)
-    -- Translate signal numbers into names
-    sigs      = (bndrToString res : map (bndrToString.varBndr) args)
-
--- Turns a Var CoreExpr into the Id inside it. Will of course only work for
--- simple Var CoreExprs, not complexer ones.
-varBndr :: CoreSyn.CoreExpr -> Var.Id
-varBndr (CoreSyn.Var id) = id
 
 -- | Look up a signal in the signal name map
 lookupSigName :: [(SignalId, SignalInfo)] -> SignalId -> String
@@ -557,23 +438,7 @@ lookupSigName sigs sig = name
     name = Maybe.fromMaybe
       (error $ "Unnamed signal " ++ (show sig) ++ " used? This should not happen!")
       (sigName info)
-
--- | Create an VHDL port -> signal association
-mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
-mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLExtId signal))) 
-mkAssocElem Nothing _ = Nothing
-
--- | The VHDL Bit type
-bit_ty :: AST.TypeMark
-bit_ty = AST.unsafeVHDLBasicId "Bit"
-
--- | The VHDL Boolean type
-bool_ty :: AST.TypeMark
-bool_ty = AST.unsafeVHDLBasicId "Boolean"
-
--- | The VHDL std_logic
-std_logic_ty :: AST.TypeMark
-std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
+-}
 
 -- Translate a Haskell type to a VHDL type
 vhdl_ty :: Type.Type -> VHDLState AST.TypeMark
@@ -646,7 +511,7 @@ mk_tycon_ty tycon args =
     -- to work so far, though..
     tyvars = TyCon.tyConTyVars tycon
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
-
+    
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Int -- ^ The length of the vector
@@ -680,68 +545,3 @@ mk_natural_ty min_bound max_bound = do
   let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
   let ty_def = AST.SubtypeIn naturalTM (Just range)
   return (ty_id, ty_def)
-  
-builtin_types = 
-  Map.fromList [
-    ("Bit", std_logic_ty),
-    ("Bool", bool_ty) -- TysWiredIn.boolTy
-  ]
-
--- Shortcut for 
--- Can only contain alphanumerics and underscores. The supplied string must be
--- a valid basic id, otherwise an error value is returned. This function is
--- not meant to be passed identifiers from a source file, use mkVHDLExtId for
--- that.
-mkVHDLBasicId :: String -> AST.VHDLId
-mkVHDLBasicId s = 
-  AST.unsafeVHDLBasicId $ (strip_multiscore . strip_leading . strip_invalid) s
-  where
-    -- Strip invalid characters.
-    strip_invalid = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.")
-    -- Strip leading numbers and underscores
-    strip_leading = dropWhile (`elem` ['0'..'9'] ++ "_")
-    -- Strip multiple adjacent underscores
-    strip_multiscore = concat . map (\cs -> 
-        case cs of 
-          ('_':_) -> "_"
-          _ -> cs
-      ) . List.group
-
--- Shortcut for Extended VHDL Id's. These Id's can contain a lot more
--- different characters than basic ids, but can never be used to refer to
--- basic ids.
--- Use extended Ids for any values that are taken from the source file.
-mkVHDLExtId :: String -> AST.VHDLId
-mkVHDLExtId s = 
-  AST.unsafeVHDLExtId $ strip_invalid s
-  where 
-    -- Allowed characters, taken from ForSyde's mkVHDLExtId
-    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
-    strip_invalid = filter (`elem` allowed)
-
--- Creates a VHDL Id from a binder
-bndrToVHDLId ::
-  CoreSyn.CoreBndr
-  -> AST.VHDLId
-
-bndrToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varName
-
--- Extracts the binder name as a String
-bndrToString ::
-  CoreSyn.CoreBndr
-  -> String
-bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
-
--- Get the string version a Var's unique
-varToStringUniq = show . Var.varUnique
-
--- Extracts the string version of the name
-nameToString :: Name.Name -> String
-nameToString = OccName.occNameString . Name.nameOccName
-
-recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
-
--- | Map a port specification of a builtin function to a VHDL Signal to put in
---   a VHDLSignalMap
-toVHDLSignalMapElement :: (String, AST.TypeMark) -> VHDLSignalMapElement
-toVHDLSignalMapElement (name, ty) = Just (mkVHDLBasicId name, ty)

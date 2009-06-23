@@ -54,7 +54,7 @@ type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
 -- A map of a Haskell function to a hardware signature
 type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 
-type Builder = Either ([AST.Expr] -> AST.Expr) (Int -> Entity -> [AST.VHDLId] -> AST.GenerateSm)
+type Builder = Either ([AST.Expr] -> AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm)
 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, Builder )
