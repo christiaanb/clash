@@ -204,7 +204,8 @@ createArchitecture (fname, expr) = do
   sig_dec_maybes <- mapM (mkSigDec' . fst) (filter ((/=res).fst) binds)
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
 
-  statements <- Monad.mapM mkConcSm binds
+  statementss <- Monad.mapM mkConcSm binds
+  let statements = concat statementss
   return $ AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   where
     procs = map mkStateProcSm [] -- (makeStatePairs flatfunc)
@@ -258,7 +259,7 @@ getSignalId info =
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
-  -> VHDLState AST.ConcSm  -- ^ The corresponding VHDL component instantiation.
+  -> VHDLState [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
@@ -276,7 +277,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
           let assigns = zipWith mkassign labels valargs
           let block_id = bndrToVHDLId bndr
           let block = AST.BlockSm block_id [] (AST.PMapAspect []) [] assigns
-          return $ AST.CSBSm block
+          return [AST.CSBSm block]
         else
           error $ "VHDL.mkConcSm Not in normal form: One ore more complex arguments: " ++ pprString args
       where
@@ -299,7 +300,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
               dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
               assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
             in
-              return $ AST.CSSASm assign
+              return [AST.CSSASm assign]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
@@ -318,13 +319,13 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
         portmaps = mkAssocElems args bndr signature
         in
-          return $ AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)
+          return [AST.CSISm $ AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portmaps)]
     details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -- GHC generates some funny "r = r" bindings in let statements before
 -- simplification. This outputs some dummy ConcSM for these, so things will at
 -- least compile for now.
-mkConcSm (bndr, CoreSyn.Var _) = return $ AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []
+mkConcSm (bndr, CoreSyn.Var _) = return [AST.CSPSm $ AST.ProcSm (mkVHDLBasicId "unused") [] []]
 
 -- A single alt case must be a selector. This means thee scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
@@ -338,7 +339,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
           let label = labels!!i
           let sel_name = mkSelectedName scrut label
           let sel_expr = AST.PrimName sel_name
-          return $ mkUncondAssign (Left bndr) sel_expr
+          return [mkUncondAssign (Left bndr) sel_expr]
         Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
     _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
@@ -353,7 +354,7 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     true_expr  = (varToVHDLExpr true)
     false_expr  = (varToVHDLExpr false)
   in
-    return $ mkCondAssign (Left bndr) cond_expr true_expr false_expr
+    return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
