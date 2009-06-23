@@ -7,6 +7,7 @@ module NormalizeTools where
 import Debug.Trace
 import qualified List
 import qualified Data.Monoid as Monoid
+import qualified Control.Arrow as Arrow
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
 import qualified Control.Monad.Trans.Writer as Writer
@@ -202,8 +203,21 @@ mkUnique = Trans.lift $ do
 -- Replace each of the binders given with the coresponding expressions in the
 -- given expression.
 substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
-substitute replace expr = CoreSubst.substExpr subs expr
-    where subs = foldl (\s (b, e) -> CoreSubst.extendSubst s b e) CoreSubst.emptySubst replace
+substitute [] expr = expr
+-- Apply one substitution on the expression, but also on any remaining
+-- substitutions. This seems to be the only way to handle substitutions like
+-- [(b, c), (a, b)]. This means we reuse a substitution, which is not allowed
+-- according to CoreSubst documentation (but it doesn't seem to be a problem).
+-- TODO: Find out how this works, exactly.
+substitute ((b, e):subss) expr = substitute subss' expr'
+  where 
+    -- Create the Subst
+    subs = (CoreSubst.extendSubst CoreSubst.emptySubst b e)
+    -- Apply this substitution to the main expression
+    expr' = CoreSubst.substExpr subs expr
+    -- Apply this substitution on all the expressions in the remaining
+    -- substitutions
+    subss' = map (Arrow.second (CoreSubst.substExpr subs)) subss
 
 -- Run a given TransformSession. Used mostly to setup the right calls and
 -- an initial state.
