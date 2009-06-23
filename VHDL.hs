@@ -269,6 +269,12 @@ mkConcSm ::
 -- the type works out.
 mkConcSm (bndr, Cast expr ty) = mkConcSm (bndr, expr)
 
+-- For simple a = b assignments, just generate an unconditional signal
+-- assignment. This should only happen for dataconstructors without arguments.
+-- TODO: Integrate this with the below code for application (essentially this
+-- is an application without arguments)
+mkConcSm (bndr, Var v) = return $ [mkUncondAssign (Left bndr) (varToVHDLExpr v)]
+
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
   let valargs' = filter isValArg args
