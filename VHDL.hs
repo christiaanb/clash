@@ -63,7 +63,8 @@ createDesignFiles binds =
       ]
     full_context =
       mkUseAll ["work", "types"]
-      : ieee_context
+      : (mkUseAll ["work"]
+      : ieee_context)
     type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ vec_decls ++ ty_decls ++ subProgSpecs)
     type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
     subProgSpecs = concat (map subProgSpec tyfun_decls)
