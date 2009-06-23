@@ -298,9 +298,8 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         Just (arg_count, builder) ->
           if length valargs == arg_count then
             let
-              sigs = map (bndrToString.varBndr) valargs
-              sigsNames = map (\signal -> (AST.PrimName (AST.NSimple (mkVHDLExtId signal)))) sigs
-              func = builder sigsNames
+              sigs = map (varToVHDLExpr.varBndr) valargs
+              func = builder sigs
               src_wform = AST.Wform [AST.WformElem func Nothing]
               dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
               assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
