@@ -64,8 +64,8 @@ genMapCall entity [arg, res] = return $ genSm
 genZipWithCall ::
   Entity
   -> [CoreSyn.CoreBndr]
-  -> AST.GenerateSm
-genZipWithCall entity [arg1, arg2, res] = genSm
+  -> VHDLSession AST.GenerateSm
+genZipWithCall entity [arg1, arg2, res] = return $ genSm
   where
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
