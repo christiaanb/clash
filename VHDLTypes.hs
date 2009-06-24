@@ -48,8 +48,9 @@ type TypeMap = Map.Map OrdType (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn)
 -- A map of Elem types to the corresponding VHDL Id for the Vector
 type ElemTypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDef)
 
--- A map of a vector Core type to the coressponding VHDL functions
-type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
+-- A map of a vector Core element type and function name to the coressponding
+-- VHDLId of the function and the function body.
+type TypeFunMap = Map.Map (OrdType, String) (AST.VHDLId, AST.SubProgBody)
 
 -- A map of a Haskell function to a hardware signature
 type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
@@ -75,7 +76,7 @@ type VHDLSession = State.State VHDLState
 -- | A substate containing just the types
 type TypeState = State.State TypeMap
 
-type Builder = Either ([AST.Expr] -> VHDLSession AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> VHDLSession AST.GenerateSm)
+type Builder = Either (CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> VHDLSession AST.GenerateSm)
 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, Builder )

@@ -59,103 +59,124 @@ defaultId = AST.unsafeVHDLBasicId "default"
 -- FSVec function identifiers
 
 -- | ex (operator ! in original Haskell source) function identifier
-exId :: AST.VHDLId
-exId = AST.unsafeVHDLBasicId "ex"
+exId :: String
+exId = "!"
 
 -- | sel (function select in original Haskell source) function identifier
-selId :: AST.VHDLId
-selId = AST.unsafeVHDLBasicId "sel"
+selId :: String
+selId = "select"
 
 
 -- | ltplus (function (<+) in original Haskell source) function identifier
-ltplusId :: AST.VHDLId
-ltplusId = AST.unsafeVHDLBasicId "ltplus"
+ltplusId :: String
+ltplusId = "<+"
 
 
 -- | plusplus (function (++) in original Haskell source) function identifier
-plusplusId :: AST.VHDLId
-plusplusId = AST.unsafeVHDLBasicId "plusplus"
+plusplusId :: String
+plusplusId = "++"
 
 
 -- | empty function identifier
-emptyId :: AST.VHDLId
-emptyId = AST.unsafeVHDLBasicId "empty"
+emptyId :: String
+emptyId = "empty"
 
 -- | plusgt (function (+>) in original Haskell source) function identifier
-plusgtId :: AST.VHDLId
-plusgtId = AST.unsafeVHDLBasicId "plusgt"
+plusgtId :: String
+plusgtId = "+>"
 
 -- | singleton function identifier
-singletonId :: AST.VHDLId
-singletonId = AST.unsafeVHDLBasicId "singleton"
+singletonId :: String
+singletonId = "singleton"
 
 -- | length function identifier
-lengthId :: AST.VHDLId
-lengthId = AST.unsafeVHDLBasicId "length"
+lengthId :: String
+lengthId = "length"
 
 
 -- | isnull (function null in original Haskell source) function identifier
-isnullId :: AST.VHDLId
-isnullId = AST.unsafeVHDLBasicId "isnull"
+isnullId :: String
+isnullId = "isnull"
 
 
 -- | replace function identifier
-replaceId :: AST.VHDLId
-replaceId = AST.unsafeVHDLBasicId "replace"
+replaceId :: String
+replaceId = "replace"
 
 
 -- | head function identifier
-headId :: AST.VHDLId
-headId = AST.unsafeVHDLBasicId "head"
+headId :: String
+headId = "head"
 
 
 -- | last function identifier
-lastId :: AST.VHDLId
-lastId = AST.unsafeVHDLBasicId "last"
+lastId :: String
+lastId = "last"
 
 
 -- | init function identifier
-initId :: AST.VHDLId
-initId = AST.unsafeVHDLBasicId "init"
+initId :: String
+initId = "init"
 
 
 -- | tail function identifier
-tailId :: AST.VHDLId
-tailId = AST.unsafeVHDLBasicId "tail"
+tailId :: String
+tailId = "tail"
 
 
 -- | take function identifier
-takeId :: AST.VHDLId
-takeId = AST.unsafeVHDLBasicId "take"
+takeId :: String
+takeId = "take"
 
 
 -- | drop function identifier
-dropId :: AST.VHDLId
-dropId = AST.unsafeVHDLBasicId "drop"
+dropId :: String
+dropId = "drop"
 
 -- | shiftl function identifier
-shiftlId :: AST.VHDLId
-shiftlId = AST.unsafeVHDLBasicId "shiftl"
+shiftlId :: String
+shiftlId = "shiftl"
 
 -- | shiftr function identifier
-shiftrId :: AST.VHDLId
-shiftrId = AST.unsafeVHDLBasicId "shiftr"
+shiftrId :: String
+shiftrId = "shiftr"
 
 -- | rotl function identifier
-rotlId :: AST.VHDLId
-rotlId = AST.unsafeVHDLBasicId "rotl"
+rotlId :: String
+rotlId = "rotl"
 
 -- | reverse function identifier
-rotrId :: AST.VHDLId
-rotrId = AST.unsafeVHDLBasicId "rotr"
+rotrId :: String
+rotrId = "rotr"
 
 -- | reverse function identifier
-reverseId :: AST.VHDLId
-reverseId = AST.unsafeVHDLBasicId "reverse"
+reverseId :: String
+reverseId = "reverse"
 
 -- | copy function identifier
-copyId :: AST.VHDLId
-copyId = AST.unsafeVHDLBasicId "copy"
+copyId :: String
+copyId = "copy"
+
+-- | map function identifier
+mapId :: String
+mapId = "map"
+
+-- | hwxor function identifier
+hwxorId :: String
+hwxorId = "hwxor"
+
+-- | hwor function identifier
+hworId :: String
+hworId = "hwor"
+
+-- | hwnot function identifier
+hwnotId :: String
+hwnotId = "hwnot"
+
+-- | hwand function identifier
+hwandId :: String
+hwandId = "hwand"
+
 
 ------------------
 -- VHDL type marks
