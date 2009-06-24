@@ -161,6 +161,10 @@ copyId = "copy"
 mapId :: String
 mapId = "map"
 
+-- | zipwith function identifier
+zipWithId :: String
+zipWithId = "zipWith"
+
 -- | hwxor function identifier
 hwxorId :: String
 hwxorId = "hwxor"
