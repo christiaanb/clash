@@ -59,7 +59,7 @@ type Builder = Either ([AST.Expr] -> AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, Builder )
 
-data VHDLSession = VHDLSession {
+data VHDLState = VHDLState {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
   -- | A map of Elem types -> VHDL Vector Id
@@ -74,10 +74,10 @@ data VHDLSession = VHDLSession {
 }
 
 -- Derive accessors
-$( Data.Accessor.Template.deriveAccessors ''VHDLSession )
+$( Data.Accessor.Template.deriveAccessors ''VHDLState )
 
 -- | The state containing a VHDL Session
-type VHDLState = State.State VHDLSession
+type VHDLSession = State.State VHDLState
 
 -- | A substate containing just the types
 type TypeState = State.State TypeMap

@@ -228,7 +228,7 @@ builtin_types =
   ]
 
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
-vhdl_ty :: Type.Type -> VHDLState AST.TypeMark
+vhdl_ty :: Type.Type -> VHDLSession AST.TypeMark
 vhdl_ty ty = do
   typemap <- getA vsTypes
   let builtin_ty = do -- See if this is a tycon and lookup its name
@@ -251,7 +251,7 @@ vhdl_ty ty = do
         Nothing -> error $ "Unsupported Haskell type: " ++ pprString ty
 
 -- Construct a new VHDL type for the given Haskell type.
-construct_vhdl_ty :: Type.Type -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+construct_vhdl_ty :: Type.Type -> VHDLSession (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 construct_vhdl_ty ty = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
@@ -271,7 +271,7 @@ construct_vhdl_ty ty = do
     Nothing -> return $ Nothing
 
 -- | Create VHDL type for a custom tycon
-mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLSession (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 mk_tycon_ty tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
@@ -305,7 +305,7 @@ mk_tycon_ty tycon args =
 mk_vector_ty ::
   Int -- ^ The length of the vector
   -> Type.Type -- ^ The Haskell element type of the Vector
-  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+  -> VHDLSession (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 
 mk_vector_ty len el_ty = do
   elem_types_map <- getA vsElemTypes
@@ -328,7 +328,7 @@ mk_vector_ty len el_ty = do
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
   -> Int -- ^ The maximum bound (> minimum bound)
-  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+  -> VHDLSession (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 mk_natural_ty min_bound max_bound = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
   let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
@@ -337,7 +337,7 @@ mk_natural_ty min_bound max_bound = do
 
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
-getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
+getFieldLabels :: Type.Type -> VHDLSession [AST.VHDLId]
 getFieldLabels ty = do
   -- Ensure that the type is generated (but throw away it's VHDLId)
   vhdl_ty ty

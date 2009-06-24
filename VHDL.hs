@@ -47,7 +47,7 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty Map.empty Map.empty globalNameTable
+    init_session = VHDLState Map.empty Map.empty Map.empty Map.empty globalNameTable
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
@@ -85,7 +85,7 @@ mkUseAll ss =
       
 createLibraryUnits ::
   [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
-  -> VHDLState [(AST.VHDLId, [AST.LibraryUnit])]
+  -> VHDLSession [(AST.VHDLId, [AST.LibraryUnit])]
 
 createLibraryUnits binds = do
   entities <- Monad.mapM createEntity binds
@@ -100,7 +100,7 @@ createLibraryUnits binds = do
 -- | Create an entity for a given function
 createEntity ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- | The function
-  -> VHDLState AST.EntityDec -- | The resulting entity
+  -> VHDLSession AST.EntityDec -- | The resulting entity
 
 createEntity (fname, expr) = do
       -- Strip off lambda's, these will be arguments
@@ -119,7 +119,7 @@ createEntity (fname, expr) = do
     mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
-      -> VHDLState VHDLSignalMapElement
+      -> VHDLSession VHDLSignalMapElement
     -- We only need the vsTypes element from the state
     mkMap = (\bndr ->
       let
@@ -181,7 +181,7 @@ mkEntityId hsfunc =
 -- | Create an architecture for a given function
 createArchitecture ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The function
-  -> VHDLState AST.ArchBody -- ^ The architecture for this function
+  -> VHDLSession AST.ArchBody -- ^ The architecture for this function
 
 createArchitecture (fname, expr) = do
   signaturemap <- getA vsSignatures
@@ -246,7 +246,7 @@ getSignalId info =
     (sigName info)
 -}
    
-mkSigDec :: CoreSyn.CoreBndr -> VHDLState (Maybe AST.SigDec)
+mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
     type_mark <- vhdl_ty $ Var.varType bndr
@@ -257,7 +257,7 @@ mkSigDec bndr =
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
-  -> VHDLState [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
+  -> VHDLSession [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
 
 
 -- Ignore Cast expressions, they should not longer have any meaning as long as
