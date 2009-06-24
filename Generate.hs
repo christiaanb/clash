@@ -74,7 +74,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
   , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]    
   , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]
-  , AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr]
+  , AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr]
   , AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet] 
   , AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr]
   ]
@@ -217,12 +217,9 @@ genUnconsVectorFuns elemTM vectorTM  =
     plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     emptySpec = AST.Function emptyId [] vectorTM
     emptyVar = 
-          AST.VarDec resId 
-              (AST.SubtypeIn vectorTM
-                (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
-                 [AST.ToRange (AST.PrimLit "0")
-                          (AST.PrimLit "-1")]))
-              Nothing
+          AST.ConstDec resId 
+              (AST.SubtypeIn vectorTM Nothing)
+              (Just $ AST.PrimLit "\"\"")
     emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
     singletonSpec = AST.Function singletonId [AST.IfaceVarDec aPar elemTM ] 
                                          vectorTM
