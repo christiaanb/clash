@@ -299,24 +299,21 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         Just (arg_count, builder) ->
           if length valargs == arg_count then
             case builder of
-              Left funBuilder ->
-                let
-                  sigs = map (varToVHDLExpr.exprToVar) valargs
-                  func = funBuilder sigs
-                  src_wform = AST.Wform [AST.WformElem func Nothing]
-                  dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
-                  assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-                in
-                  return [AST.CSSASm assign]
-              Right genBuilder ->
-                let
-                  sigs = map exprToVar valargs
-                  signature = Maybe.fromMaybe
-                    (error $ "Using function '" ++ (varToString (head sigs)) ++ "' without signature? This should not happen!") 
-                    (Map.lookup (head sigs) signatures)
-                  arg = tail sigs
-                  genSm = genBuilder signature (arg ++ [bndr])  
-                in return [AST.CSGSm genSm]
+              Left funBuilder -> do
+                let sigs = map (varToVHDLExpr.exprToVar) valargs
+                func <- funBuilder sigs
+                let src_wform = AST.Wform [AST.WformElem func Nothing]
+                let dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
+                let assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+                return [AST.CSSASm assign]
+              Right genBuilder -> do
+                let sigs = map exprToVar valargs
+                let signature = Maybe.fromMaybe
+                      (error $ "Using function '" ++ (varToString (head sigs)) ++ "' without signature? This should not happen!") 
+                      (Map.lookup (head sigs) signatures)
+                let arg = tail sigs
+                genSm <- genBuilder signature (arg ++ [bndr])  
+                return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f

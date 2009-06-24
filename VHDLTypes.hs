@@ -75,7 +75,7 @@ type VHDLSession = State.State VHDLState
 -- | A substate containing just the types
 type TypeState = State.State TypeMap
 
-type Builder = Either ([AST.Expr] -> AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm)
+type Builder = Either ([AST.Expr] -> VHDLSession AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> VHDLSession AST.GenerateSm)
 
 -- A map of a builtin function to VHDL function builder 
 type NameTable = Map.Map String (Int, Builder )
