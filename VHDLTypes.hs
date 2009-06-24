@@ -54,11 +54,6 @@ type TypeFunMap = Map.Map OrdType [AST.SubProgBody]
 -- A map of a Haskell function to a hardware signature
 type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 
-type Builder = Either ([AST.Expr] -> AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm)
-
--- A map of a builtin function to VHDL function builder 
-type NameTable = Map.Map String (Int, Builder )
-
 data VHDLState = VHDLState {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
@@ -68,9 +63,7 @@ data VHDLState = VHDLState {
   vsTypeFuns_   :: TypeFunMap,
   -- | A map of HsFunction -> hardware signature (entity name, port names,
   --   etc.)
-  vsSignatures_ :: SignatureMap,
-  -- | A map of Vector HsFunctions -> VHDL function call
-  vsNameTable_  :: NameTable
+  vsSignatures_ :: SignatureMap
 }
 
 -- Derive accessors
@@ -81,5 +74,10 @@ type VHDLSession = State.State VHDLState
 
 -- | A substate containing just the types
 type TypeState = State.State TypeMap
+
+type Builder = Either ([AST.Expr] -> AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm)
+
+-- A map of a builtin function to VHDL function builder 
+type NameTable = Map.Map String (Int, Builder )
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

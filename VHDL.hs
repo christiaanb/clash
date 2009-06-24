@@ -47,7 +47,7 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLState Map.empty Map.empty Map.empty Map.empty globalNameTable
+    init_session = VHDLState Map.empty Map.empty Map.empty Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
@@ -294,9 +294,8 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
     IdInfo.VanillaGlobal -> do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
-      funSignatures <- getA vsNameTable
       signatures <- getA vsSignatures
-      case (Map.lookup (varToString f) funSignatures) of
+      case (Map.lookup (varToString f) globalNameTable) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
             case builder of
