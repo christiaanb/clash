@@ -27,6 +27,7 @@ globalNameTable = mkGlobalNameTable
   , ("drop"           , (2, Left $ genExprFCall dropId                    ) )
   , ("+>"             , (2, Left $ genExprFCall plusgtId                  ) )
   , ("map"            , (2, Right $ genMapCall                            ) )
+  , ("zipWith"        , (3, Right $ genZipWithCall                        ) )
   , ("empty"          , (0, Left $ genExprFCall emptyId                   ) )
   , ("singleton"      , (1, Left $ genExprFCall singletonId               ) )
   , ("copy"           , (2, Left $ genExprFCall copyId                    ) )

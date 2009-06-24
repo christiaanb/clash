@@ -48,15 +48,43 @@ genMapCall entity [arg, res] = genSm
     genScheme   = AST.ForGn nPar range
     -- Get the entity name and port names
     entity_id   = ent_id entity
-    argport     = map (Monad.liftM fst) (ent_args entity)
+    argports   = map (Monad.liftM fst) (ent_args entity)
     resport     = (Monad.liftM fst) (ent_res entity)
     -- Assign the ports
-    inport      = mkAssocElemIndexed (head argport) (varToString arg) nPar
+    inport      = mkAssocElemIndexed (argports!!0) (varToString arg) nPar
     outport     = mkAssocElemIndexed resport (varToString res) nPar
     clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
     portassigns = Maybe.catMaybes [inport,outport,clk_port]
     -- Generate the portmap
     mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
+    compins     = mkComponentInst mapLabel entity_id portassigns
+    -- Return the generate functions
+    genSm       = AST.GenerateSm label genScheme [] [compins]
+    
+genZipWithCall ::
+  Entity
+  -> [CoreSyn.CoreBndr]
+  -> AST.GenerateSm
+genZipWithCall entity [arg1, arg2, res] = genSm
+  where
+    -- Setup the generate scheme
+    len         = (tfvec_len . Var.varType) res
+    label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
+    nPar        = AST.unsafeVHDLBasicId "n"
+    range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+    genScheme   = AST.ForGn nPar range
+    -- Get the entity name and port names
+    entity_id   = ent_id entity
+    argports    = map (Monad.liftM fst) (ent_args entity)
+    resport     = (Monad.liftM fst) (ent_res entity)
+    -- Assign the ports
+    inport1     = mkAssocElemIndexed (argports!!0) (varToString arg1) nPar
+    inport2     = mkAssocElemIndexed (argports!!1) (varToString arg2) nPar 
+    outport     = mkAssocElemIndexed resport (varToString res) nPar
+    clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+    portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+    -- Generate the portmap
+    mapLabel    = "zipWith" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
     genSm       = AST.GenerateSm label genScheme [] [compins]
