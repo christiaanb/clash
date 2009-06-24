@@ -18,14 +18,14 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 
 -- GHC API
 import CoreSyn
-import qualified Type
+--import qualified Type
 import qualified Name
 import qualified Var
 import qualified Id
 import qualified IdInfo
 import qualified TyCon
 import qualified DataCon
-import qualified CoreSubst
+--import qualified CoreSubst
 import qualified CoreUtils
 import Outputable ( showSDoc, ppr )
 
@@ -109,7 +109,7 @@ createEntity (fname, expr) = do
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       res' <- mkMap res
-      let vhdl_id = mkVHDLBasicId $ bndrToString fname ++ "_" ++ varToStringUniq fname
+      let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
       let ent_decl' = createEntityAST vhdl_id args' res'
       let AST.EntityDec entity_id _ = ent_decl' 
       let signature = Entity entity_id args' res'
@@ -127,7 +127,7 @@ createEntity (fname, expr) = do
         --  (error $ "Signal not found in the name map? This should not happen!")
         --  (lookup id sigmap)
         --  Assume the bndr has a valid VHDL id already
-        id = bndrToVHDLId bndr
+        id = varToVHDLId bndr
         ty = Var.varType bndr
       in
         if True -- isPortSigUse $ sigUse info
@@ -156,7 +156,7 @@ createEntityAST vhdl_id args res =
     -- Add a clk port if we have state
     clk_port = if True -- hasState hsfunc
       then
-        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logic_ty
+        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logicTM
       else
         Nothing
 
@@ -250,7 +250,7 @@ mkSigDec :: CoreSyn.CoreBndr -> VHDLState (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
     type_mark <- vhdl_ty $ Var.varType bndr
-    return $ Just (AST.SigDec (bndrToVHDLId bndr) type_mark Nothing)
+    return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
   else
     return Nothing
 
@@ -296,24 +296,24 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       -- functions.
       funSignatures <- getA vsNameTable
       signatures <- getA vsSignatures
-      case (Map.lookup (bndrToString f) funSignatures) of
+      case (Map.lookup (varToString f) funSignatures) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
             case builder of
               Left funBuilder ->
                 let
-                  sigs = map (varToVHDLExpr.varBndr) valargs
+                  sigs = map (varToVHDLExpr.exprToVar) valargs
                   func = funBuilder sigs
                   src_wform = AST.Wform [AST.WformElem func Nothing]
-                  dst_name = AST.NSimple (mkVHDLExtId (bndrToString bndr))
+                  dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
                   assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
                 in
                   return [AST.CSSASm assign]
               Right genBuilder ->
                 let
-                  sigs = map varBndr valargs
+                  sigs = map exprToVar valargs
                   signature = Maybe.fromMaybe
-                    (error $ "Using function '" ++ (bndrToString (head sigs)) ++ "' without signature? This should not happen!") 
+                    (error $ "Using function '" ++ (varToString (head sigs)) ++ "' without signature? This should not happen!") 
                     (Map.lookup (head sigs) signatures)
                   arg = tail sigs
                   genSm = genBuilder signature (arg ++ [bndr])  
@@ -327,17 +327,17 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
       -- have and which can be turned into a component instantiation.
       let  
         signature = Maybe.fromMaybe 
-          (error $ "Using function '" ++ (bndrToString f) ++ "' without signature? This should not happen!") 
+          (error $ "Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup f signatures)
         entity_id = ent_id signature
-        label = "comp_ins_" ++ bndrToString bndr
+        label = "comp_ins_" ++ varToString bndr
         -- Add a clk port if we have state
         --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
         clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
         --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
         portmaps = clk_port : mkAssocElems args bndr signature
         in
-          return [genComponentInst label entity_id portmaps]
+          return [mkComponentInst label entity_id portmaps]
     details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -- A single alt case must be a selector. This means thee scrutinee is a simple
@@ -371,178 +371,3 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
-
--- Finds the field labels for VHDL type generated for the given Core type,
--- which must result in a record type.
-getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
-getFieldLabels ty = do
-  -- Ensure that the type is generated (but throw away it's VHDLId)
-  vhdl_ty ty
-  -- Get the types map, lookup and unpack the VHDL TypeDef
-  types <- getA vsTypes
-  case Map.lookup (OrdType ty) types of
-    Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
-    _ -> error $ "VHDL.getFieldLabels Type not found or not a record type? This should not happen! Type: " ++ (show ty)
-
-{-
-mkConcSm sigs (UncondDef src dst) _ = do
-  src_expr <- vhdl_expr src
-  let src_wform = AST.Wform [AST.WformElem src_expr Nothing]
-  let dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
-  let assign    = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-  return $ AST.CSSASm assign
-  where
-    vhdl_expr (Left id) = return $ mkIdExpr sigs id
-    vhdl_expr (Right expr) =
-      case expr of
-        (EqLit id lit) ->
-          return $ (mkIdExpr sigs id) AST.:=: (AST.PrimLit lit)
-        (Literal lit Nothing) ->
-          return $ AST.PrimLit lit
-        (Literal lit (Just ty)) -> do
-          -- Create a cast expression, which is just a function call using the
-          -- type name as the function name.
-          let litexpr = AST.PrimLit lit
-          ty_id <- vhdl_ty ty
-          let ty_name = AST.NSimple ty_id
-          let args = [Nothing AST.:=>: (AST.ADExpr litexpr)] 
-          return $ AST.PrimFCall $ AST.FCall ty_name args
-        (Eq a b) ->
-         return $  (mkIdExpr sigs a) AST.:=: (mkIdExpr sigs b)
-
-mkConcSm sigs (CondDef cond true false dst) _ =
-  let
-    cond_expr  = mkIdExpr sigs cond
-    true_expr  = mkIdExpr sigs true
-    false_expr  = mkIdExpr sigs false
-    false_wform = AST.Wform [AST.WformElem false_expr Nothing]
-    true_wform = AST.Wform [AST.WformElem true_expr Nothing]
-    whenelse = AST.WhenElse true_wform cond_expr
-    dst_name  = AST.NSimple (getSignalId $ signalInfo sigs dst)
-    assign    = dst_name AST.:<==: (AST.ConWforms [whenelse] false_wform Nothing)
-  in
-    return $ AST.CSSASm assign
-
-| Turn a SignalId into a VHDL Expr
-mkIdExpr :: [(SignalId, SignalInfo)] -> SignalId -> AST.Expr
-mkIdExpr sigs id =
-  let src_name  = AST.NSimple (getSignalId $ signalInfo sigs id) in
-  AST.PrimName src_name
-
--- | Look up a signal in the signal name map
-lookupSigName :: [(SignalId, SignalInfo)] -> SignalId -> String
-lookupSigName sigs sig = name
-  where
-    info = Maybe.fromMaybe
-      (error $ "Unknown signal " ++ (show sig) ++ " used? This should not happen!")
-      (lookup sig sigs)
-    name = Maybe.fromMaybe
-      (error $ "Unnamed signal " ++ (show sig) ++ " used? This should not happen!")
-      (sigName info)
--}
-
--- Translate a Haskell type to a VHDL type
-vhdl_ty :: Type.Type -> VHDLState AST.TypeMark
-vhdl_ty ty = do
-  typemap <- getA vsTypes
-  let builtin_ty = do -- See if this is a tycon and lookup its name
-        (tycon, args) <- Type.splitTyConApp_maybe ty
-        let name = Name.getOccString (TyCon.tyConName tycon)
-        Map.lookup name builtin_types
-  -- If not a builtin type, try the custom types
-  let existing_ty = (fmap fst) $ Map.lookup (OrdType ty) typemap
-  case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
-    -- Found a type, return it
-    Just t -> return t
-    -- No type yet, try to construct it
-    Nothing -> do
-      newty_maybe <- (construct_vhdl_ty ty)
-      case newty_maybe of
-        Just (ty_id, ty_def) -> do
-          -- TODO: Check name uniqueness
-          modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
-          return ty_id
-        Nothing -> error $ "Unsupported Haskell type: " ++ (showSDoc $ ppr ty)
-
--- Construct a new VHDL type for the given Haskell type.
-construct_vhdl_ty :: Type.Type -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
-construct_vhdl_ty ty = do
-  case Type.splitTyConApp_maybe ty of
-    Just (tycon, args) -> do
-      let name = Name.getOccString (TyCon.tyConName tycon)
-      case name of
-        "TFVec" -> do
-          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty)
-          return $ Just $ (Arrow.second Right) res
-        -- "SizedWord" -> do
-        --   res <- mk_vector_ty (sized_word_len ty) ty
-        --   return $ Just $ (Arrow.second Left) res
-        "RangedWord" -> do 
-          res <- mk_natural_ty 0 (ranged_word_bound ty)
-          return $ Just $ (Arrow.second Right) res
-        -- Create a custom type from this tycon
-        otherwise -> mk_tycon_ty tycon args
-    Nothing -> return $ Nothing
-
--- | Create VHDL type for a custom tycon
-mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
-mk_tycon_ty tycon args =
-  case TyCon.tyConDataCons tycon of
-    -- Not an algebraic type
-    [] -> error $ "Only custom algebraic types are supported: " ++  (showSDoc $ ppr tycon)
-    [dc] -> do
-      let arg_tys = DataCon.dataConRepArgTys dc
-      -- TODO: CoreSubst docs say each Subs can be applied only once. Is this a
-      -- violation? Or does it only mean not to apply it again to the same
-      -- subject?
-      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
-      elem_tys <- mapM vhdl_ty real_arg_tys
-      let elems = zipWith AST.ElementDec recordlabels elem_tys
-      -- For a single construct datatype, build a record with one field for
-      -- each argument.
-      -- TODO: Add argument type ids to this, to ensure uniqueness
-      -- TODO: Special handling for tuples?
-      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
-      let ty_def = AST.TDR $ AST.RecordTypeDef elems
-      return $ Just (ty_id, Left ty_def)
-    dcs -> error $ "Only single constructor datatypes supported: " ++  (showSDoc $ ppr tycon)
-  where
-    -- Create a subst that instantiates all types passed to the tycon
-    -- TODO: I'm not 100% sure that this is the right way to do this. It seems
-    -- to work so far, though..
-    tyvars = TyCon.tyConTyVars tycon
-    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
-    
--- | Create a VHDL vector type
-mk_vector_ty ::
-  Int -- ^ The length of the vector
-  -> Type.Type -- ^ The Haskell element type of the Vector
-  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
-
-mk_vector_ty len el_ty = do
-  elem_types_map <- getA vsElemTypes
-  el_ty_tm <- vhdl_ty el_ty
-  let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
-  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
-  case existing_elem_ty of
-    Just t -> do
-      let ty_def = AST.SubtypeIn t (Just range)
-      return (ty_id, ty_def)
-    Nothing -> do
-      let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
-      let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
-      modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
-      modA vsTypeFuns (Map.insert (OrdType el_ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
-      let ty_def = AST.SubtypeIn vec_id (Just range)
-      return (ty_id, ty_def)
-
-mk_natural_ty ::
-  Int -- ^ The minimum bound (> 0)
-  -> Int -- ^ The maximum bound (> minimum bound)
-  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
-mk_natural_ty min_bound max_bound = do
-  let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
-  let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
-  let ty_def = AST.SubtypeIn naturalTM (Just range)
-  return (ty_id, ty_def)

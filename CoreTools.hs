@@ -142,3 +142,8 @@ is_applicable expr = is_fun expr || is_poly expr
 -- Does the given CoreExpr have any free type vars?
 has_free_tyvars :: CoreSyn.CoreExpr -> Bool
 has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
+
+-- Turns a Var CoreExpr into the Id inside it. Will of course only work for
+-- simple Var CoreExprs, not complexer ones.
+exprToVar :: CoreSyn.CoreExpr -> Var.Id
+exprToVar (CoreSyn.Var id) = id

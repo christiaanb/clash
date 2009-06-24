@@ -5,6 +5,9 @@ import qualified Maybe
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
+import qualified Control.Arrow as Arrow
+import qualified Data.Monoid as Monoid
+import Data.Accessor
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -16,11 +19,19 @@ import qualified OccName
 import qualified Var
 import qualified Id
 import qualified TyCon
+import qualified Type
 import qualified DataCon
+import qualified CoreSubst
 
 -- Local imports
 import VHDLTypes
 import CoreTools
+import Pretty
+import Constants
+
+-----------------------------------------------------------------------------
+-- Functions to generate concurrent statements
+-----------------------------------------------------------------------------
 
 -- Create an unconditional assignment statement
 mkUncondAssign ::
@@ -58,21 +69,11 @@ mkAssign dst cond false_expr =
       Nothing -> []
     false_wform = AST.Wform [AST.WformElem false_expr Nothing]
     dst_name  = case dst of
-      Left bndr -> AST.NSimple (bndrToVHDLId bndr)
+      Left bndr -> AST.NSimple (varToVHDLId bndr)
       Right name -> name
     assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
   in
     AST.CSSASm assign
-
--- Create a record field selector that selects the given label from the record
--- stored in the given binder.
-mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
-mkSelectedName bndr label =
-  let 
-    sel_prefix = AST.NSimple $ bndrToVHDLId bndr
-    sel_suffix = AST.SSimple $ label
-  in
-    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
 
 mkAssocElems :: 
   [CoreSyn.CoreExpr]            -- | The argument that are applied to function
@@ -91,7 +92,7 @@ mkAssocElems args res entity =
     -- Extract the id part from the (id, type) tuple
     ports     = map (Monad.liftM fst) (res_port : arg_ports)
     -- Translate signal numbers into names
-    sigs      = (bndrToString res : map (bndrToString.varBndr) args)
+    sigs      = (varToString res : map (varToString.exprToVar) args)
 
 -- | Create an VHDL port -> signal association
 mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
@@ -104,6 +105,19 @@ mkAssocElemIndexed (Just port) signal index = Just $ Just port AST.:=>: (AST.ADN
                       (AST.NSimple (mkVHDLExtId signal)) [AST.PrimName $ AST.NSimple index])))
 mkAssocElemIndexed Nothing _ _ = Nothing
 
+mkComponentInst ::
+  String -- ^ The portmap label
+  -> AST.VHDLId -- ^ The entity name
+  -> [AST.AssocElem] -- ^ The port assignments
+  -> AST.ConcSm
+mkComponentInst label entity_id portassigns = AST.CSISm compins
+  where
+    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portassigns)
+
+-----------------------------------------------------------------------------
+-- Functions to generate VHDL Exprs
+-----------------------------------------------------------------------------
+
 -- Turn a variable reference into a AST expression
 varToVHDLExpr :: Var.Var -> AST.Expr
 varToVHDLExpr var = 
@@ -112,7 +126,7 @@ varToVHDLExpr var =
     -- This is a dataconstructor.
     -- Not a datacon, just another signal. Perhaps we should check for
     -- local/global here as well?
-    Nothing -> AST.PrimName $ AST.NSimple $ bndrToVHDLId var
+    Nothing -> AST.PrimName $ AST.NSimple $ varToVHDLId var
 
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it
@@ -135,12 +149,31 @@ dataconToVHDLExpr dc = AST.PrimLit lit
       "Bit"      -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
       "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
 
--- Turns a Var CoreExpr into the Id inside it. Will of course only work for
--- simple Var CoreExprs, not complexer ones.
-varBndr :: CoreSyn.CoreExpr -> Var.Id
-varBndr (CoreSyn.Var id) = id
+-----------------------------------------------------------------------------
+-- Functions dealing with names, variables and ids
+-----------------------------------------------------------------------------
 
--- Shortcut for 
+-- Creates a VHDL Id from a binder
+varToVHDLId ::
+  CoreSyn.CoreBndr
+  -> AST.VHDLId
+varToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varName
+
+-- Extracts the binder name as a String
+varToString ::
+  CoreSyn.CoreBndr
+  -> String
+varToString = OccName.occNameString . Name.nameOccName . Var.varName
+
+-- Get the string version a Var's unique
+varToStringUniq :: Var.Var -> String
+varToStringUniq = show . Var.varUnique
+
+-- Extracts the string version of the name
+nameToString :: Name.Name -> String
+nameToString = OccName.occNameString . Name.nameOccName
+
+-- Shortcut for Basic VHDL Ids.
 -- Can only contain alphanumerics and underscores. The supplied string must be
 -- a valid basic id, otherwise an error value is returned. This function is
 -- not meant to be passed identifiers from a source file, use mkVHDLExtId for
@@ -172,65 +205,144 @@ mkVHDLExtId s =
     allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
     strip_invalid = filter (`elem` allowed)
 
--- Creates a VHDL Id from a binder
-bndrToVHDLId ::
-  CoreSyn.CoreBndr
-  -> AST.VHDLId
-bndrToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varName
+-- Create a record field selector that selects the given label from the record
+-- stored in the given binder.
+mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
+mkSelectedName bndr label =
+  let 
+    sel_prefix = AST.NSimple $ varToVHDLId bndr
+    sel_suffix = AST.SSimple $ label
+  in
+    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
 
--- Extracts the binder name as a String
-bndrToString ::
-  CoreSyn.CoreBndr
-  -> String
-bndrToString = OccName.occNameString . Name.nameOccName . Var.varName
+-----------------------------------------------------------------------------
+-- Functions dealing with VHDL types
+-----------------------------------------------------------------------------
 
--- Get the string version a Var's unique
-varToStringUniq :: Var.Var -> String
-varToStringUniq = show . Var.varUnique
-
--- Extracts the string version of the name
-nameToString :: Name.Name -> String
-nameToString = OccName.occNameString . Name.nameOccName
-
-recordlabels :: [AST.VHDLId]
-recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
-
-getVectorLen :: CoreSyn.CoreBndr -> Int
-getVectorLen bndr = len
-  where
-    ty = Var.varType bndr
-    len = tfvec_len ty
-    
-genComponentInst ::
-  String -- ^ The portmap label
-  -> AST.VHDLId -- ^ The entity name
-  -> [AST.AssocElem] -- ^ The port assignments
-  -> AST.ConcSm
-genComponentInst label entity_id portassigns = AST.CSISm compins
-  where
-    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portassigns)
-
--- | The VHDL Bit type
-bit_ty :: AST.TypeMark
-bit_ty = AST.unsafeVHDLBasicId "Bit"
-
--- | The VHDL Boolean type
-bool_ty :: AST.TypeMark
-bool_ty = AST.unsafeVHDLBasicId "Boolean"
-
--- | The VHDL std_logic
-std_logic_ty :: AST.TypeMark
-std_logic_ty = AST.unsafeVHDLBasicId "std_logic"
-  
+-- | Maps the string name (OccName) of a type to the corresponding VHDL type,
+-- for a few builtin types.
 builtin_types = 
   Map.fromList [
-    ("Bit", std_logic_ty),
-    ("Bool", bool_ty) -- TysWiredIn.boolTy
+    ("Bit", std_logicTM),
+    ("Bool", booleanTM) -- TysWiredIn.boolTy
   ]
 
-{- 
--- | Map a port specification of a builtin function to a VHDL Signal to put in
---   a VHDLSignalMap
-toVHDLSignalMapElement :: (String, AST.TypeMark) -> VHDLSignalMapElement
-toVHDLSignalMapElement (name, ty) = Just (mkVHDLBasicId name, ty)
--}
+-- Translate a Haskell type to a VHDL type, generating a new type if needed.
+vhdl_ty :: Type.Type -> VHDLState AST.TypeMark
+vhdl_ty ty = do
+  typemap <- getA vsTypes
+  let builtin_ty = do -- See if this is a tycon and lookup its name
+        (tycon, args) <- Type.splitTyConApp_maybe ty
+        let name = Name.getOccString (TyCon.tyConName tycon)
+        Map.lookup name builtin_types
+  -- If not a builtin type, try the custom types
+  let existing_ty = (fmap fst) $ Map.lookup (OrdType ty) typemap
+  case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
+    -- Found a type, return it
+    Just t -> return t
+    -- No type yet, try to construct it
+    Nothing -> do
+      newty_maybe <- (construct_vhdl_ty ty)
+      case newty_maybe of
+        Just (ty_id, ty_def) -> do
+          -- TODO: Check name uniqueness
+          modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          return ty_id
+        Nothing -> error $ "Unsupported Haskell type: " ++ pprString ty
+
+-- Construct a new VHDL type for the given Haskell type.
+construct_vhdl_ty :: Type.Type -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+construct_vhdl_ty ty = do
+  case Type.splitTyConApp_maybe ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "TFVec" -> do
+          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty)
+          return $ Just $ (Arrow.second Right) res
+        -- "SizedWord" -> do
+        --   res <- mk_vector_ty (sized_word_len ty) ty
+        --   return $ Just $ (Arrow.second Left) res
+        "RangedWord" -> do 
+          res <- mk_natural_ty 0 (ranged_word_bound ty)
+          return $ Just $ (Arrow.second Right) res
+        -- Create a custom type from this tycon
+        otherwise -> mk_tycon_ty tycon args
+    Nothing -> return $ Nothing
+
+-- | Create VHDL type for a custom tycon
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLState (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty tycon args =
+  case TyCon.tyConDataCons tycon of
+    -- Not an algebraic type
+    [] -> error $ "Only custom algebraic types are supported: " ++ pprString tycon
+    [dc] -> do
+      let arg_tys = DataCon.dataConRepArgTys dc
+      -- TODO: CoreSubst docs say each Subs can be applied only once. Is this a
+      -- violation? Or does it only mean not to apply it again to the same
+      -- subject?
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      elem_tys <- mapM vhdl_ty real_arg_tys
+      let elems = zipWith AST.ElementDec recordlabels elem_tys
+      -- For a single construct datatype, build a record with one field for
+      -- each argument.
+      -- TODO: Add argument type ids to this, to ensure uniqueness
+      -- TODO: Special handling for tuples?
+      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+      let ty_def = AST.TDR $ AST.RecordTypeDef elems
+      return $ Just (ty_id, Left ty_def)
+    dcs -> error $ "Only single constructor datatypes supported: " ++ pprString tycon
+  where
+    -- Create a subst that instantiates all types passed to the tycon
+    -- TODO: I'm not 100% sure that this is the right way to do this. It seems
+    -- to work so far, though..
+    tyvars = TyCon.tyConTyVars tycon
+    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
+    -- Generate a bunch of labels for fields of a record
+    recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
+
+-- | Create a VHDL vector type
+mk_vector_ty ::
+  Int -- ^ The length of the vector
+  -> Type.Type -- ^ The Haskell element type of the Vector
+  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+
+mk_vector_ty len el_ty = do
+  elem_types_map <- getA vsElemTypes
+  el_ty_tm <- vhdl_ty el_ty
+  let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
+  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
+  case existing_elem_ty of
+    Just t -> do
+      let ty_def = AST.SubtypeIn t (Just range)
+      return (ty_id, ty_def)
+    Nothing -> do
+      let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
+      let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
+      modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
+      --modA vsTypeFuns (Map.insert (OrdType el_ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
+      let ty_def = AST.SubtypeIn vec_id (Just range)
+      return (ty_id, ty_def)
+
+mk_natural_ty ::
+  Int -- ^ The minimum bound (> 0)
+  -> Int -- ^ The maximum bound (> minimum bound)
+  -> VHDLState (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+mk_natural_ty min_bound max_bound = do
+  let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
+  let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
+  let ty_def = AST.SubtypeIn naturalTM (Just range)
+  return (ty_id, ty_def)
+
+-- Finds the field labels for VHDL type generated for the given Core type,
+-- which must result in a record type.
+getFieldLabels :: Type.Type -> VHDLState [AST.VHDLId]
+getFieldLabels ty = do
+  -- Ensure that the type is generated (but throw away it's VHDLId)
+  vhdl_ty ty
+  -- Get the types map, lookup and unpack the VHDL TypeDef
+  types <- getA vsTypes
+  case Map.lookup (OrdType ty) types of
+    Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
+    _ -> error $ "VHDL.getFieldLabels Type not found or not a record type? This should not happen! Type: " ++ (show ty)

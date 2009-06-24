@@ -41,8 +41,8 @@ genMapCall ::
 genMapCall entity [arg, res] = genSm
   where
     -- Setup the generate scheme
-    len         = getVectorLen res
-    label       = mkVHDLExtId ("mapVector" ++ (bndrToString res))
+    len         = (tfvec_len . Var.varType) res
+    label       = mkVHDLExtId ("mapVector" ++ (varToString res))
     nPar        = AST.unsafeVHDLBasicId "n"
     range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
     genScheme   = AST.ForGn nPar range
@@ -51,13 +51,13 @@ genMapCall entity [arg, res] = genSm
     argport     = map (Monad.liftM fst) (ent_args entity)
     resport     = (Monad.liftM fst) (ent_res entity)
     -- Assign the ports
-    inport      = mkAssocElemIndexed (head argport) (bndrToString arg) nPar
-    outport     = mkAssocElemIndexed resport (bndrToString res) nPar
+    inport      = mkAssocElemIndexed (head argport) (varToString arg) nPar
+    outport     = mkAssocElemIndexed resport (varToString res) nPar
     clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
     portassigns = Maybe.catMaybes [inport,outport,clk_port]
     -- Generate the portmap
     mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
-    compins     = genComponentInst mapLabel entity_id portassigns
+    compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
     genSm       = AST.GenerateSm label genScheme [] [compins]
 

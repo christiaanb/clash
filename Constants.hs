@@ -161,6 +161,10 @@ copyId = AST.unsafeVHDLBasicId "copy"
 -- VHDL type marks
 ------------------
 
+-- | The Bit type mark
+bitTM :: AST.TypeMark
+bitTM = AST.unsafeVHDLBasicId "Bit"
+
 -- | Stardard logic type mark
 std_logicTM :: AST.TypeMark
 std_logicTM = AST.unsafeVHDLBasicId "std_logic"
