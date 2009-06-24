@@ -50,7 +50,7 @@ createDesignFiles binds =
     init_session = VHDLState Map.empty Map.empty Map.empty Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
-    tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
+    tyfun_decls = map snd $ Map.elems (final_session ^.vsTypeFuns)
     ty_decls = map mktydecl $ Map.elems (final_session ^. vsTypes)
     vec_decls = map (\(v_id, v_def) -> AST.PDITD $ AST.TypeDec v_id v_def) (Map.elems (final_session ^. vsElemTypes))
     tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
@@ -66,9 +66,9 @@ createDesignFiles binds =
       : (mkUseAll ["work"]
       : ieee_context)
     type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ vec_decls ++ ty_decls ++ subProgSpecs)
-    type_package_body = AST.LUPackageBody $ AST.PackageBody typesId (concat tyfun_decls)
-    subProgSpecs = concat (map subProgSpec tyfun_decls)
-    subProgSpec = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec)
+    type_package_body = AST.LUPackageBody $ AST.PackageBody typesId tyfun_decls
+    subProgSpecs = map subProgSpec tyfun_decls
+    subProgSpec = \(AST.SubProgBody spec _ _) -> AST.PDISS spec
     mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
     mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
     mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def
@@ -301,7 +301,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
             case builder of
               Left funBuilder -> do
                 let sigs = map (varToVHDLExpr.exprToVar) valargs
-                func <- funBuilder sigs
+                func <- funBuilder bndr sigs
                 let src_wform = AST.Wform [AST.WformElem func Nothing]
                 let dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
                 let assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)

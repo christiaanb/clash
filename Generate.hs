@@ -2,13 +2,16 @@ module Generate where
 
 -- Standard modules
 import qualified Control.Monad as Monad
+import qualified Data.Map as Map
 import qualified Maybe
+import Data.Accessor
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 -- GHC API
 import CoreSyn
+import Type
 import qualified Var
 
 -- Local imports
@@ -19,18 +22,20 @@ import CoreTools
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
-genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> [AST.Expr] -> VHDLSession AST.Expr
-genExprOp2 op [arg1, arg2] = return $ op arg1 arg2
+genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genExprOp2 op res [arg1, arg2] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
-genExprOp1 :: (AST.Expr -> AST.Expr) -> [AST.Expr] -> VHDLSession AST.Expr
-genExprOp1 op [arg] = return $ op arg
+genExprOp1 :: (AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genExprOp1 op res [arg] = return $ op arg
 
--- | Generate a function call from the Function Name and a list of expressions
---   (its arguments)
-genExprFCall :: AST.VHDLId -> [AST.Expr] -> VHDLSession AST.Expr
-genExprFCall fName args = 
-   return $ AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
+-- | Generate a function call from the destination binder, function name and a
+-- list of expressions (its arguments)
+genExprFCall :: String -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genExprFCall fname res args = do
+  let el_ty = (tfvec_elem . Var.varType) res
+  id <- vectorFunId el_ty fname
+  return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 
 -- | Generate a generate statement for the builtin function "map"
@@ -89,22 +94,45 @@ genZipWithCall entity [arg1, arg2, res] = return $ genSm
     -- Return the generate functions
     genSm       = AST.GenerateSm label genScheme [] [compins]
 
+-- Returns the VHDLId of the vector function with the given name for the given
+-- element type. Generates -- this function if needed.
+vectorFunId :: Type.Type -> String -> VHDLSession AST.VHDLId
+vectorFunId el_ty fname = do
+  elemTM <- vhdl_ty el_ty
+  -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
+  -- the VHDLState or something.
+  let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
+  typefuns <- getA vsTypeFuns
+  case Map.lookup (OrdType el_ty, fname) typefuns of
+    -- Function already generated, just return it
+    Just (id, _) -> return id
+    -- Function not generated yet, generate it
+    Nothing -> do
+      let functions = genUnconsVectorFuns elemTM vectorTM
+      case lookup fname functions of
+        Just body -> do
+          modA vsTypeFuns $ Map.insert (OrdType el_ty, fname) (function_id, body)
+          return function_id
+        Nothing -> error $ "I don't know how to generate vector function " ++ fname
+  where
+    function_id = mkVHDLExtId fname
+
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
-                    -> [AST.SubProgBody]
+                    -> [(String, AST.SubProgBody)]
 genUnconsVectorFuns elemTM vectorTM  = 
-  [ AST.SubProgBody exSpec      []                  [exExpr]                    
-  , AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet]   
-  , AST.SubProgBody headSpec    []                  [headExpr]                  
-  , AST.SubProgBody lastSpec    []                  [lastExpr]                  
-  , AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet]         
-  , AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet]         
-  , AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet]         
-  , AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet]    
-  , AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet]
-  , AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr]
-  , AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet] 
-  , AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr]
+  [ (exId, AST.SubProgBody exSpec      []                  [exExpr])
+  , (replaceId, AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet])
+  , (headId, AST.SubProgBody headSpec    []                  [headExpr])
+  , (lastId, AST.SubProgBody lastSpec    []                  [lastExpr])
+  , (initId, AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet])
+  , (tailId, AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet])
+  , (takeId, AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet])
+  , (dropId, AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet])
+  , (plusgtId, AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet])
+  , (emptyId, AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr])
+  , (singletonId, AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet])
+  , (copyId, AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr])
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -114,12 +142,12 @@ genUnconsVectorFuns elemTM vectorTM  =
     iPar    = iId
     aPar    = AST.unsafeVHDLBasicId "a"
     resId   = AST.unsafeVHDLBasicId "res"
-    exSpec = AST.Function exId [AST.IfaceVarDec vecPar vectorTM,
+    exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
                                AST.IfaceVarDec ixPar  naturalTM] elemTM
     exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed 
               (AST.IndexedName (AST.NSimple vecPar) [AST.PrimName $ 
                 AST.NSimple ixPar]))
-    replaceSpec = AST.Function replaceId  [ AST.IfaceVarDec vecPar vectorTM
+    replaceSpec = AST.Function (mkVHDLExtId replaceId)  [ AST.IfaceVarDec vecPar vectorTM
                                           , AST.IfaceVarDec iPar   naturalTM
                                           , AST.IfaceVarDec aPar   elemTM
                                           ] vectorTM 
@@ -130,7 +158,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "1"))   ]))
                 Nothing
        --  res AST.:= vec(0 to i-1) & a & vec(i+1 to length'vec-1)
@@ -139,25 +167,25 @@ genUnconsVectorFuns elemTM vectorTM  =
             AST.PrimName (AST.NSimple aPar) AST.:&: 
              vecSlice (AST.PrimName (AST.NSimple iPar) AST.:+: AST.PrimLit "1")
                       ((AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) lengthId Nothing)) 
+                                AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing)) 
                                                               AST.:-: AST.PrimLit "1"))
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     vecSlice init last =  AST.PrimName (AST.NSlice 
                                         (AST.SliceName 
                                               (AST.NSimple vecPar) 
                                               (AST.ToRange init last)))
-    headSpec = AST.Function headId [AST.IfaceVarDec vecPar vectorTM] elemTM
+    headSpec = AST.Function (mkVHDLExtId headId) [AST.IfaceVarDec vecPar vectorTM] elemTM
        -- return vec(0);
     headExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
                     (AST.NSimple vecPar) [AST.PrimLit "0"])))
-    lastSpec = AST.Function lastId [AST.IfaceVarDec vecPar vectorTM] elemTM
+    lastSpec = AST.Function (mkVHDLExtId lastId) [AST.IfaceVarDec vecPar vectorTM] elemTM
        -- return vec(vec'length-1);
     lastExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
                     (AST.NSimple vecPar) 
                     [AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) lengthId Nothing) 
+                                AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"])))
-    initSpec = AST.Function initId [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    initSpec = AST.Function (mkVHDLExtId initId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
        -- variable res : fsvec_x (0 to vec'length-2);
     initVar = 
          AST.VarDec resId 
@@ -165,17 +193,17 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "2"))   ]))
                 Nothing
        -- resAST.:= vec(0 to vec'length-2)
     initExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimLit "0") 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) lengthId Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "2"))
     initRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    tailSpec = AST.Function tailId [AST.IfaceVarDec vecPar vectorTM] vectorTM
+    tailSpec = AST.Function (mkVHDLExtId tailId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
        -- variable res : fsvec_x (0 to vec'length-2); 
     tailVar = 
          AST.VarDec resId 
@@ -183,17 +211,17 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "2"))   ]))
                 Nothing       
        -- res AST.:= vec(1 to vec'length-1)
     tailExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimLit "1") 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) lengthId Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     tailRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    takeSpec = AST.Function takeId [AST.IfaceVarDec nPar   naturalTM,
+    takeSpec = AST.Function (mkVHDLExtId takeId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec vecPar vectorTM ] vectorTM
        -- variable res : fsvec_x (0 to n-1);
     takeVar = 
@@ -209,7 +237,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                     (vecSlice (AST.PrimLit "1") 
                               (AST.PrimName (AST.NSimple $ nPar) AST.:-: AST.PrimLit "1"))
     takeRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    dropSpec = AST.Function dropId [AST.IfaceVarDec nPar   naturalTM,
+    dropSpec = AST.Function (mkVHDLExtId dropId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec vecPar vectorTM ] vectorTM 
        -- variable res : fsvec_x (0 to vec'length-n-1);
     dropVar = 
@@ -218,17 +246,17 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) lengthId Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
                                (AST.PrimName $ AST.NSimple nPar)AST.:-: (AST.PrimLit "1")) ]))
                Nothing
        -- res AST.:= vec(n to vec'length-1)
     dropExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimName $ AST.NSimple nPar) 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) lengthId Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     dropRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    plusgtSpec = AST.Function plusgtId [AST.IfaceVarDec aPar   elemTM,
+    plusgtSpec = AST.Function (mkVHDLExtId plusgtId) [AST.IfaceVarDec aPar   elemTM,
                                        AST.IfaceVarDec vecPar vectorTM] vectorTM 
     -- variable res : fsvec_x (0 to vec'length);
     plusgtVar = 
@@ -237,19 +265,19 @@ genUnconsVectorFuns elemTM vectorTM  =
                (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                 [AST.ToRange (AST.PrimLit "0")
                         (AST.PrimName (AST.NAttribute $ 
-                          AST.AttribName (AST.NSimple vecPar) lengthId Nothing))]))
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing))]))
              Nothing
     plusgtExpr = AST.NSimple resId AST.:= 
                    ((AST.PrimName $ AST.NSimple aPar) AST.:&: 
                     (AST.PrimName $ AST.NSimple vecPar))
     plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    emptySpec = AST.Function emptyId [] vectorTM
+    emptySpec = AST.Function (mkVHDLExtId emptyId) [] vectorTM
     emptyVar = 
           AST.ConstDec resId 
               (AST.SubtypeIn vectorTM Nothing)
               (Just $ AST.PrimLit "\"\"")
     emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
-    singletonSpec = AST.Function singletonId [AST.IfaceVarDec aPar elemTM ] 
+    singletonSpec = AST.Function (mkVHDLExtId singletonId) [AST.IfaceVarDec aPar elemTM ] 
                                          vectorTM
     -- variable res : fsvec_x (0 to 0) := (others => a);
     singletonVar = 
@@ -260,7 +288,7 @@ genUnconsVectorFuns elemTM vectorTM  =
              (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
                                           (AST.PrimName $ AST.NSimple aPar)])
     singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    copySpec = AST.Function copyId [AST.IfaceVarDec nPar   naturalTM,
+    copySpec = AST.Function (mkVHDLExtId copyId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec aPar   elemTM   ] vectorTM 
     -- variable res : fsvec_x (0 to n-1) := (others => a);
     copyVar = 
