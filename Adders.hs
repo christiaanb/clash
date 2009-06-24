@@ -172,8 +172,10 @@ highordtest = \x ->
              in
                 \c d -> op' d c
 
-functiontest :: TFVec D4 Bit -> TFVec D5 Bit -> RangedWord D3 -> RangedWord D4 -> (Bit, Bit)
-functiontest = \v1 v2 i1 i2 -> let r1 = v1!i1 ; r2 = v2!i2 in (r1,r2)
+xand a b = hwand a b
+
+functiontest :: TFVec D4 Bit -> Bit -> Bit
+functiontest = \v s -> let r = foldl xand s v in r
 
 xhwnot x = hwnot x
 

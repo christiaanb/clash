@@ -10,7 +10,7 @@ import Data.RangedWord
 
 constant :: e -> Op D4 e
 constant e a b =
-  e +> (e +> (e +> singleton e))
+  e +> (e +> (e +> (e +> empty)))
 
 inv = hwnot
 

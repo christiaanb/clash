@@ -165,6 +165,9 @@ mapId = "map"
 zipWithId :: String
 zipWithId = "zipWith"
 
+foldlId :: String
+foldlId = "foldl"
+
 -- | hwxor function identifier
 hwxorId :: String
 hwxorId = "hwxor"

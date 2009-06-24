@@ -313,7 +313,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
                       (Map.lookup (head sigs) signatures)
                 let arg = tail sigs
                 genSm <- genBuilder signature (arg ++ [bndr])  
-                return [AST.CSGSm genSm]
+                return [genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f

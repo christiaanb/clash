@@ -42,7 +42,7 @@ genExprFCall fname res args = do
 genMapCall :: 
   Entity -- | The entity to map
   -> [CoreSyn.CoreBndr] -- | The vectors
-  -> VHDLSession AST.GenerateSm -- | The resulting generate statement
+  -> VHDLSession AST.ConcSm -- | The resulting generate statement
 genMapCall entity [arg, res] = return $ genSm
   where
     -- Setup the generate scheme
@@ -64,12 +64,12 @@ genMapCall entity [arg, res] = return $ genSm
     mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
-    genSm       = AST.GenerateSm label genScheme [] [compins]
+    genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
     
 genZipWithCall ::
   Entity
   -> [CoreSyn.CoreBndr]
-  -> VHDLSession AST.GenerateSm
+  -> VHDLSession AST.ConcSm
 genZipWithCall entity [arg1, arg2, res] = return $ genSm
   where
     -- Setup the generate scheme
@@ -92,7 +92,102 @@ genZipWithCall entity [arg1, arg2, res] = return $ genSm
     mapLabel    = "zipWith" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
-    genSm       = AST.GenerateSm label genScheme [] [compins]
+    genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
+
+genFoldlCall ::
+  Entity
+  -> [CoreSyn.CoreBndr]
+  -> VHDLSession AST.ConcSm
+genFoldlCall entity [startVal, inVec, resVal] = do
+  let (vec, _) = splitAppTy (Var.varType inVec)
+  let vecty = Type.mkAppTy vec (Var.varType startVal)
+  vecType <- vhdl_ty vecty
+  -- Setup the generate scheme
+  let  len         = (tfvec_len . Var.varType) inVec
+  let  genlabel       = mkVHDLExtId ("foldlVector" ++ (varToString inVec))
+  let  blockLabel  = mkVHDLExtId ("foldlVector" ++ (varToString startVal))
+  let  nPar        = AST.unsafeVHDLBasicId "n"
+  let  range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+  let  genScheme   = AST.ForGn nPar range
+  -- Make the intermediate vector
+  let  tmpVec      = AST.BDISD $ AST.SigDec (mkVHDLExtId "tmp") vecType Nothing
+    -- Return the generate functions
+  let genSm       = AST.GenerateSm genlabel genScheme []  [ AST.CSGSm (genFirstCell entity [startVal, inVec, resVal])
+                                                          , AST.CSGSm (genOtherCell entity [startVal, inVec, resVal])
+                                                          , AST.CSGSm (genLastCell entity [startVal, inVec, resVal])
+                                                          ]
+  return $ AST.CSBSm $ AST.BlockSm blockLabel [] (AST.PMapAspect []) [tmpVec] [AST.CSGSm genSm]
+  where
+    genFirstCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm 
+    genFirstCell entity [startVal, inVec, resVal] = cellGn
+      where
+        cellLabel    = mkVHDLExtId "firstcell"
+        cellGenScheme = AST.IfGn ((AST.PrimName $ AST.NSimple nPar)  AST.:=: (AST.PrimLit "0"))
+        nPar        = AST.unsafeVHDLBasicId "n"
+        -- Get the entity name and port names
+        entity_id   = ent_id entity
+        argports    = map (Monad.liftM fst) (ent_args entity)
+        resport     = (Monad.liftM fst) (ent_res entity)
+        -- Assign the ports
+        inport1     = mkAssocElem (argports!!0) (varToString startVal)
+        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
+        outport     = mkAssocElemIndexed resport "tmp" nPar
+        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        -- Generate the portmap
+        mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
+        compins     = mkComponentInst mapLabel entity_id portassigns
+        -- Return the generate functions
+        cellGn       = AST.GenerateSm cellLabel cellGenScheme [] [compins]
+    genOtherCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm
+    genOtherCell entity [startVal, inVec, resVal] = cellGn
+      where
+        len         = (tfvec_len . Var.varType) inVec
+        cellLabel    = mkVHDLExtId "othercell"
+        cellGenScheme = AST.IfGn $ AST.And ((AST.PrimName $ AST.NSimple nPar)  AST.:>: (AST.PrimLit "0"))
+                                ((AST.PrimName $ AST.NSimple nPar)  AST.:<: (AST.PrimLit $ show (len-1)))
+        nPar        = AST.unsafeVHDLBasicId "n"
+        -- Get the entity name and port names
+        entity_id   = ent_id entity
+        argports    = map (Monad.liftM fst) (ent_args entity)
+        resport     = (Monad.liftM fst) (ent_res entity)
+        -- Assign the ports
+        inport1     = mkAssocElemIndexed (argports!!0) "tmp" (AST.unsafeVHDLBasicId "n-1")
+        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
+        outport     = mkAssocElemIndexed resport "tmp" nPar
+        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        -- Generate the portmap
+        mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
+        compins     = mkComponentInst mapLabel entity_id portassigns
+        -- Return the generate functions
+        cellGn      = AST.GenerateSm cellLabel cellGenScheme [] [compins]
+    genLastCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm
+    genLastCell entity [startVal, inVec, resVal] = cellGn
+      where
+        len         = (tfvec_len . Var.varType) inVec
+        cellLabel    = mkVHDLExtId "lastCell"
+        cellGenScheme = AST.IfGn ((AST.PrimName $ AST.NSimple nPar)  AST.:=: (AST.PrimLit $ show (len-1)))
+        nPar        = AST.unsafeVHDLBasicId "n"
+        -- Get the entity name and port names
+        entity_id   = ent_id entity
+        argports    = map (Monad.liftM fst) (ent_args entity)
+        resport     = (Monad.liftM fst) (ent_res entity)
+        -- Assign the ports
+        inport1     = mkAssocElemIndexed (argports!!0) "tmp" (AST.unsafeVHDLBasicId "n-1")
+        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
+        outport     = mkAssocElemIndexed resport "tmp" nPar
+        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        -- Generate the portmap
+        mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
+        compins     = mkComponentInst mapLabel entity_id portassigns
+        -- Generate the output assignment
+        assign      = mkUncondAssign (Left resVal) (AST.PrimName (AST.NIndexed (AST.IndexedName 
+                              (AST.NSimple (mkVHDLExtId "tmp")) [AST.PrimLit $ show (len-1)])))
+        -- Return the generate functions
+        cellGn      = AST.GenerateSm cellLabel cellGenScheme [] [compins,assign]
+
 
 -- Returns the VHDLId of the vector function with the given name for the given
 -- element type. Generates -- this function if needed.
@@ -158,7 +253,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "1"))   ]))
                 Nothing
        --  res AST.:= vec(0 to i-1) & a & vec(i+1 to length'vec-1)
@@ -167,7 +262,7 @@ genUnconsVectorFuns elemTM vectorTM  =
             AST.PrimName (AST.NSimple aPar) AST.:&: 
              vecSlice (AST.PrimName (AST.NSimple iPar) AST.:+: AST.PrimLit "1")
                       ((AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing)) 
+                                AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing)) 
                                                               AST.:-: AST.PrimLit "1"))
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     vecSlice init last =  AST.PrimName (AST.NSlice 
@@ -183,7 +278,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     lastExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
                     (AST.NSimple vecPar) 
                     [AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
+                                AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"])))
     initSpec = AST.Function (mkVHDLExtId initId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
        -- variable res : fsvec_x (0 to vec'length-2);
@@ -193,14 +288,14 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "2"))   ]))
                 Nothing
        -- resAST.:= vec(0 to vec'length-2)
     initExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimLit "0") 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "2"))
     initRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     tailSpec = AST.Function (mkVHDLExtId tailId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
@@ -211,14 +306,14 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "2"))   ]))
                 Nothing       
        -- res AST.:= vec(1 to vec'length-1)
     tailExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimLit "1") 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     tailRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     takeSpec = AST.Function (mkVHDLExtId takeId) [AST.IfaceVarDec nPar   naturalTM,
@@ -246,14 +341,14 @@ genUnconsVectorFuns elemTM vectorTM  =
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
                             (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) AST.:-:
+                              AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
                                (AST.PrimName $ AST.NSimple nPar)AST.:-: (AST.PrimLit "1")) ]))
                Nothing
        -- res AST.:= vec(n to vec'length-1)
     dropExpr = AST.NSimple resId AST.:= (vecSlice 
                                (AST.PrimName $ AST.NSimple nPar) 
                                (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing) 
+                                  AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     dropRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     plusgtSpec = AST.Function (mkVHDLExtId plusgtId) [AST.IfaceVarDec aPar   elemTM,
@@ -265,7 +360,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                 [AST.ToRange (AST.PrimLit "0")
                         (AST.PrimName (AST.NAttribute $ 
-                          AST.AttribName (AST.NSimple vecPar) (mkVHDLExtId lengthId) Nothing))]))
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing))]))
              Nothing
     plusgtExpr = AST.NSimple resId AST.:= 
                    ((AST.PrimName $ AST.NSimple aPar) AST.:&: 
