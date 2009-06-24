@@ -19,26 +19,26 @@ import CoreTools
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
-genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
-genExprOp2 op [arg1, arg2] = op arg1 arg2
+genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> [AST.Expr] -> VHDLSession AST.Expr
+genExprOp2 op [arg1, arg2] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
-genExprOp1 :: (AST.Expr -> AST.Expr) -> [AST.Expr] -> AST.Expr
-genExprOp1 op [arg] = op arg
+genExprOp1 :: (AST.Expr -> AST.Expr) -> [AST.Expr] -> VHDLSession AST.Expr
+genExprOp1 op [arg] = return $ op arg
 
 -- | Generate a function call from the Function Name and a list of expressions
 --   (its arguments)
-genExprFCall :: AST.VHDLId -> [AST.Expr] -> AST.Expr
+genExprFCall :: AST.VHDLId -> [AST.Expr] -> VHDLSession AST.Expr
 genExprFCall fName args = 
-   AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
+   return $ AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 
 -- | Generate a generate statement for the builtin function "map"
 genMapCall :: 
   Entity -- | The entity to map
   -> [CoreSyn.CoreBndr] -- | The vectors
-  -> AST.GenerateSm -- | The resulting generate statement
-genMapCall entity [arg, res] = genSm
+  -> VHDLSession AST.GenerateSm -- | The resulting generate statement
+genMapCall entity [arg, res] = return $ genSm
   where
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res

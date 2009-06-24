@@ -47,7 +47,7 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLSession Map.empty Map.empty Map.empty Map.empty globalNameTable
+    init_session = VHDLState Map.empty Map.empty Map.empty Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = Map.elems (final_session ^.vsTypeFuns)
@@ -85,7 +85,7 @@ mkUseAll ss =
       
 createLibraryUnits ::
   [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
-  -> VHDLState [(AST.VHDLId, [AST.LibraryUnit])]
+  -> VHDLSession [(AST.VHDLId, [AST.LibraryUnit])]
 
 createLibraryUnits binds = do
   entities <- Monad.mapM createEntity binds
@@ -100,7 +100,7 @@ createLibraryUnits binds = do
 -- | Create an entity for a given function
 createEntity ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- | The function
-  -> VHDLState AST.EntityDec -- | The resulting entity
+  -> VHDLSession AST.EntityDec -- | The resulting entity
 
 createEntity (fname, expr) = do
       -- Strip off lambda's, these will be arguments
@@ -119,7 +119,7 @@ createEntity (fname, expr) = do
     mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
-      -> VHDLState VHDLSignalMapElement
+      -> VHDLSession VHDLSignalMapElement
     -- We only need the vsTypes element from the state
     mkMap = (\bndr ->
       let
@@ -181,7 +181,7 @@ mkEntityId hsfunc =
 -- | Create an architecture for a given function
 createArchitecture ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The function
-  -> VHDLState AST.ArchBody -- ^ The architecture for this function
+  -> VHDLSession AST.ArchBody -- ^ The architecture for this function
 
 createArchitecture (fname, expr) = do
   signaturemap <- getA vsSignatures
@@ -246,7 +246,7 @@ getSignalId info =
     (sigName info)
 -}
    
-mkSigDec :: CoreSyn.CoreBndr -> VHDLState (Maybe AST.SigDec)
+mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
     type_mark <- vhdl_ty $ Var.varType bndr
@@ -257,7 +257,7 @@ mkSigDec bndr =
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
-  -> VHDLState [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
+  -> VHDLSession [AST.ConcSm] -- ^ The corresponding VHDL component instantiations.
 
 
 -- Ignore Cast expressions, they should not longer have any meaning as long as
@@ -294,30 +294,26 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
     IdInfo.VanillaGlobal -> do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions.
-      funSignatures <- getA vsNameTable
       signatures <- getA vsSignatures
-      case (Map.lookup (varToString f) funSignatures) of
+      case (Map.lookup (varToString f) globalNameTable) of
         Just (arg_count, builder) ->
           if length valargs == arg_count then
             case builder of
-              Left funBuilder ->
-                let
-                  sigs = map (varToVHDLExpr.exprToVar) valargs
-                  func = funBuilder sigs
-                  src_wform = AST.Wform [AST.WformElem func Nothing]
-                  dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
-                  assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
-                in
-                  return [AST.CSSASm assign]
-              Right genBuilder ->
-                let
-                  sigs = map exprToVar valargs
-                  signature = Maybe.fromMaybe
-                    (error $ "Using function '" ++ (varToString (head sigs)) ++ "' without signature? This should not happen!") 
-                    (Map.lookup (head sigs) signatures)
-                  arg = tail sigs
-                  genSm = genBuilder signature (arg ++ [bndr])  
-                in return [AST.CSGSm genSm]
+              Left funBuilder -> do
+                let sigs = map (varToVHDLExpr.exprToVar) valargs
+                func <- funBuilder sigs
+                let src_wform = AST.Wform [AST.WformElem func Nothing]
+                let dst_name = AST.NSimple (mkVHDLExtId (varToString bndr))
+                let assign = dst_name AST.:<==: (AST.ConWforms [] src_wform Nothing)
+                return [AST.CSSASm assign]
+              Right genBuilder -> do
+                let sigs = map exprToVar valargs
+                let signature = Maybe.fromMaybe
+                      (error $ "Using function '" ++ (varToString (head sigs)) ++ "' without signature? This should not happen!") 
+                      (Map.lookup (head sigs) signatures)
+                let arg = tail sigs
+                genSm <- genBuilder signature (arg ++ [bndr])  
+                return [AST.CSGSm genSm]
           else
             error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
         Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
