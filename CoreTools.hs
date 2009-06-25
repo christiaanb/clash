@@ -27,8 +27,10 @@ import qualified Unique
 import qualified CoreUtils
 import qualified CoreFVs
 
+-- Local imports
 import GhcTools
 import HsTools
+import Pretty
 
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int.
@@ -92,15 +94,19 @@ ranged_word_bound ty =
 tfvec_len :: Type.Type -> Int
 tfvec_len ty =
   eval_tfp_int len
-  where 
-    (tycon, args) = Type.splitTyConApp ty
+  where  
+    args = case Type.splitTyConApp_maybe ty of
+      Just (tycon, args) -> args
+      Nothing -> error $ "CoreTools.tfvec_len Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
     
 -- | Get the element type of a TFVec type
 tfvec_elem :: Type.Type -> Type.Type
 tfvec_elem ty = el_ty
   where
-    (tycon, args) = Type.splitTyConApp ty
+    args = case Type.splitTyConApp_maybe ty of
+      Just (tycon, args) -> args
+      Nothing -> error $ "CoreTools.tfvec_len Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
 
 -- Is this a wild binder?
