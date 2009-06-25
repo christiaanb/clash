@@ -37,7 +37,6 @@ import Pretty
 import CoreTools
 import Constants
 import Generate
-import GlobalNameTable
 
 createDesignFiles ::
   [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
@@ -275,52 +274,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
   let valargs' = filter isValArg args
   let valargs = filter (\(CoreSyn.Var bndr) -> not (Id.isDictId bndr)) valargs'
-  case Var.globalIdVarDetails f of
-    IdInfo.DataConWorkId dc ->
-        -- It's a datacon. Create a record from its arguments.
-        -- First, filter out type args. TODO: Is this the best way to do this?
-        -- The types should already have been taken into acocunt when creating
-        -- the signal, so this should probably work...
-        --let valargs = filter isValArg args in
-        if all is_var valargs then do
-          labels <- getFieldLabels (CoreUtils.exprType app)
-          return $ zipWith mkassign labels valargs
-        else
-          error $ "VHDL.mkConcSm Not in normal form: One ore more complex arguments: " ++ pprString args
-      where
-        mkassign :: AST.VHDLId -> CoreExpr -> AST.ConcSm
-        mkassign label (Var arg) =
-          let sel_name = mkSelectedName bndr label in
-          mkUncondAssign (Right sel_name) (varToVHDLExpr arg)
-    IdInfo.VanillaGlobal -> do
-      -- It's a global value imported from elsewhere. These can be builtin
-      -- functions.
-      signatures <- getA vsSignatures
-      case (Map.lookup (varToString f) globalNameTable) of
-        Just (arg_count, builder) ->
-          if length valargs == arg_count then
-            builder bndr f valargs
-          else
-            error $ "VHDL.mkConcSm Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ pprString valargs
-        Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
-    IdInfo.NotGlobalId -> do
-      signatures <- getA vsSignatures
-      -- This is a local id, so it should be a function whose definition we
-      -- have and which can be turned into a component instantiation.
-      let  
-        signature = Maybe.fromMaybe 
-          (error $ "Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
-          (Map.lookup f signatures)
-        entity_id = ent_id signature
-        label = "comp_ins_" ++ varToString bndr
-        -- Add a clk port if we have state
-        --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
-        portmaps = mkAssocElems args bndr signature
-        in
-          return [mkComponentInst label entity_id portmaps]
-    details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+  genApplication (Left bndr) f (map Left valargs)
 
 -- A single alt case must be a selector. This means thee scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
@@ -332,7 +286,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
         Just i -> do
           labels <- getFieldLabels (Id.idType scrut)
           let label = labels!!i
-          let sel_name = mkSelectedName scrut label
+          let sel_name = mkSelectedName (varToVHDLName scrut) label
           let sel_expr = AST.PrimName sel_name
           return [mkUncondAssign (Left bndr) sel_expr]
         Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)

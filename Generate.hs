@@ -4,6 +4,7 @@ module Generate where
 import qualified Control.Monad as Monad
 import qualified Data.Map as Map
 import qualified Maybe
+import qualified Data.Either as Either
 import Data.Accessor
 import Debug.Trace
 
@@ -14,6 +15,7 @@ import qualified ForSyDe.Backend.VHDL.AST as AST
 import CoreSyn
 import Type
 import qualified Var
+import qualified IdInfo
 
 -- Local imports
 import Constants
@@ -22,60 +24,68 @@ import VHDLTools
 import CoreTools
 import Pretty
 
+-----------------------------------------------------------------------------
+-- Functions to generate VHDL for builtin functions
+-----------------------------------------------------------------------------
+
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be expressions.
 genExprArgs ::
   (dst -> func -> [AST.Expr] -> res)
-  -> (dst -> func -> [CoreSyn.CoreExpr] -> res)
+  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
 genExprArgs wrap dst func args = wrap dst func args'
-  where args' = map (varToVHDLExpr.exprToVar) args
+  where args' = map (either (varToVHDLExpr.exprToVar) id) args
   
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be variables.
 genVarArgs ::
   (dst -> func -> [Var.Var] -> res)
-  -> (dst -> func -> [CoreSyn.CoreExpr] -> res)
+  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
 genVarArgs wrap dst func args = wrap dst func args'
-  where args' = map exprToVar args
+  where
+    args' = map exprToVar exprargs
+    -- Check (rather crudely) that all arguments are CoreExprs
+    (exprargs, []) = Either.partitionEithers args
 
 -- | A function to wrap a builder-like function that produces an expression
 -- and expects it to be assigned to the destination.
 genExprRes ::
-  (CoreSyn.CoreBndr -> func -> [arg] -> VHDLSession AST.Expr)
-  -> (CoreSyn.CoreBndr -> func -> [arg] -> VHDLSession [AST.ConcSm])
+  ((Either CoreSyn.CoreBndr AST.VHDLName) -> func -> [arg] -> VHDLSession AST.Expr)
+  -> ((Either CoreSyn.CoreBndr AST.VHDLName) -> func -> [arg] -> VHDLSession [AST.ConcSm])
 genExprRes wrap dst func args = do
   expr <- wrap dst func args
-  return $ [mkUncondAssign (Left dst) expr]
+  return $ [mkUncondAssign dst expr]
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
 genOperator2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> BuiltinBuilder 
 genOperator2 op = genExprArgs $ genExprRes (genOperator2' op)
-genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genOperator2' op res f [arg1, arg2] = return $ op arg1 arg2
+genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genOperator2' op _ f [arg1, arg2] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
 genOperator1 :: (AST.Expr -> AST.Expr) -> BuiltinBuilder 
 genOperator1 op = genExprArgs $ genExprRes (genOperator1' op)
-genOperator1' :: (AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genOperator1' op res f [arg] = return $ op arg
+genOperator1' :: (AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genOperator1' op _ f [arg] = return $ op arg
 
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
 genFCall :: BuiltinBuilder 
 genFCall = genExprArgs $ genExprRes genFCall'
-genFCall' :: CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genFCall' res f args = do
+genFCall' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genFCall' (Left res) f args = do
   let fname = varToString f
   let el_ty = (tfvec_elem . Var.varType) res
   id <- vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
+genFCall' (Right name) _ _ = error $ "Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
 genMap = genVarArgs genMap'
-genMap' res f [mapped_f, arg] = do
+genMap' (Left res) f [mapped_f, arg] = do
   signatures <- getA vsSignatures
   let entity = Maybe.fromMaybe
         (error $ "Using function '" ++ (varToString mapped_f) ++ "' without signature? This should not happen!") 
@@ -83,6 +93,7 @@ genMap' res f [mapped_f, arg] = do
   let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
+    -- TODO: Use something better than varToString
     label       = mkVHDLExtId ("mapVector" ++ (varToString res))
     nPar        = AST.unsafeVHDLBasicId "n"
     range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -102,10 +113,12 @@ genMap' res f [mapped_f, arg] = do
     genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
     in
       return $ [genSm]
+genMap' (Right name) _ _ = error $ "Cannot generate map function call assigned to a VHDLName: " ++ show name
     
 genZipWith :: BuiltinBuilder
 genZipWith = genVarArgs genZipWith'
-genZipWith' res f args@[zipped_f, arg1, arg2] = do
+genZipWith' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genZipWith' (Left res) f args@[zipped_f, arg1, arg2] = do
   signatures <- getA vsSignatures
   let entity = Maybe.fromMaybe
         (error $ "Using function '" ++ (varToString zipped_f) ++ "' without signature? This should not happen!") 
@@ -113,6 +126,7 @@ genZipWith' res f args@[zipped_f, arg1, arg2] = do
   let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
+    -- TODO: Use something better than varToString
     label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
     nPar        = AST.unsafeVHDLBasicId "n"
     range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -133,7 +147,7 @@ genZipWith' res f args@[zipped_f, arg1, arg2] = do
     genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
     in
       return $ [genSm]
-
+{-
 genFoldl :: BuiltinBuilder
 genFoldl = genVarArgs genFoldl'
 genFoldl' resVal f [folded_f, startVal, inVec] = do
@@ -221,7 +235,62 @@ genFoldl' resVal f [folded_f, startVal, inVec] = do
                               (AST.NSimple tmpId) [AST.PrimLit $ show (len-1)])))
         -- Return the generate functions
         cellGn      = AST.GenerateSm cellLabel cellGenScheme [] [compins,assign]
+-}
+-----------------------------------------------------------------------------
+-- Function to generate VHDL for applications
+-----------------------------------------------------------------------------
+genApplication ::
+  (Either CoreSyn.CoreBndr AST.VHDLName) -- ^ Where to store the result?
+  -> CoreSyn.CoreBndr -- ^ The function to apply
+  -> [Either CoreSyn.CoreExpr AST.Expr] -- ^ The arguments to apply
+  -> VHDLSession [AST.ConcSm] -- ^ The resulting concurrent statements
+genApplication dst f args =
+  case Var.globalIdVarDetails f of
+    IdInfo.DataConWorkId dc -> case dst of
+      -- It's a datacon. Create a record from its arguments.
+      Left bndr -> do
+        -- We have the bndr, so we can get at the type
+        labels <- getFieldLabels (Var.varType bndr)
+        return $ zipWith mkassign labels $ map (either exprToVHDLExpr id) args
+        where
+          mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+          mkassign label arg =
+            let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+            mkUncondAssign (Right sel_name) arg
+      Right _ -> error $ "Generate.genApplication Can't generate dataconstructor application without an original binder"
+    IdInfo.VanillaGlobal -> do
+      -- It's a global value imported from elsewhere. These can be builtin
+      -- functions. Look up the function name in the name table and execute
+      -- the associated builder if there is any and the argument count matches
+      -- (this should always be the case if it typechecks, but just to be
+      -- sure...).
+      case (Map.lookup (varToString f) globalNameTable) of
+        Just (arg_count, builder) ->
+          if length args == arg_count then
+            builder dst f args
+          else
+            error $ "Generate.genApplication Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+        Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
+    IdInfo.NotGlobalId -> do
+      signatures <- getA vsSignatures
+      -- This is a local id, so it should be a function whose definition we
+      -- have and which can be turned into a component instantiation.
+      let  
+        signature = Maybe.fromMaybe 
+          (error $ "Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
+          (Map.lookup f signatures)
+        entity_id = ent_id signature
+        -- TODO: Using show here isn't really pretty, but we'll need some
+        -- unique-ish value...
+        label = "comp_ins_" ++ (either show show) dst
+        portmaps = mkAssocElems (map (either exprToVHDLExpr id) args) ((either varToVHDLName id) dst) signature
+        in
+          return [mkComponentInst label entity_id portmaps]
+    details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
+-----------------------------------------------------------------------------
+-- Functions to generate functions dealing with vectors.
+-----------------------------------------------------------------------------
 
 -- Returns the VHDLId of the vector function with the given name for the given
 -- element type. Generates -- this function if needed.
@@ -431,3 +500,32 @@ genUnconsVectorFuns elemTM vectorTM  =
                                           (AST.PrimName $ AST.NSimple aPar)])
     -- return res
     copyExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+
+-----------------------------------------------------------------------------
+-- A table of builtin functions
+-----------------------------------------------------------------------------
+
+-- | The builtin functions we support. Maps a name to an argument count and a
+-- builder function.
+globalNameTable :: NameTable
+globalNameTable = Map.fromList
+  [ (exId             , (2, genFCall                ) )
+  , (replaceId        , (3, genFCall                ) )
+  , (headId           , (1, genFCall                ) )
+  , (lastId           , (1, genFCall                ) )
+  , (tailId           , (1, genFCall                ) )
+  , (initId           , (1, genFCall                ) )
+  , (takeId           , (2, genFCall                ) )
+  , (dropId           , (2, genFCall                ) )
+  , (plusgtId         , (2, genFCall                ) )
+  , (mapId            , (2, genMap                  ) )
+  , (zipWithId        , (3, genZipWith              ) )
+  --, (foldlId          , (3, genFoldl                ) )
+  , (emptyId          , (0, genFCall                ) )
+  , (singletonId      , (1, genFCall                ) )
+  , (copyId           , (2, genFCall                ) )
+  , (hwxorId          , (2, genOperator2 AST.Xor    ) )
+  , (hwandId          , (2, genOperator2 AST.And    ) )
+  , (hworId           , (2, genOperator2 AST.Or     ) )
+  , (hwnotId          , (1, genOperator1 AST.Not    ) )
+  ]

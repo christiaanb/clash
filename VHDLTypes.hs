@@ -78,10 +78,10 @@ type TypeState = State.State TypeMap
 
 -- A function that generates VHDL for a builtin function
 type BuiltinBuilder = 
-  CoreSyn.CoreBndr -- ^ The destination value
+  (Either CoreSyn.CoreBndr AST.VHDLName) -- ^ The destination signal and it's original type
   -> CoreSyn.CoreBndr -- ^ The function called
-  -> [CoreSyn.CoreExpr] -- ^ The value arguments passed (excluding type and
-                        --   dictionary arguments).
+  -> [Either CoreSyn.CoreExpr AST.Expr] -- ^ The value arguments passed (excluding type and
+                    --   dictionary arguments).
   -> VHDLSession [AST.ConcSm] -- ^ The resulting concurrent statements.
 
 -- A map of a builtin function to VHDL function builder 

@@ -76,8 +76,8 @@ mkAssign dst cond false_expr =
     AST.CSSASm assign
 
 mkAssocElems :: 
-  [CoreSyn.CoreExpr]            -- | The argument that are applied to function
-  -> CoreSyn.CoreBndr           -- | The binder in which to store the result
+  [AST.Expr]                    -- | The argument that are applied to function
+  -> AST.VHDLName               -- | The binder in which to store the result
   -> Entity                     -- | The entity to map against.
   -> [AST.AssocElem]            -- | The resulting port maps
 mkAssocElems args res entity =
@@ -92,11 +92,11 @@ mkAssocElems args res entity =
     -- Extract the id part from the (id, type) tuple
     ports     = map (Monad.liftM fst) (res_port : arg_ports)
     -- Translate signal numbers into names
-    sigs      = (varToString res : map (varToString.exprToVar) args)
+    sigs      = (vhdlNameToVHDLExpr res : args)
 
 -- | Create an VHDL port -> signal association
-mkAssocElem :: Maybe AST.VHDLId -> String -> Maybe AST.AssocElem
-mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSimple (mkVHDLExtId signal))) 
+mkAssocElem :: Maybe AST.VHDLId -> AST.Expr -> Maybe AST.AssocElem
+mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADExpr signal) 
 mkAssocElem Nothing _ = Nothing
 
 -- | Create an VHDL port -> signal association
@@ -113,7 +113,7 @@ mkComponentInst ::
 mkComponentInst label entity_id portassigns = AST.CSISm compins
   where
     -- We always have a clock port, so no need to map it anywhere but here
-    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") (idToVHDLExpr $ mkVHDLExtId "clk")
     compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port]))
 
 -----------------------------------------------------------------------------
@@ -129,6 +129,15 @@ varToVHDLExpr var =
     -- Not a datacon, just another signal. Perhaps we should check for
     -- local/global here as well?
     Nothing -> AST.PrimName $ AST.NSimple $ varToVHDLId var
+
+-- Turn a VHDLName into an AST expression
+vhdlNameToVHDLExpr = AST.PrimName
+
+-- Turn a VHDL Id into an AST expression
+idToVHDLExpr = vhdlNameToVHDLExpr . AST.NSimple
+
+-- Turn a Core expression into an AST expression
+exprToVHDLExpr = varToVHDLExpr . exprToVar
 
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it
@@ -159,7 +168,13 @@ dataconToVHDLExpr dc = AST.PrimLit lit
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId = mkVHDLExtId . OccName.occNameString . Name.nameOccName . Var.varName
+varToVHDLId = mkVHDLExtId . varToString
+
+-- Creates a VHDL Name from a binder
+varToVHDLName ::
+  CoreSyn.CoreBndr
+  -> AST.VHDLName
+varToVHDLName = AST.NSimple . varToVHDLId
 
 -- Extracts the binder name as a String
 varToString ::
@@ -209,13 +224,9 @@ mkVHDLExtId s =
 
 -- Create a record field selector that selects the given label from the record
 -- stored in the given binder.
-mkSelectedName :: CoreBndr -> AST.VHDLId -> AST.VHDLName
-mkSelectedName bndr label =
-  let 
-    sel_prefix = AST.NSimple $ varToVHDLId bndr
-    sel_suffix = AST.SSimple $ label
-  in
-    AST.NSelected $ sel_prefix AST.:.: sel_suffix 
+mkSelectedName :: AST.VHDLName -> AST.VHDLId -> AST.VHDLName
+mkSelectedName name label =
+   AST.NSelected $ name AST.:.: (AST.SSimple label) 
 
 -----------------------------------------------------------------------------
 -- Functions dealing with VHDL types
