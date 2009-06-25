@@ -12,15 +12,12 @@ constant :: e -> Op D4 e
 constant e a b =
   e +> (e +> (e +> (singleton e )))
 
-inv = hwnot
-
 invop :: Op n Bit
-invop a b = map inv a
+invop a b = map hwnot a
 
-xand = hwand
 
 andop :: Op n Bit
-andop a b = zipWith xand a b
+andop a b = zipWith hwand a b
 
 type Op n e = (TFVec n e -> TFVec n e -> TFVec n e)
 type Opcode = Bit
@@ -32,4 +29,5 @@ alu op1 op2 opc a b =
     High -> op2 a b
 
 actual_alu :: Opcode -> TFVec D4 Bit -> TFVec D4 Bit -> TFVec D4 Bit
-actual_alu = alu (constant Low) andop
+--actual_alu = alu (constant Low) andop
+actual_alu = alu invop andop
