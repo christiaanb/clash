@@ -228,6 +228,14 @@ mkSelectedName :: AST.VHDLName -> AST.VHDLId -> AST.VHDLName
 mkSelectedName name label =
    AST.NSelected $ name AST.:.: (AST.SSimple label) 
 
+-- Create an indexed name that selects a given element from a vector.
+mkIndexedName :: AST.VHDLName -> AST.Expr -> AST.VHDLName
+-- Special case for already indexed names. Just add an index
+mkIndexedName (AST.NIndexed (AST.IndexedName name indexes)) index =
+ AST.NIndexed (AST.IndexedName name (indexes++[index]))
+-- General case for other names
+mkIndexedName name index = AST.NIndexed (AST.IndexedName name [index])
+
 -----------------------------------------------------------------------------
 -- Functions dealing with VHDL types
 -----------------------------------------------------------------------------
