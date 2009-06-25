@@ -82,7 +82,7 @@ mkAssocElems ::
   -> [AST.AssocElem]            -- | The resulting port maps
 mkAssocElems args res entity =
     -- Create the actual AssocElems
-    Maybe.catMaybes $ zipWith mkAssocElem ports sigs
+    zipWith mkAssocElem ports sigs
   where
     -- Turn the ports and signals from a map into a flat list. This works,
     -- since the maps must have an identical form by definition. TODO: Check
@@ -90,20 +90,18 @@ mkAssocElems args res entity =
     arg_ports = ent_args entity
     res_port  = ent_res entity
     -- Extract the id part from the (id, type) tuple
-    ports     = map (Monad.liftM fst) (res_port : arg_ports)
+    ports     = map fst (res_port : arg_ports)
     -- Translate signal numbers into names
     sigs      = (vhdlNameToVHDLExpr res : args)
 
 -- | Create an VHDL port -> signal association
-mkAssocElem :: Maybe AST.VHDLId -> AST.Expr -> Maybe AST.AssocElem
-mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADExpr signal) 
-mkAssocElem Nothing _ = Nothing
+mkAssocElem :: AST.VHDLId -> AST.Expr -> AST.AssocElem
+mkAssocElem port signal = Just port AST.:=>: (AST.ADExpr signal) 
 
 -- | Create an VHDL port -> signal association
-mkAssocElemIndexed :: Maybe AST.VHDLId -> AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
-mkAssocElemIndexed (Just port) signal index = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
+mkAssocElemIndexed :: AST.VHDLId -> AST.VHDLId -> AST.VHDLId -> AST.AssocElem
+mkAssocElemIndexed port signal index = Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
                       (AST.NSimple signal) [AST.PrimName $ AST.NSimple index])))
-mkAssocElemIndexed Nothing _ _ = Nothing
 
 mkComponentInst ::
   String -- ^ The portmap label
@@ -113,7 +111,7 @@ mkComponentInst ::
 mkComponentInst label entity_id portassigns = AST.CSISm compins
   where
     -- We always have a clock port, so no need to map it anywhere but here
-    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") (idToVHDLExpr $ mkVHDLExtId "clk")
+    clk_port = mkAssocElem (mkVHDLExtId "clk") (idToVHDLExpr $ mkVHDLExtId "clk")
     compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port]))
 
 -----------------------------------------------------------------------------

@@ -18,21 +18,17 @@ import qualified CoreSyn
 import qualified ForSyDe.Backend.VHDL.AST as AST
 
 -- Local imports
-import FlattenTypes
-import HsValueMap
 
-type VHDLSignalMapElement = (Maybe (AST.VHDLId, AST.TypeMark))
--- | A mapping from a haskell structure to the corresponding VHDL port
---   signature, or Nothing for values that do not translate to a port.
-type VHDLSignalMap = HsValueMap VHDLSignalMapElement
+-- A description of a port of an entity
+type Port = (AST.VHDLId, AST.TypeMark)
 
 -- A description of a VHDL entity. Contains both the entity itself as well as
 -- info on how to map a haskell value (argument / result) on to the entity's
 -- ports.
 data Entity = Entity { 
   ent_id     :: AST.VHDLId,           -- The id of the entity
-  ent_args   :: [VHDLSignalMapElement],      -- A mapping of each function argument to port names
-  ent_res    :: VHDLSignalMapElement         -- A mapping of the function result to port names
+  ent_args   :: [Port],      -- A mapping of each function argument to port names
+  ent_res    :: Port         -- A mapping of the function result to port names
 } deriving (Show);
 
 -- A orderable equivalent of CoreSyn's Type for use as a map key

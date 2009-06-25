@@ -119,7 +119,7 @@ createEntity (fname, expr) = do
     mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
-      -> VHDLSession VHDLSignalMapElement
+      -> VHDLSession Port
     -- We only need the vsTypes element from the state
     mkMap = (\bndr ->
       let
@@ -129,45 +129,35 @@ createEntity (fname, expr) = do
         --  Assume the bndr has a valid VHDL id already
         id = varToVHDLId bndr
         ty = Var.varType bndr
-      in
-        if True -- isPortSigUse $ sigUse info
-          then do
-            type_mark <- vhdl_ty ty
-            return $ Just (id, type_mark)
-          else
-            return $ Nothing
-       )
+      in do
+        type_mark <- vhdl_ty ty
+        return (id, type_mark)
+     )
 
   -- | Create the VHDL AST for an entity
 createEntityAST ::
   AST.VHDLId                   -- | The name of the function
-  -> [VHDLSignalMapElement]    -- | The entity's arguments
-  -> VHDLSignalMapElement      -- | The entity's result
+  -> [Port]                    -- | The entity's arguments
+  -> Port                      -- | The entity's result
   -> AST.EntityDec             -- | The entity with the ent_decl filled in as well
 
 createEntityAST vhdl_id args res =
   AST.EntityDec vhdl_id ports
   where
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
-    ports = Maybe.catMaybes $ 
-              map (mkIfaceSigDec AST.In) args
+    ports = map (mkIfaceSigDec AST.In) args
               ++ [mkIfaceSigDec AST.Out res]
               ++ [clk_port]
     -- Add a clk port if we have state
-    clk_port = if True -- hasState hsfunc
-      then
-        Just $ AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logicTM
-      else
-        Nothing
+    clk_port = AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logicTM
 
 -- | Create a port declaration
 mkIfaceSigDec ::
   AST.Mode                         -- | The mode for the port (In / Out)
-  -> Maybe (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
-  -> Maybe AST.IfaceSigDec               -- | The resulting port declaration
+  -> (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
+  -> AST.IfaceSigDec               -- | The resulting port declaration
 
-mkIfaceSigDec mode (Just (id, ty)) = Just $ AST.IfaceSigDec id mode ty
-mkIfaceSigDec _ Nothing = Nothing
+mkIfaceSigDec mode (id, ty) = AST.IfaceSigDec id mode ty
 
 {-
 -- | Generate a VHDL entity name for the given hsfunc

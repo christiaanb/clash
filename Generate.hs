@@ -100,12 +100,12 @@ genMap' (Left res) f [mapped_f, arg] = do
     genScheme   = AST.ForGn nPar range
     -- Get the entity name and port names
     entity_id   = ent_id entity
-    argports   = map (Monad.liftM fst) (ent_args entity)
-    resport     = (Monad.liftM fst) (ent_res entity)
+    argports   = map fst (ent_args entity)
+    resport     = fst (ent_res entity)
     -- Assign the ports
     inport      = mkAssocElemIndexed (argports!!0) (varToVHDLId arg) nPar
     outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
-    portassigns = Maybe.catMaybes [inport,outport]
+    portassigns = [inport,outport]
     -- Generate the portmap
     mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
@@ -133,13 +133,13 @@ genZipWith' (Left res) f args@[zipped_f, arg1, arg2] = do
     genScheme   = AST.ForGn nPar range
     -- Get the entity name and port names
     entity_id   = ent_id entity
-    argports    = map (Monad.liftM fst) (ent_args entity)
-    resport     = (Monad.liftM fst) (ent_res entity)
+    argports    = map fst (ent_args entity)
+    resport     = fst (ent_res entity)
     -- Assign the ports
     inport1     = mkAssocElemIndexed (argports!!0) (varToVHDLId arg1) nPar
     inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId arg2) nPar 
     outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
-    portassigns = Maybe.catMaybes [inport1,inport2,outport]
+    portassigns = [inport1,inport2,outport]
     -- Generate the portmap
     mapLabel    = "zipWith" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
