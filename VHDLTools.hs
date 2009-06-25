@@ -100,9 +100,9 @@ mkAssocElem (Just port) signal = Just $ Just port AST.:=>: (AST.ADName (AST.NSim
 mkAssocElem Nothing _ = Nothing
 
 -- | Create an VHDL port -> signal association
-mkAssocElemIndexed :: Maybe AST.VHDLId -> String -> AST.VHDLId -> Maybe AST.AssocElem
+mkAssocElemIndexed :: Maybe AST.VHDLId -> AST.VHDLId -> AST.VHDLId -> Maybe AST.AssocElem
 mkAssocElemIndexed (Just port) signal index = Just $ Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
-                      (AST.NSimple (mkVHDLExtId signal)) [AST.PrimName $ AST.NSimple index])))
+                      (AST.NSimple signal) [AST.PrimName $ AST.NSimple index])))
 mkAssocElemIndexed Nothing _ _ = Nothing
 
 mkComponentInst ::
@@ -112,7 +112,9 @@ mkComponentInst ::
   -> AST.ConcSm
 mkComponentInst label entity_id portassigns = AST.CSISm compins
   where
-    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect portassigns)
+    -- We always have a clock port, so no need to map it anywhere but here
+    clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port]))
 
 -----------------------------------------------------------------------------
 -- Functions to generate VHDL Exprs

@@ -329,9 +329,9 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
         label = "comp_ins_" ++ varToString bndr
         -- Add a clk port if we have state
         --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
+        --clk_port = Maybe.fromJust $ mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
         --portmaps = mkAssocElems sigs args res signature ++ (if hasState hsfunc then [clk_port] else [])
-        portmaps = clk_port : mkAssocElems args bndr signature
+        portmaps = mkAssocElems args bndr signature
         in
           return [mkComponentInst label entity_id portmaps]
     details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details

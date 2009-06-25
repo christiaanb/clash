@@ -56,10 +56,9 @@ genMapCall entity [arg, res] = return $ genSm
     argports   = map (Monad.liftM fst) (ent_args entity)
     resport     = (Monad.liftM fst) (ent_res entity)
     -- Assign the ports
-    inport      = mkAssocElemIndexed (argports!!0) (varToString arg) nPar
-    outport     = mkAssocElemIndexed resport (varToString res) nPar
-    clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-    portassigns = Maybe.catMaybes [inport,outport,clk_port]
+    inport      = mkAssocElemIndexed (argports!!0) (varToVHDLId arg) nPar
+    outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
+    portassigns = Maybe.catMaybes [inport,outport]
     -- Generate the portmap
     mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
@@ -83,11 +82,10 @@ genZipWithCall entity [arg1, arg2, res] = return $ genSm
     argports    = map (Monad.liftM fst) (ent_args entity)
     resport     = (Monad.liftM fst) (ent_res entity)
     -- Assign the ports
-    inport1     = mkAssocElemIndexed (argports!!0) (varToString arg1) nPar
-    inport2     = mkAssocElemIndexed (argports!!1) (varToString arg2) nPar 
-    outport     = mkAssocElemIndexed resport (varToString res) nPar
-    clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-    portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+    inport1     = mkAssocElemIndexed (argports!!0) (varToVHDLId arg1) nPar
+    inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId arg2) nPar 
+    outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
+    portassigns = Maybe.catMaybes [inport1,inport2,outport]
     -- Generate the portmap
     mapLabel    = "zipWith" ++ (AST.fromVHDLId entity_id)
     compins     = mkComponentInst mapLabel entity_id portassigns
@@ -106,85 +104,77 @@ genFoldlCall entity [startVal, inVec, resVal] = do
   let  len         = (tfvec_len . Var.varType) inVec
   let  genlabel       = mkVHDLExtId ("foldlVector" ++ (varToString inVec))
   let  blockLabel  = mkVHDLExtId ("foldlVector" ++ (varToString startVal))
-  let  nPar        = AST.unsafeVHDLBasicId "n"
   let  range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
-  let  genScheme   = AST.ForGn nPar range
+  let  genScheme   = AST.ForGn (AST.unsafeVHDLBasicId "n") range
   -- Make the intermediate vector
   let  tmpVec      = AST.BDISD $ AST.SigDec (mkVHDLExtId "tmp") vecType Nothing
+  -- Get the entity name and port names
+  let entity_id   = ent_id entity
+  let argports    = map (Monad.liftM fst) (ent_args entity)
+  let resport     = (Monad.liftM fst) (ent_res entity)
     -- Return the generate functions
-  let genSm       = AST.GenerateSm genlabel genScheme []  [ AST.CSGSm (genFirstCell entity [startVal, inVec, resVal])
-                                                          , AST.CSGSm (genOtherCell entity [startVal, inVec, resVal])
-                                                          , AST.CSGSm (genLastCell entity [startVal, inVec, resVal])
-                                                          ]
+  let genSm       = AST.GenerateSm genlabel genScheme [] 
+                      [ AST.CSGSm (genFirstCell (entity_id, argports, resport) 
+                                    [startVal, inVec, resVal])
+                      , AST.CSGSm (genOtherCell (entity_id, argports, resport) 
+                                    [startVal, inVec, resVal])
+                      , AST.CSGSm (genLastCell (entity_id, argports, resport) 
+                                    [startVal, inVec, resVal])
+                      ]
   return $ AST.CSBSm $ AST.BlockSm blockLabel [] (AST.PMapAspect []) [tmpVec] [AST.CSGSm genSm]
   where
-    genFirstCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm 
-    genFirstCell entity [startVal, inVec, resVal] = cellGn
+    genFirstCell (entity_id, argports, resport) [startVal, inVec, resVal] = cellGn
       where
         cellLabel    = mkVHDLExtId "firstcell"
         cellGenScheme = AST.IfGn ((AST.PrimName $ AST.NSimple nPar)  AST.:=: (AST.PrimLit "0"))
+        tmpId       = mkVHDLExtId "tmp"
         nPar        = AST.unsafeVHDLBasicId "n"
-        -- Get the entity name and port names
-        entity_id   = ent_id entity
-        argports    = map (Monad.liftM fst) (ent_args entity)
-        resport     = (Monad.liftM fst) (ent_res entity)
         -- Assign the ports
         inport1     = mkAssocElem (argports!!0) (varToString startVal)
-        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
-        outport     = mkAssocElemIndexed resport "tmp" nPar
-        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId inVec) nPar 
+        outport     = mkAssocElemIndexed resport tmpId nPar
+        portassigns = Maybe.catMaybes [inport1,inport2,outport]
         -- Generate the portmap
         mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
         compins     = mkComponentInst mapLabel entity_id portassigns
         -- Return the generate functions
         cellGn       = AST.GenerateSm cellLabel cellGenScheme [] [compins]
-    genOtherCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm
-    genOtherCell entity [startVal, inVec, resVal] = cellGn
+    genOtherCell (entity_id, argports, resport) [startVal, inVec, resVal] = cellGn
       where
         len         = (tfvec_len . Var.varType) inVec
         cellLabel    = mkVHDLExtId "othercell"
         cellGenScheme = AST.IfGn $ AST.And ((AST.PrimName $ AST.NSimple nPar)  AST.:>: (AST.PrimLit "0"))
                                 ((AST.PrimName $ AST.NSimple nPar)  AST.:<: (AST.PrimLit $ show (len-1)))
+        tmpId       = mkVHDLExtId "tmp"
         nPar        = AST.unsafeVHDLBasicId "n"
-        -- Get the entity name and port names
-        entity_id   = ent_id entity
-        argports    = map (Monad.liftM fst) (ent_args entity)
-        resport     = (Monad.liftM fst) (ent_res entity)
         -- Assign the ports
-        inport1     = mkAssocElemIndexed (argports!!0) "tmp" (AST.unsafeVHDLBasicId "n-1")
-        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
-        outport     = mkAssocElemIndexed resport "tmp" nPar
-        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        inport1     = mkAssocElemIndexed (argports!!0) tmpId (AST.unsafeVHDLBasicId "n-1")
+        inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId inVec) nPar 
+        outport     = mkAssocElemIndexed resport tmpId nPar
+        portassigns = Maybe.catMaybes [inport1,inport2,outport]
         -- Generate the portmap
         mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
         compins     = mkComponentInst mapLabel entity_id portassigns
         -- Return the generate functions
         cellGn      = AST.GenerateSm cellLabel cellGenScheme [] [compins]
-    genLastCell :: Entity -> [CoreSyn.CoreBndr] -> AST.GenerateSm
-    genLastCell entity [startVal, inVec, resVal] = cellGn
+    genLastCell (entity_id, argports, resport) [startVal, inVec, resVal] = cellGn
       where
         len         = (tfvec_len . Var.varType) inVec
         cellLabel    = mkVHDLExtId "lastCell"
         cellGenScheme = AST.IfGn ((AST.PrimName $ AST.NSimple nPar)  AST.:=: (AST.PrimLit $ show (len-1)))
+        tmpId       = mkVHDLExtId "tmp"
         nPar        = AST.unsafeVHDLBasicId "n"
-        -- Get the entity name and port names
-        entity_id   = ent_id entity
-        argports    = map (Monad.liftM fst) (ent_args entity)
-        resport     = (Monad.liftM fst) (ent_res entity)
         -- Assign the ports
-        inport1     = mkAssocElemIndexed (argports!!0) "tmp" (AST.unsafeVHDLBasicId "n-1")
-        inport2     = mkAssocElemIndexed (argports!!1) (varToString inVec) nPar 
-        outport     = mkAssocElemIndexed resport "tmp" nPar
-        clk_port    = mkAssocElem (Just $ mkVHDLExtId "clk") "clk"
-        portassigns = Maybe.catMaybes [inport1,inport2,outport,clk_port]
+        inport1     = mkAssocElemIndexed (argports!!0) tmpId (AST.unsafeVHDLBasicId "n-1")
+        inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId inVec) nPar 
+        outport     = mkAssocElemIndexed resport tmpId nPar
+        portassigns = Maybe.catMaybes [inport1,inport2,outport]
         -- Generate the portmap
         mapLabel    = "cell" ++ (AST.fromVHDLId entity_id)
         compins     = mkComponentInst mapLabel entity_id portassigns
         -- Generate the output assignment
         assign      = mkUncondAssign (Left resVal) (AST.PrimName (AST.NIndexed (AST.IndexedName 
-                              (AST.NSimple (mkVHDLExtId "tmp")) [AST.PrimLit $ show (len-1)])))
+                              (AST.NSimple tmpId) [AST.PrimLit $ show (len-1)])))
         -- Return the generate functions
         cellGn      = AST.GenerateSm cellLabel cellGenScheme [] [compins,assign]
 
