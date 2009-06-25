@@ -168,6 +168,9 @@ zipWithId = "zipWith"
 foldlId :: String
 foldlId = "foldl"
 
+foldrId :: String
+foldrId = "foldr"
+
 -- | hwxor function identifier
 hwxorId :: String
 hwxorId = "hwxor"
