@@ -85,68 +85,52 @@ genFCall' (Right name) _ _ = error $ "Cannot generate builtin function call assi
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
 genMap = genVarArgs genMap'
-genMap' (Left res) f [mapped_f, arg] = do
-  signatures <- getA vsSignatures
-  let entity = Maybe.fromMaybe
-        (error $ "Using function '" ++ (varToString mapped_f) ++ "' without signature? This should not happen!") 
-        (Map.lookup mapped_f signatures)
+genMap' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genMap' (Left res) f [mapped_f, arg] =
   let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
     -- TODO: Use something better than varToString
     label       = mkVHDLExtId ("mapVector" ++ (varToString res))
-    nPar        = AST.unsafeVHDLBasicId "n"
+    n_id        = mkVHDLBasicId "n"
+    n_expr      = idToVHDLExpr n_id
     range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
-    genScheme   = AST.ForGn nPar range
-    -- Get the entity name and port names
-    entity_id   = ent_id entity
-    argports   = map fst (ent_args entity)
-    resport     = fst (ent_res entity)
-    -- Assign the ports
-    inport      = mkAssocElemIndexed (argports!!0) (varToVHDLId arg) nPar
-    outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
-    portassigns = [inport,outport]
-    -- Generate the portmap
-    mapLabel    = "map" ++ (AST.fromVHDLId entity_id)
-    compins     = mkComponentInst mapLabel entity_id portassigns
-    -- Return the generate functions
-    genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
-    in
-      return $ [genSm]
+    genScheme   = AST.ForGn n_id range
+
+    -- Create the content of the generate statement: Applying the mapped_f to
+    -- each of the elements in arg, storing to each element in res
+    resname     = mkIndexedName (varToVHDLName res) n_expr
+    argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
+  in do
+    app_concsms <- genApplication (Right resname) mapped_f [Right argexpr]
+    -- Return the generate statement
+    return [AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms]
+
 genMap' (Right name) _ _ = error $ "Cannot generate map function call assigned to a VHDLName: " ++ show name
     
 genZipWith :: BuiltinBuilder
 genZipWith = genVarArgs genZipWith'
 genZipWith' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
-genZipWith' (Left res) f args@[zipped_f, arg1, arg2] = do
-  signatures <- getA vsSignatures
-  let entity = Maybe.fromMaybe
-        (error $ "Using function '" ++ (varToString zipped_f) ++ "' without signature? This should not happen!") 
-        (Map.lookup zipped_f signatures)
+genZipWith' (Left res) f args@[zipped_f, arg1, arg2] =
   let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
     -- TODO: Use something better than varToString
     label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
-    nPar        = AST.unsafeVHDLBasicId "n"
+    n_id        = mkVHDLBasicId "n"
+    n_expr      = idToVHDLExpr n_id
     range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
-    genScheme   = AST.ForGn nPar range
-    -- Get the entity name and port names
-    entity_id   = ent_id entity
-    argports    = map fst (ent_args entity)
-    resport     = fst (ent_res entity)
-    -- Assign the ports
-    inport1     = mkAssocElemIndexed (argports!!0) (varToVHDLId arg1) nPar
-    inport2     = mkAssocElemIndexed (argports!!1) (varToVHDLId arg2) nPar 
-    outport     = mkAssocElemIndexed resport (varToVHDLId res) nPar
-    portassigns = [inport1,inport2,outport]
-    -- Generate the portmap
-    mapLabel    = "zipWith" ++ (AST.fromVHDLId entity_id)
-    compins     = mkComponentInst mapLabel entity_id portassigns
+    genScheme   = AST.ForGn n_id range
+
+    -- Create the content of the generate statement: Applying the zipped_f to
+    -- each of the elements in arg1 and arg2, storing to each element in res
+    resname     = mkIndexedName (varToVHDLName res) n_expr
+    argexpr1    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
+    argexpr2    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
+  in do
+    app_concsms <- genApplication (Right resname) zipped_f [Right argexpr1, Right argexpr2]
     -- Return the generate functions
-    genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
-    in
-      return $ [genSm]
+    return [AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms]
 {-
 genFoldl :: BuiltinBuilder
 genFoldl = genVarArgs genFoldl'
