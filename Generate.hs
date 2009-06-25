@@ -5,6 +5,7 @@ import qualified Control.Monad as Monad
 import qualified Data.Map as Map
 import qualified Maybe
 import Data.Accessor
+import Debug.Trace
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -19,32 +20,67 @@ import Constants
 import VHDLTypes
 import VHDLTools
 import CoreTools
+import Pretty
+
+-- | A function to wrap a builder-like function that expects its arguments to
+-- be expressions.
+genExprArgs ::
+  (dst -> func -> [AST.Expr] -> res)
+  -> (dst -> func -> [CoreSyn.CoreExpr] -> res)
+genExprArgs wrap dst func args = wrap dst func args'
+  where args' = map (varToVHDLExpr.exprToVar) args
+  
+-- | A function to wrap a builder-like function that expects its arguments to
+-- be variables.
+genVarArgs ::
+  (dst -> func -> [Var.Var] -> res)
+  -> (dst -> func -> [CoreSyn.CoreExpr] -> res)
+genVarArgs wrap dst func args = wrap dst func args'
+  where args' = map exprToVar args
+
+-- | A function to wrap a builder-like function that produces an expression
+-- and expects it to be assigned to the destination.
+genExprRes ::
+  (CoreSyn.CoreBndr -> func -> [arg] -> VHDLSession AST.Expr)
+  -> (CoreSyn.CoreBndr -> func -> [arg] -> VHDLSession [AST.ConcSm])
+genExprRes wrap dst func args = do
+  expr <- wrap dst func args
+  return $ [mkUncondAssign (Left dst) expr]
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
-genExprOp2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genExprOp2 op res [arg1, arg2] = return $ op arg1 arg2
+genOperator2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> BuiltinBuilder 
+genOperator2 op = genExprArgs $ genExprRes (genOperator2' op)
+genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genOperator2' op res f [arg1, arg2] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
-genExprOp1 :: (AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genExprOp1 op res [arg] = return $ op arg
+genOperator1 :: (AST.Expr -> AST.Expr) -> BuiltinBuilder 
+genOperator1 op = genExprArgs $ genExprRes (genOperator1' op)
+genOperator1' :: (AST.Expr -> AST.Expr) -> CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genOperator1' op res f [arg] = return $ op arg
 
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
-genExprFCall :: String -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genExprFCall fname res args = do
+genFCall :: BuiltinBuilder 
+genFCall = genExprArgs $ genExprRes genFCall'
+genFCall' :: CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genFCall' res f args = do
+  let fname = varToString f
   let el_ty = (tfvec_elem . Var.varType) res
   id <- vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 
 -- | Generate a generate statement for the builtin function "map"
-genMapCall :: 
-  Entity -- | The entity to map
-  -> [CoreSyn.CoreBndr] -- | The vectors
-  -> VHDLSession AST.ConcSm -- | The resulting generate statement
-genMapCall entity [arg, res] = return $ genSm
-  where
+genMap :: BuiltinBuilder
+genMap = genVarArgs genMap'
+genMap' res f [mapped_f, arg] = do
+  signatures <- getA vsSignatures
+  let entity = Maybe.fromMaybe
+        (error $ "Using function '" ++ (varToString mapped_f) ++ "' without signature? This should not happen!") 
+        (Map.lookup mapped_f signatures)
+  let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
     label       = mkVHDLExtId ("mapVector" ++ (varToString res))
@@ -64,13 +100,17 @@ genMapCall entity [arg, res] = return $ genSm
     compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
     genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
+    in
+      return $ [genSm]
     
-genZipWithCall ::
-  Entity
-  -> [CoreSyn.CoreBndr]
-  -> VHDLSession AST.ConcSm
-genZipWithCall entity [arg1, arg2, res] = return $ genSm
-  where
+genZipWith :: BuiltinBuilder
+genZipWith = genVarArgs genZipWith'
+genZipWith' res f args@[zipped_f, arg1, arg2] = do
+  signatures <- getA vsSignatures
+  let entity = Maybe.fromMaybe
+        (error $ "Using function '" ++ (varToString zipped_f) ++ "' without signature? This should not happen!") 
+        (Map.lookup zipped_f signatures)
+  let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
     label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
@@ -91,12 +131,16 @@ genZipWithCall entity [arg1, arg2, res] = return $ genSm
     compins     = mkComponentInst mapLabel entity_id portassigns
     -- Return the generate functions
     genSm       = AST.CSGSm $ AST.GenerateSm label genScheme [] [compins]
+    in
+      return $ [genSm]
 
-genFoldlCall ::
-  Entity
-  -> [CoreSyn.CoreBndr]
-  -> VHDLSession AST.ConcSm
-genFoldlCall entity [startVal, inVec, resVal] = do
+genFoldl :: BuiltinBuilder
+genFoldl = genVarArgs genFoldl'
+genFoldl' resVal f [folded_f, startVal, inVec] = do
+  signatures <- getA vsSignatures
+  let entity = Maybe.fromMaybe
+        (error $ "Using function '" ++ (varToString folded_f) ++ "' without signature? This should not happen!") 
+        (Map.lookup folded_f signatures)
   let (vec, _) = splitAppTy (Var.varType inVec)
   let vecty = Type.mkAppTy vec (Var.varType startVal)
   vecType <- vhdl_ty vecty
@@ -112,7 +156,7 @@ genFoldlCall entity [startVal, inVec, resVal] = do
   let entity_id   = ent_id entity
   let argports    = map (Monad.liftM fst) (ent_args entity)
   let resport     = (Monad.liftM fst) (ent_res entity)
-    -- Return the generate functions
+  -- Return the generate functions
   let genSm       = AST.GenerateSm genlabel genScheme [] 
                       [ AST.CSGSm (genFirstCell (entity_id, argports, resport) 
                                     [startVal, inVec, resVal])
@@ -121,7 +165,7 @@ genFoldlCall entity [startVal, inVec, resVal] = do
                       , AST.CSGSm (genLastCell (entity_id, argports, resport) 
                                     [startVal, inVec, resVal])
                       ]
-  return $ AST.CSBSm $ AST.BlockSm blockLabel [] (AST.PMapAspect []) [tmpVec] [AST.CSGSm genSm]
+  return $ [AST.CSBSm $ AST.BlockSm blockLabel [] (AST.PMapAspect []) [tmpVec] [AST.CSGSm genSm]]
   where
     genFirstCell (entity_id, argports, resport) [startVal, inVec, resVal] = cellGn
       where

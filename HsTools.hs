@@ -126,14 +126,16 @@ mkId rdr_name = do
 -- | Translate a core Type to an HsType. Far from complete so far.
 coreToHsType :: Type.Type -> HsTypes.LHsType RdrName.RdrName
 --  Translate TyConApps
-coreToHsType (Type.splitTyConApp_maybe -> Just (tycon, tys)) =
-  foldl (\t a -> SrcLoc.noLoc $ HsTypes.HsAppTy t a) tycon_ty (map coreToHsType tys)
-  where
-    tycon_name = TyCon.tyConName tycon
-    mod_name = Module.moduleName $ Name.nameModule tycon_name
-    occ_name = Name.nameOccName tycon_name
-    tycon_rdrname = RdrName.mkRdrQual mod_name occ_name
-    tycon_ty = SrcLoc.noLoc $ HsTypes.HsTyVar tycon_rdrname
+coreToHsType ty = case Type.splitTyConApp_maybe ty of
+  Just (tycon, tys) ->
+    foldl (\t a -> SrcLoc.noLoc $ HsTypes.HsAppTy t a) tycon_ty (map coreToHsType tys)
+    where
+      tycon_name = TyCon.tyConName tycon
+      mod_name = Module.moduleName $ Name.nameModule tycon_name
+      occ_name = Name.nameOccName tycon_name
+      tycon_rdrname = RdrName.mkRdrQual mod_name occ_name
+      tycon_ty = SrcLoc.noLoc $ HsTypes.HsTyVar tycon_rdrname
+  Nothing -> error $ "HsTools.coreToHsType Cannot translate non-tycon type"
 
 -- | Evaluate a CoreExpr and return its value. For this to work, the caller
 --   should already know the result type for sure, since the result value is

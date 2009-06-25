@@ -76,9 +76,15 @@ type VHDLSession = State.State VHDLState
 -- | A substate containing just the types
 type TypeState = State.State TypeMap
 
-type Builder = Either (CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr) (Entity -> [CoreSyn.CoreBndr] -> VHDLSession AST.ConcSm)
+-- A function that generates VHDL for a builtin function
+type BuiltinBuilder = 
+  CoreSyn.CoreBndr -- ^ The destination value
+  -> CoreSyn.CoreBndr -- ^ The function called
+  -> [CoreSyn.CoreExpr] -- ^ The value arguments passed (excluding type and
+                        --   dictionary arguments).
+  -> VHDLSession [AST.ConcSm] -- ^ The resulting concurrent statements.
 
 -- A map of a builtin function to VHDL function builder 
-type NameTable = Map.Map String (Int, Builder )
+type NameTable = Map.Map String (Int, BuiltinBuilder )
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
