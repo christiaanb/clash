@@ -165,6 +165,7 @@ has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
 -- simple Var CoreExprs, not complexer ones.
 exprToVar :: CoreSyn.CoreExpr -> Var.Id
 exprToVar (CoreSyn.Var id) = id
+exprToVar expr = error $ "CoreTools.exprToVar Not a var: " ++ show expr
 
 -- Removes all the type and dictionary arguments from the given argument list,
 -- leaving only the normal value arguments. The type given is the type of the
