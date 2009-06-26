@@ -317,6 +317,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (emptyId, AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr])
   , (singletonId, AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet])
   , (copyId, AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr])
+  , (selId, AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet])
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -325,6 +326,8 @@ genUnconsVectorFuns elemTM vectorTM  =
     iId     = AST.unsafeVHDLBasicId "i"
     iPar    = iId
     aPar    = AST.unsafeVHDLBasicId "a"
+    fPar = AST.unsafeVHDLBasicId "f"
+    sPar = AST.unsafeVHDLBasicId "s"
     resId   = AST.unsafeVHDLBasicId "res"
     exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
                                AST.IfaceVarDec ixPar  naturalTM] elemTM
@@ -486,6 +489,32 @@ genUnconsVectorFuns elemTM vectorTM  =
                                           (AST.PrimName $ AST.NSimple aPar)])
     -- return res
     copyExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    selSpec = AST.Function (mkVHDLExtId selId) [AST.IfaceVarDec fPar   naturalTM,
+                               AST.IfaceVarDec nPar   naturalTM,
+                               AST.IfaceVarDec sPar   naturalTM,
+                               AST.IfaceVarDec vecPar vectorTM ] vectorTM
+    -- variable res : fsvec_x (0 to n-1);
+    selVar = 
+      AST.VarDec resId 
+                (AST.SubtypeIn vectorTM
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                    [AST.ToRange (AST.PrimLit "0")
+                      ((AST.PrimName (AST.NSimple nPar)) AST.:-:
+                      (AST.PrimLit "1"))   ])
+                )
+                Nothing
+    -- for i res'range loop
+    --   res(i) := vec(f+i*s);
+    -- end loop;
+    selFor = AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) rangeId Nothing) [selAssign]
+    -- res(i) := vec(f+i*s);
+    selAssign = let origExp = AST.PrimName (AST.NSimple fPar) AST.:+: 
+                                (AST.PrimName (AST.NSimple iId) AST.:*: 
+                                  AST.PrimName (AST.NSimple sPar)) in
+                                  AST.NIndexed (AST.IndexedName (AST.NSimple resId) [AST.PrimName (AST.NSimple iId)]) AST.:=
+                                    (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) [origExp]))
+    -- return res;
+    selRet =  AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
 
 -----------------------------------------------------------------------------
 -- A table of builtin functions
@@ -503,6 +532,7 @@ globalNameTable = Map.fromList
   , (initId           , (1, genFCall                ) )
   , (takeId           , (2, genFCall                ) )
   , (dropId           , (2, genFCall                ) )
+  , (selId            , (4, genFCall                ) )
   , (plusgtId         , (2, genFCall                ) )
   , (mapId            , (2, genMap                  ) )
   , (zipWithId        , (3, genZipWith              ) )
