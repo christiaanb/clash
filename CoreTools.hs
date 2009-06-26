@@ -10,6 +10,7 @@ import qualified Maybe
 -- GHC API
 import qualified GHC
 import qualified Type
+import qualified TcType
 import qualified HsExpr
 import qualified HsTypes
 import qualified HsBinds
@@ -145,11 +146,35 @@ is_var _ = False
 is_applicable :: CoreSyn.CoreExpr -> Bool
 is_applicable expr = is_fun expr || is_poly expr
 
+-- Is the given core expression a variable or an application?
+is_simple :: CoreSyn.CoreExpr -> Bool
+is_simple (CoreSyn.App _ _) = True
+is_simple (CoreSyn.Var _) = True
+is_simple (CoreSyn.Cast expr _) = is_simple expr
+is_simple _ = False
+
 -- Does the given CoreExpr have any free type vars?
 has_free_tyvars :: CoreSyn.CoreExpr -> Bool
 has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
+
+-- Does the given CoreExpr have any free local vars?
+has_free_vars :: CoreSyn.CoreExpr -> Bool
+has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
 
 -- Turns a Var CoreExpr into the Id inside it. Will of course only work for
 -- simple Var CoreExprs, not complexer ones.
 exprToVar :: CoreSyn.CoreExpr -> Var.Id
 exprToVar (CoreSyn.Var id) = id
+exprToVar expr = error $ "CoreTools.exprToVar Not a var: " ++ show expr
+
+-- Removes all the type and dictionary arguments from the given argument list,
+-- leaving only the normal value arguments. The type given is the type of the
+-- expression applied to this argument list.
+get_val_args :: Type.Type -> [CoreSyn.CoreExpr] -> [CoreSyn.CoreExpr]
+get_val_args ty args = drop n args
+  where
+    (tyvars, predtypes, _) = TcType.tcSplitSigmaTy ty
+    -- The first (length tyvars) arguments should be types, the next 
+    -- (length predtypes) arguments should be dictionaries. We drop this many
+    -- arguments, to get at the value arguments.
+    n = length tyvars + length predtypes
