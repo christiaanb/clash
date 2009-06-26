@@ -412,6 +412,51 @@ funprop expr = return expr
 funproptop = everywhere ("funprop", funprop)
 
 --------------------------------
+-- Function-typed argument extraction
+--------------------------------
+-- This transform takes any function-typed argument that cannot be propagated
+-- (because the function that is applied to it is a builtin function), and
+-- puts it in a brand new top level binder. This allows us to for example
+-- apply map to a lambda expression This will not conflict with inlinefun,
+-- since that only inlines local let bindings, not top level bindings.
+funextract, funextracttop :: Transform
+funextract expr@(App _ _) | is_var fexpr = do
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    -- We don't have a function body for f, so we can perform this transform.
+    Nothing -> do
+      -- Find the new arguments
+      args' <- mapM doarg args
+      -- And update the arguments. We use return instead of changed, so the
+      -- changed flag doesn't get set if none of the args got changed.
+      return $ MkCore.mkCoreApps fexpr args'
+    -- We have a function body for f, leave this application to funprop
+    Just _ -> return expr
+  where
+    -- Find the function called and the arguments
+    (fexpr, args) = collectArgs expr
+    Var f = fexpr
+    -- Leave simple arguments untouched
+    doarg (Var arg) = return $ Var arg
+    -- Change any arguments that have a function type, but no free variables.
+    -- We could use is_applicable here, but I think arguments to functions
+    -- could only have forall typing when existential typing is enabled. Not
+    -- sure, though.
+    doarg arg | is_fun arg && not (has_free_vars arg) = do
+      -- Create a new top level binding that binds the argument
+      id <- mkBinderFor arg "fun"
+      Trans.lift $ addGlobalBind id arg
+      -- Replace the argument with a reference to the argument
+      change $ Var id
+    -- Leave all other arguments untouched
+    doarg arg = return arg
+
+-- Leave all other expressions unchanged
+funextract expr = return expr
+-- Perform this transform everywhere
+funextracttop = everywhere ("funextract", funextract)
+
+--------------------------------
 -- End of transformations
 --------------------------------
 
@@ -419,7 +464,7 @@ funproptop = everywhere ("funprop", funprop)
 
 
 -- What transforms to run?
-transforms = [typeproptop, funproptop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [typeproptop, funproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
