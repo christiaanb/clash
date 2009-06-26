@@ -411,9 +411,6 @@ funprop expr = return expr
 -- Perform this transform everywhere
 funproptop = everywhere ("funprop", funprop)
 
-
--- TODO: introduce top level let if needed?
-
 --------------------------------
 -- End of transformations
 --------------------------------
