@@ -262,8 +262,7 @@ mkConcSm (bndr, Var v) = return $ [mkUncondAssign (Left bndr) (varToVHDLExpr v)]
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-  let valargs' = filter isValArg args
-  let valargs = filter (\(CoreSyn.Var bndr) -> not (Id.isDictId bndr)) valargs'
+  let valargs = get_val_args (Var.varType f) args
   genApplication (Left bndr) f (map Left valargs)
 
 -- A single alt case must be a selector. This means thee scrutinee is a simple

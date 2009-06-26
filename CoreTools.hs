@@ -10,6 +10,7 @@ import qualified Maybe
 -- GHC API
 import qualified GHC
 import qualified Type
+import qualified TcType
 import qualified HsExpr
 import qualified HsTypes
 import qualified HsBinds
@@ -164,3 +165,15 @@ has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
 -- simple Var CoreExprs, not complexer ones.
 exprToVar :: CoreSyn.CoreExpr -> Var.Id
 exprToVar (CoreSyn.Var id) = id
+
+-- Removes all the type and dictionary arguments from the given argument list,
+-- leaving only the normal value arguments. The type given is the type of the
+-- expression applied to this argument list.
+get_val_args :: Type.Type -> [CoreSyn.CoreExpr] -> [CoreSyn.CoreExpr]
+get_val_args ty args = drop n args
+  where
+    (tyvars, predtypes, _) = TcType.tcSplitSigmaTy ty
+    -- The first (length tyvars) arguments should be types, the next 
+    -- (length predtypes) arguments should be dictionaries. We drop this many
+    -- arguments, to get at the value arguments.
+    n = length tyvars + length predtypes
