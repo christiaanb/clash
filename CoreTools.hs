@@ -145,6 +145,13 @@ is_var _ = False
 is_applicable :: CoreSyn.CoreExpr -> Bool
 is_applicable expr = is_fun expr || is_poly expr
 
+-- Is the given core expression a variable or an application?
+is_simple :: CoreSyn.CoreExpr -> Bool
+is_simple (CoreSyn.App _ _) = True
+is_simple (CoreSyn.Var _) = True
+is_simple (CoreSyn.Cast expr _) = is_simple expr
+is_simple _ = False
+
 -- Does the given CoreExpr have any free type vars?
 has_free_tyvars :: CoreSyn.CoreExpr -> Bool
 has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
