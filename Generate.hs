@@ -490,8 +490,8 @@ genUnconsVectorFuns elemTM vectorTM  =
     -- return res
     copyExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     selSpec = AST.Function (mkVHDLExtId selId) [AST.IfaceVarDec fPar   naturalTM,
-                               AST.IfaceVarDec nPar   naturalTM,
                                AST.IfaceVarDec sPar   naturalTM,
+                               AST.IfaceVarDec nPar   naturalTM,
                                AST.IfaceVarDec vecPar vectorTM ] vectorTM
     -- variable res : fsvec_x (0 to n-1);
     selVar = 
