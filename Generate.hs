@@ -318,10 +318,14 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (singletonId, AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet])
   , (copyId, AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr])
   , (selId, AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet])
+  , (ltplusId, AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet]  )  
+  , (plusplusId, AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet])
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
     vecPar  = AST.unsafeVHDLBasicId "vec"
+    vec1Par = AST.unsafeVHDLBasicId "vec1"
+    vec2Par = AST.unsafeVHDLBasicId "vec2"
     nPar    = AST.unsafeVHDLBasicId "n"
     iId     = AST.unsafeVHDLBasicId "i"
     iPar    = iId
@@ -515,6 +519,40 @@ genUnconsVectorFuns elemTM vectorTM  =
                                     (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) [origExp]))
     -- return res;
     selRet =  AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
+    ltplusSpec = AST.Function (mkVHDLExtId ltplusId) [AST.IfaceVarDec vecPar vectorTM,
+                                        AST.IfaceVarDec aPar   elemTM] vectorTM 
+     -- variable res : fsvec_x (0 to vec'length);
+    ltplusVar = 
+      AST.VarDec resId 
+        (AST.SubtypeIn vectorTM
+          (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+            [AST.ToRange (AST.PrimLit "0")
+              (AST.PrimName (AST.NAttribute $ 
+                AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing))]))
+        Nothing
+    ltplusExpr = AST.NSimple resId AST.:= 
+                     ((AST.PrimName $ AST.NSimple vecPar) AST.:&: 
+                      (AST.PrimName $ AST.NSimple aPar))
+    ltplusRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    plusplusSpec = AST.Function (mkVHDLExtId plusplusId) [AST.IfaceVarDec vec1Par vectorTM,
+                                             AST.IfaceVarDec vec2Par vectorTM] 
+                                             vectorTM 
+    -- variable res : fsvec_x (0 to vec1'length + vec2'length -1);
+    plusplusVar = 
+      AST.VarDec resId 
+        (AST.SubtypeIn vectorTM
+          (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+            [AST.ToRange (AST.PrimLit "0")
+              (AST.PrimName (AST.NAttribute $ 
+                AST.AttribName (AST.NSimple vec1Par) (mkVHDLBasicId lengthId) Nothing) AST.:+:
+                  AST.PrimName (AST.NAttribute $ 
+                AST.AttribName (AST.NSimple vec2Par) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                  AST.PrimLit "1")]))
+       Nothing
+    plusplusExpr = AST.NSimple resId AST.:= 
+                     ((AST.PrimName $ AST.NSimple vec1Par) AST.:&: 
+                      (AST.PrimName $ AST.NSimple vec2Par))
+    plusplusRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
 
 -----------------------------------------------------------------------------
 -- A table of builtin functions
@@ -534,6 +572,8 @@ globalNameTable = Map.fromList
   , (dropId           , (2, genFCall                ) )
   , (selId            , (4, genFCall                ) )
   , (plusgtId         , (2, genFCall                ) )
+  , (ltplusId         , (2, genFCall                ) )
+  , (plusplusId       , (2, genFCall                ) )
   , (mapId            , (2, genMap                  ) )
   , (zipWithId        , (3, genZipWith              ) )
   , (foldlId          , (3, genFoldl                ) )
