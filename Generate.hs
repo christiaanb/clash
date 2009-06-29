@@ -84,9 +84,11 @@ genFCall' (Right name) _ _ = error $ "Cannot generate builtin function call assi
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
-genMap = genVarArgs genMap'
-genMap' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
-genMap' (Left res) f [mapped_f, arg] =
+genMap (Left res) f [Left mapped_f, Left (Var arg)] =
+  -- mapped_f must be a CoreExpr (since we can't represent functions as VHDL
+  -- expressions). arg must be a CoreExpr (and should be a CoreSyn.Var), since
+  -- we must index it (which we couldn't if it was a VHDL Expr, since only
+  -- VHDLNames can be indexed).
   let
     -- Setup the generate scheme
     len         = (tfvec_len . Var.varType) res
@@ -102,7 +104,9 @@ genMap' (Left res) f [mapped_f, arg] =
     resname     = mkIndexedName (varToVHDLName res) n_expr
     argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
   in do
-    app_concsms <- genApplication (Right resname) mapped_f [Right argexpr]
+    let (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs mapped_f
+    let valargs = get_val_args (Var.varType real_f) already_mapped_args
+    app_concsms <- genApplication (Right resname) real_f (map Left valargs ++ [Right argexpr])
     -- Return the generate statement
     return [AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms]
 
