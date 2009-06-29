@@ -222,6 +222,32 @@ genFold' left (Left res) f [folded_f, start, vec] = do
       -- Return the conditional generate part
       return $ AST.GenerateSm cond_label cond_scheme [] app_concsms
 
+-- | Generate a generate statement for the builtin function "zip"
+genZip :: BuiltinBuilder
+genZip = genVarArgs genZip'
+genZip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genZip' (Left res) f args@[arg1, arg2] =
+  let
+    -- Setup the generate scheme
+    len             = (tfvec_len . Var.varType) res
+    -- TODO: Use something better than varToString
+    label           = mkVHDLExtId ("zipVector" ++ (varToString res))
+    n_id            = mkVHDLBasicId "n"
+    n_expr          = idToVHDLExpr n_id
+    range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+    genScheme       = AST.ForGn n_id range
+    resname'        = mkIndexedName (varToVHDLName res) n_expr
+    argexpr1        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
+    argexpr2        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
+  in do
+    labels <- getFieldLabels (tfvec_elem (Var.varType res))
+    let resnameA    = mkSelectedName resname' (labels!!0)
+    let resnameB    = mkSelectedName resname' (labels!!1)
+    let resA_assign = mkUncondAssign (Right resnameA) argexpr1
+    let resB_assign = mkUncondAssign (Right resnameB) argexpr2
+    -- Return the generate functions
+    return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
+
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -578,6 +604,7 @@ globalNameTable = Map.fromList
   , (zipWithId        , (3, genZipWith              ) )
   , (foldlId          , (3, genFoldl                ) )
   , (foldrId          , (3, genFoldr                ) )
+  , (zipId            , (2, genZip                  ) )
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
   , (copyId           , (2, genFCall                ) )

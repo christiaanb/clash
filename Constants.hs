@@ -165,11 +165,17 @@ mapId = "map"
 zipWithId :: String
 zipWithId = "zipWith"
 
+-- | foldl function identifier
 foldlId :: String
 foldlId = "foldl"
 
+-- | foldr function identifier
 foldrId :: String
 foldrId = "foldr"
+
+-- | zip function identifier
+zipId :: String
+zipId = "zip"
 
 -- | hwxor function identifier
 hwxorId :: String

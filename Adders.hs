@@ -174,8 +174,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D4 Bit -> TFVec D2 Bit
-functiontest = \v -> let r = select d0 d1 d2 v in r
+functiontest :: TFVec D4 Bit -> TFVec D4 Bit -> TFVec D4 (Bit, Bit)
+functiontest = \v1 v2 -> let r = zip v1 v2 in r
 
 xhwnot x = hwnot x
 
