@@ -137,6 +137,9 @@ instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Expr b) where
 
 instance Pretty AST.VHDLId where
   pPrint id = ForSyDe.Backend.Ppr.ppr id
+  
+instance Pretty AST.VHDLName where
+  pPrint name = ForSyDe.Backend.Ppr.ppr name
 
 prettyBind :: (Show b, Show e) => (b, e) -> Doc
 prettyBind (b, expr) =

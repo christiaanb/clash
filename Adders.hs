@@ -174,8 +174,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D4 Bit -> Bit -> Bit
-functiontest = \v s -> let r = foldl xand s v in r
+functiontest :: TFVec D4 (Bit, Bit) -> (TFVec D4 Bit, TFVec D4 Bit)
+functiontest = \v -> let r = unzip v in r
 
 xhwnot x = hwnot x
 

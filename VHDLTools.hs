@@ -8,6 +8,7 @@ import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
 import qualified Data.Monoid as Monoid
 import Data.Accessor
+import Debug.Trace
 
 -- ForSyDe
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -126,7 +127,20 @@ varToVHDLExpr var =
     -- This is a dataconstructor.
     -- Not a datacon, just another signal. Perhaps we should check for
     -- local/global here as well?
-    Nothing -> AST.PrimName $ AST.NSimple $ varToVHDLId var
+    -- Sadly so.. tfp decimals are types, not data constructors, but instances
+    -- should still be translated to integer literals. It is probebly not the
+    -- best solution to translate them here.
+    -- FIXME: Find a better solution for translating instances of tfp integers
+    Nothing -> 
+        let 
+          ty  = Var.varType var
+          res = case Type.splitTyConApp_maybe ty of
+                  Just (tycon, args) ->
+                    case Name.getOccString (TyCon.tyConName tycon) of
+                      "Dec" -> AST.PrimLit $ (show (eval_tfp_int ty))
+                      otherwise -> AST.PrimName $ AST.NSimple $ varToVHDLId var
+        in
+          res
 
 -- Turn a VHDLName into an AST expression
 vhdlNameToVHDLExpr = AST.PrimName
@@ -243,7 +257,8 @@ mkIndexedName name index = AST.NIndexed (AST.IndexedName name [index])
 builtin_types = 
   Map.fromList [
     ("Bit", std_logicTM),
-    ("Bool", booleanTM) -- TysWiredIn.boolTy
+    ("Bool", booleanTM), -- TysWiredIn.boolTy
+    ("Dec", integerTM)
   ]
 
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
@@ -307,7 +322,8 @@ mk_tycon_ty tycon args =
       -- each argument.
       -- TODO: Add argument type ids to this, to ensure uniqueness
       -- TODO: Special handling for tuples?
-      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+      let elem_names = concat $ map prettyShow elem_tys
+      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
       let ty_def = AST.TDR $ AST.RecordTypeDef elems
       return $ Just (ty_id, Left ty_def)
     dcs -> error $ "Only single constructor datatypes supported: " ++ pprString tycon
