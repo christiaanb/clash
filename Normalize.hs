@@ -436,18 +436,24 @@ funextract expr@(App _ _) | is_var fexpr = do
     -- Find the function called and the arguments
     (fexpr, args) = collectArgs expr
     Var f = fexpr
-    -- Leave simple arguments untouched
-    doarg (Var arg) = return $ Var arg
-    -- Change any arguments that have a function type, but no free variables.
-    -- We could use is_applicable here, but I think arguments to functions
-    -- could only have forall typing when existential typing is enabled. Not
-    -- sure, though.
-    doarg arg | is_fun arg && not (has_free_vars arg) = do
-      -- Create a new top level binding that binds the argument
-      id <- mkBinderFor arg "fun"
-      Trans.lift $ addGlobalBind id arg
-      -- Replace the argument with a reference to the argument
-      change $ Var id
+    -- Change any arguments that have a function type, but are not simple yet
+    -- (ie, a variable or application). This means to create a new function
+    -- for map (\f -> ...) b, but not for map (foo a) b.
+    --
+    -- We could use is_applicable here instead of is_fun, but I think
+    -- arguments to functions could only have forall typing when existential
+    -- typing is enabled. Not sure, though.
+    doarg arg | not (is_simple arg) && is_fun arg = do
+      -- Create a new top level binding that binds the argument. Its body will
+      -- be extended with lambda expressions, to take any free variables used
+      -- by the argument expression.
+      let free_vars = VarSet.varSetElems $ CoreFVs.exprFreeVars arg
+      let body = MkCore.mkCoreLams free_vars arg
+      id <- mkBinderFor body "fun"
+      Trans.lift $ addGlobalBind id body
+      -- Replace the argument with a reference to the new function, applied to
+      -- all vars it uses.
+      change $ MkCore.mkCoreApps (Var id) (map Var free_vars)
     -- Leave all other arguments untouched
     doarg arg = return arg
 
