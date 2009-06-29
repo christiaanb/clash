@@ -247,6 +247,34 @@ genZip' (Left res) f args@[arg1, arg2] =
     let resB_assign = mkUncondAssign (Right resnameB) argexpr2
     -- Return the generate functions
     return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
+    
+-- | Generate a generate statement for the builtin function "unzip"
+genUnzip :: BuiltinBuilder
+genUnzip = genVarArgs genUnzip'
+genUnzip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genUnzip' (Left res) f args@[arg] =
+  let
+    -- Setup the generate scheme
+    len             = (tfvec_len . Var.varType) arg
+    -- TODO: Use something better than varToString
+    label           = mkVHDLExtId ("unzipVector" ++ (varToString res))
+    n_id            = mkVHDLBasicId "n"
+    n_expr          = idToVHDLExpr n_id
+    range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+    genScheme       = AST.ForGn n_id range
+    resname'        = varToVHDLName res
+    argexpr'        = mkIndexedName (varToVHDLName arg) n_expr
+  in do
+    reslabels <- getFieldLabels (Var.varType res)
+    arglabels <- getFieldLabels (tfvec_elem (Var.varType arg))
+    let resnameA    = mkIndexedName (mkSelectedName resname' (reslabels!!0)) n_expr
+    let resnameB    = mkIndexedName (mkSelectedName resname' (reslabels!!1)) n_expr
+    let argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!0)
+    let argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!1)
+    let resA_assign = mkUncondAssign (Right resnameA) argexprA
+    let resB_assign = mkUncondAssign (Right resnameB) argexprB
+    -- Return the generate functions
+    return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
@@ -605,6 +633,7 @@ globalNameTable = Map.fromList
   , (foldlId          , (3, genFoldl                ) )
   , (foldrId          , (3, genFoldr                ) )
   , (zipId            , (2, genZip                  ) )
+  , (unzipId          , (1, genUnzip                ) )
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
   , (copyId           , (2, genFCall                ) )

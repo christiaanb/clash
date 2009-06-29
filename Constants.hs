@@ -177,6 +177,10 @@ foldrId = "foldr"
 zipId :: String
 zipId = "zip"
 
+-- | unzip function identifier
+unzipId :: String
+unzipId = "unzip"
+
 -- | hwxor function identifier
 hwxorId :: String
 hwxorId = "hwxor"

@@ -322,7 +322,8 @@ mk_tycon_ty tycon args =
       -- each argument.
       -- TODO: Add argument type ids to this, to ensure uniqueness
       -- TODO: Special handling for tuples?
-      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+      let elem_names = concat $ map prettyShow elem_tys
+      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
       let ty_def = AST.TDR $ AST.RecordTypeDef elems
       return $ Just (ty_id, Left ty_def)
     dcs -> error $ "Only single constructor datatypes supported: " ++ pprString tycon
