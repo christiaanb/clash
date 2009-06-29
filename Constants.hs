@@ -197,6 +197,8 @@ hwnotId = "hwnot"
 hwandId :: String
 hwandId = "hwand"
 
+lengthTId :: String
+lengthTId = "lengthT"
 
 ------------------
 -- VHDL type marks

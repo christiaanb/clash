@@ -374,6 +374,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (selId, AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet])
   , (ltplusId, AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet]  )  
   , (plusplusId, AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet])
+  , (lengthTId, AST.SubProgBody lengthTSpec [] [lengthTExpr])
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -607,6 +608,9 @@ genUnconsVectorFuns elemTM vectorTM  =
                      ((AST.PrimName $ AST.NSimple vec1Par) AST.:&: 
                       (AST.PrimName $ AST.NSimple vec2Par))
     plusplusRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
+    lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
+                                AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing))
 
 -----------------------------------------------------------------------------
 -- A table of builtin functions
@@ -637,6 +641,7 @@ globalNameTable = Map.fromList
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
   , (copyId           , (2, genFCall                ) )
+  , (lengthTId        , (1, genFCall                ) )
   , (hwxorId          , (2, genOperator2 AST.Xor    ) )
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )

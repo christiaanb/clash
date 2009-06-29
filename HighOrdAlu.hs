@@ -10,11 +10,10 @@ import Data.RangedWord
 
 constant :: e -> Op D4 e
 constant e a b =
-  e +> (e +> (e +> (singleton e )))
+  copy (lengthT a) e
 
 invop :: Op n Bit
 invop a b = map hwnot a
-
 
 andop :: Op n Bit
 andop a b = zipWith hwand a b
