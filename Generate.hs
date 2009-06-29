@@ -280,6 +280,19 @@ genUnzip' (Left res) f args@[arg] =
     -- Return the generate functions
     return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
 
+genCopy :: BuiltinBuilder 
+genCopy = genVarArgs genCopy'
+genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genCopy' (Left res) f args@[arg] =
+  let
+    resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
+                (AST.PrimName $ (varToVHDLName arg))]
+    out_assign = mkUncondAssign (Left res) resExpr
+  in 
+    return [out_assign]
+    
+    
+
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -374,7 +387,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (plusgtId, AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet])
   , (emptyId, AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr])
   , (singletonId, AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet])
-  , (copyId, AST.SubProgBody copySpec    [AST.SPVD copyVar]      [copyExpr])
+  , (copynId, AST.SubProgBody copynSpec    [AST.SPVD copynVar]      [copynExpr])
   , (selId, AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet])
   , (ltplusId, AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet]  )  
   , (plusplusId, AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet])
@@ -538,10 +551,10 @@ genUnconsVectorFuns elemTM vectorTM  =
              (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
                                           (AST.PrimName $ AST.NSimple aPar)])
     singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    copySpec = AST.Function (mkVHDLExtId copyId) [AST.IfaceVarDec nPar   naturalTM,
+    copynSpec = AST.Function (mkVHDLExtId copynId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec aPar   elemTM   ] vectorTM 
     -- variable res : fsvec_x (0 to n-1) := (others => a);
-    copyVar = 
+    copynVar = 
       AST.VarDec resId 
              (AST.SubtypeIn vectorTM
                (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
@@ -551,7 +564,7 @@ genUnconsVectorFuns elemTM vectorTM  =
              (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
                                           (AST.PrimName $ AST.NSimple aPar)])
     -- return res
-    copyExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    copynExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     selSpec = AST.Function (mkVHDLExtId selId) [AST.IfaceVarDec fPar   naturalTM,
                                AST.IfaceVarDec sPar   naturalTM,
                                AST.IfaceVarDec nPar   naturalTM,
@@ -615,7 +628,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
     lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing))
-
+                                
 -----------------------------------------------------------------------------
 -- A table of builtin functions
 -----------------------------------------------------------------------------
@@ -644,7 +657,8 @@ globalNameTable = Map.fromList
   , (unzipId          , (1, genUnzip                ) )
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
-  , (copyId           , (2, genFCall                ) )
+  , (copynId          , (2, genFCall                ) )
+  , (copyId           , (1, genCopy                 ) )
   , (lengthTId        , (1, genFCall                ) )
   , (hwxorId          , (2, genOperator2 AST.Xor    ) )
   , (hwandId          , (2, genOperator2 AST.And    ) )

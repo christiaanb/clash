@@ -8,9 +8,9 @@ import Types
 import Data.Param.TFVec
 import Data.RangedWord
 
-constant :: e -> Op D4 e
+constant :: NaturalT n => e -> Op n e
 constant e a b =
-  copy (lengthT a) e
+  copy e
 
 invop :: Op n Bit
 invop a b = map hwnot a
@@ -20,7 +20,7 @@ andop a b = zipWith hwand a b
 
 -- Is any bit set?
 --anyset :: (PositiveT n) => Op n Bit
-anyset :: Op D4 Bit
+anyset :: NaturalT n => Op n Bit
 --anyset a b = copy undefined (a' `hwor` b')
 anyset a b = constant (a' `hwor` b') a b
   where 

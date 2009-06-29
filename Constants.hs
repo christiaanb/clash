@@ -157,6 +157,10 @@ reverseId = "reverse"
 copyId :: String
 copyId = "copy"
 
+-- | copyn function identifier
+copynId :: String
+copynId = "copyn"
+
 -- | map function identifier
 mapId :: String
 mapId = "map"
