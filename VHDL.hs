@@ -129,8 +129,9 @@ createEntity (fname, expr) = do
         --  Assume the bndr has a valid VHDL id already
         id = varToVHDLId bndr
         ty = Var.varType bndr
+        error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr 
       in do
-        type_mark <- vhdl_ty ty
+        type_mark <- vhdl_ty error_msg ty
         return (id, type_mark)
      )
 
@@ -176,7 +177,7 @@ createArchitecture ::
 createArchitecture (fname, expr) = do
   signaturemap <- getA vsSignatures
   let signature = Maybe.fromMaybe 
-        (error $ "Generating architecture for function " ++ (pprString fname) ++ "without signature? This should not happen!")
+        (error $ "\nVHDL.createArchitecture: Generating architecture for function \n" ++ (pprString fname) ++ "\nwithout signature? This should not happen!")
         (Map.lookup fname signaturemap)
   let entity_id = ent_id signature
   -- Strip off lambda's, these will be arguments
@@ -239,7 +240,8 @@ getSignalId info =
 mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
-    type_mark <- vhdl_ty $ Var.varType bndr
+    let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
+    type_mark <- (vhdl_ty error_msg) $ Var.varType bndr
     return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
   else
     return Nothing
@@ -278,9 +280,9 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
           let sel_name = mkSelectedName (varToVHDLName scrut) label
           let sel_expr = AST.PrimName sel_name
           return [mkUncondAssign (Left bndr) sel_expr]
-        Nothing -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
+        Nothing -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
-    _ -> error $ "VHDL.mkConcSM Not in normal form: Not a selector case:\n" ++ (pprString expr)
+    _ -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
 
 -- Multiple case alt are be conditional assignments and have only wild
 -- binders in the alts and only variables in the case values and a variable
@@ -293,6 +295,6 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
     false_expr  = (varToVHDLExpr false)
   in
     return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
-mkConcSm (_, (Case (Var _) _ _ alts)) = error "VHDL.mkConcSm Not in normal form: Case statement with more than two alternatives"
-mkConcSm (_, Case _ _ _ _) = error "VHDL.mkConcSm Not in normal form: Case statement has does not have a simple variable as scrutinee"
-mkConcSm (bndr, expr) = error $ "VHDL.mkConcSM Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
+mkConcSm (_, (Case (Var _) _ _ alts)) = error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
+mkConcSm (_, Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
+mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr

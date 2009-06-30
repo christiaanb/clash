@@ -156,7 +156,7 @@ subeverywhere trans (Cast expr ty) = do
   expr' <- trans expr
   return $ Cast expr' ty
 
-subeverywhere trans expr = error $ "NormalizeTools.subeverywhere Unsupported expression: " ++ show expr
+subeverywhere trans expr = error $ "\nNormalizeTools.subeverywhere: Unsupported expression: " ++ show expr
 
 -- Apply the given transformation to all expressions, except for direct
 -- arguments of an application

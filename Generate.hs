@@ -80,7 +80,7 @@ genFCall' (Left res) f args = do
   id <- vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
-genFCall' (Right name) _ _ = error $ "Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+genFCall' (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
@@ -110,7 +110,7 @@ genMap (Left res) f [Left mapped_f, Left (Var arg)] =
     -- Return the generate statement
     return [AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms]
 
-genMap' (Right name) _ _ = error $ "Cannot generate map function call assigned to a VHDLName: " ++ show name
+genMap' (Right name) _ _ = error $ "\nGenerate.genMap': Cannot generate map function call assigned to a VHDLName: " ++ show name
     
 genZipWith :: BuiltinBuilder
 genZipWith = genVarArgs genZipWith'
@@ -154,7 +154,8 @@ genFold' left (Left res) f [folded_f, start, vec] = do
   -- Put the type of the start value in nvec, this will be the type of our
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
-  tmp_vhdl_ty <- vhdl_ty tmp_ty
+  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
+  tmp_vhdl_ty <- vhdl_ty error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("foldlVector" ++ (varToString vec))
   let block_label = mkVHDLExtId ("foldlVector" ++ (varToString start))
@@ -314,7 +315,7 @@ genApplication dst f args =
           mkassign label arg =
             let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
             mkUncondAssign (Right sel_name) arg
-      Right _ -> error $ "Generate.genApplication Can't generate dataconstructor application without an original binder"
+      Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
     IdInfo.VanillaGlobal -> do
       -- It's a global value imported from elsewhere. These can be builtin
       -- functions. Look up the function name in the name table and execute
@@ -326,15 +327,15 @@ genApplication dst f args =
           if length args == arg_count then
             builder dst f args
           else
-            error $ "Generate.genApplication Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-        Nothing -> error $ "Using function from another module that is not a known builtin: " ++ pprString f
+            error $ "\nGenerate.genApplication: Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+        Nothing -> error $ "\nGenerate.genApplication: Using function from another module that is not a known builtin: " ++ pprString f
     IdInfo.NotGlobalId -> do
       signatures <- getA vsSignatures
       -- This is a local id, so it should be a function whose definition we
       -- have and which can be turned into a component instantiation.
       let  
         signature = Maybe.fromMaybe 
-          (error $ "Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
+          (error $ "\nGenerate.genApplication: Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
           (Map.lookup f signatures)
         entity_id = ent_id signature
         -- TODO: Using show here isn't really pretty, but we'll need some
@@ -343,7 +344,7 @@ genApplication dst f args =
         portmaps = mkAssocElems (map (either exprToVHDLExpr id) args) ((either varToVHDLName id) dst) signature
         in
           return [mkComponentInst label entity_id portmaps]
-    details -> error $ "Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+    details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
@@ -353,7 +354,8 @@ genApplication dst f args =
 -- element type. Generates -- this function if needed.
 vectorFunId :: Type.Type -> String -> VHDLSession AST.VHDLId
 vectorFunId el_ty fname = do
-  elemTM <- vhdl_ty el_ty
+  let error_msg = "\nGenerate.vectorFunId: Can not construct vector function for element: " ++ pprString el_ty
+  elemTM <- vhdl_ty error_msg el_ty
   -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
@@ -368,7 +370,7 @@ vectorFunId el_ty fname = do
         Just body -> do
           modA vsTypeFuns $ Map.insert (OrdType el_ty, fname) (function_id, body)
           return function_id
-        Nothing -> error $ "I don't know how to generate vector function " ++ fname
+        Nothing -> error $ "\nGenerate.vectorFunId: I don't know how to generate vector function " ++ fname
   where
     function_id = mkVHDLExtId fname
 

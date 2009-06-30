@@ -98,7 +98,7 @@ tfvec_len ty =
   where  
     args = case Type.splitTyConApp_maybe ty of
       Just (tycon, args) -> args
-      Nothing -> error $ "CoreTools.tfvec_len Not a vector type: " ++ (pprString ty)
+      Nothing -> error $ "\nCoreTools.tfvec_len: Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
     
 -- | Get the element type of a TFVec type
@@ -107,7 +107,7 @@ tfvec_elem ty = el_ty
   where
     args = case Type.splitTyConApp_maybe ty of
       Just (tycon, args) -> args
-      Nothing -> error $ "CoreTools.tfvec_len Not a vector type: " ++ (pprString ty)
+      Nothing -> error $ "\nCoreTools.tfvec_len: Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
 
 -- Is this a wild binder?
@@ -165,7 +165,7 @@ has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
 -- simple Var CoreExprs, not complexer ones.
 exprToVar :: CoreSyn.CoreExpr -> Var.Id
 exprToVar (CoreSyn.Var id) = id
-exprToVar expr = error $ "CoreTools.exprToVar Not a var: " ++ show expr
+exprToVar expr = error $ "\nCoreTools.exprToVar: Not a var: " ++ show expr
 
 -- Removes all the type and dictionary arguments from the given argument list,
 -- leaving only the normal value arguments. The type given is the type of the

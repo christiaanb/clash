@@ -503,7 +503,7 @@ normalizeBind bndr =
       then
         -- This should really only happen at the top level... TODO: Give
         -- a different error if this happens down in the recursion.
-        error $ "Function " ++ show bndr ++ " is polymorphic, can't normalize"
+        error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
       else do
         normalized_funcs <- getA tsNormalized
         -- See if this function was normalized already
@@ -537,4 +537,4 @@ normalizeBind bndr =
                 return ()
               -- We don't have a value for this binder. This really shouldn't
               -- happen for local id's...
-              Nothing -> error $ "No value found for binder " ++ pprString bndr ++ "? This should not happen!"
+              Nothing -> error $ "\nNormalize.normalizeBind: No value found for binder " ++ pprString bndr ++ "? This should not happen!"
