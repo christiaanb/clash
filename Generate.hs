@@ -368,7 +368,8 @@ vectorFunId el_ty fname = do
       let functions = genUnconsVectorFuns elemTM vectorTM
       case lookup fname functions of
         Just body -> do
-          modA vsTypeFuns $ Map.insert (OrdType el_ty, fname) (function_id, body)
+          modA vsTypeFuns $ Map.insert (OrdType el_ty, fname) (function_id, (fst body))
+          mapM_ (vectorFunId el_ty) (snd body)
           return function_id
         Nothing -> error $ "\nGenerate.vectorFunId: I don't know how to generate vector function " ++ fname
   where
@@ -376,24 +377,29 @@ vectorFunId el_ty fname = do
 
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
-                    -> [(String, AST.SubProgBody)]
+                    -> [(String, (AST.SubProgBody, [String]))]
 genUnconsVectorFuns elemTM vectorTM  = 
-  [ (exId, AST.SubProgBody exSpec      []                  [exExpr])
-  , (replaceId, AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet])
-  , (headId, AST.SubProgBody headSpec    []                  [headExpr])
-  , (lastId, AST.SubProgBody lastSpec    []                  [lastExpr])
-  , (initId, AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet])
-  , (tailId, AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet])
-  , (takeId, AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet])
-  , (dropId, AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet])
-  , (plusgtId, AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet])
-  , (emptyId, AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr])
-  , (singletonId, AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet])
-  , (copynId, AST.SubProgBody copynSpec    [AST.SPVD copynVar]      [copynExpr])
-  , (selId, AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet])
-  , (ltplusId, AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet]  )  
-  , (plusplusId, AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet])
-  , (lengthTId, AST.SubProgBody lengthTSpec [] [lengthTExpr])
+  [ (exId, (AST.SubProgBody exSpec      []                  [exExpr],[]))
+  , (replaceId, (AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet],[]))
+  , (headId, (AST.SubProgBody headSpec    []                  [headExpr],[]))
+  , (lastId, (AST.SubProgBody lastSpec    []                  [lastExpr],[]))
+  , (initId, (AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet],[]))
+  , (tailId, (AST.SubProgBody tailSpec    [AST.SPVD tailVar]  [tailExpr, tailRet],[]))
+  , (takeId, (AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet],[]))
+  , (dropId, (AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet],[]))
+  , (plusgtId, (AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet],[]))
+  , (emptyId, (AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr],[]))
+  , (singletonId, (AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet],[]))
+  , (copynId, (AST.SubProgBody copynSpec    [AST.SPVD copynVar]      [copynExpr],[]))
+  , (selId, (AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet],[]))
+  , (ltplusId, (AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet],[]))  
+  , (plusplusId, (AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet],[]))
+  , (lengthTId, (AST.SubProgBody lengthTSpec [] [lengthTExpr],[]))
+  , (shiftlId, (AST.SubProgBody shiftlSpec [AST.SPVD shiftlVar] [shiftlExpr, shiftlRet], [initId]))
+  , (shiftrId, (AST.SubProgBody shiftrSpec [AST.SPVD shiftrVar] [shiftrExpr, shiftrRet], [tailId]))
+  , (nullId, (AST.SubProgBody nullSpec [] [nullExpr], []))
+  , (rotlId, (AST.SubProgBody rotlSpec [AST.SPVD rotlVar] [rotlExpr, rotlRet], [nullId, lastId, initId]))
+  , (rotrId, (AST.SubProgBody rotrSpec [AST.SPVD rotrVar] [rotrExpr, rotrRet], [nullId, tailId, headId]))
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -630,7 +636,97 @@ genUnconsVectorFuns elemTM vectorTM  =
     lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
     lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing))
-                                
+    shiftlSpec = AST.Function (mkVHDLExtId shiftlId) [AST.IfaceVarDec vecPar vectorTM,
+                                   AST.IfaceVarDec aPar   elemTM  ] vectorTM 
+    -- variable res : fsvec_x (0 to vec'length-1);
+    shiftlVar = 
+     AST.VarDec resId 
+            (AST.SubtypeIn vectorTM
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               [AST.ToRange (AST.PrimLit "0")
+                        (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                           (AST.PrimLit "1")) ]))
+            Nothing
+    -- res := a & init(vec)
+    shiftlExpr = AST.NSimple resId AST.:=
+                    (AST.PrimName (AST.NSimple aPar) AST.:&:
+                     (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))  
+                       [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
+    shiftlRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)       
+    shiftrSpec = AST.Function (mkVHDLExtId shiftrId) [AST.IfaceVarDec vecPar vectorTM,
+                                       AST.IfaceVarDec aPar   elemTM  ] vectorTM 
+    -- variable res : fsvec_x (0 to vec'length-1);
+    shiftrVar = 
+     AST.VarDec resId 
+            (AST.SubtypeIn vectorTM
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               [AST.ToRange (AST.PrimLit "0")
+                        (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                           (AST.PrimLit "1")) ]))
+            Nothing
+    -- res := tail(vec) & a
+    shiftrExpr = AST.NSimple resId AST.:=
+                  ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))  
+                    [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
+                  (AST.PrimName (AST.NSimple aPar)))
+                
+    shiftrRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)      
+    nullSpec = AST.Function (mkVHDLExtId nullId) [AST.IfaceVarDec vecPar vectorTM] booleanTM
+    -- return vec'length = 0
+    nullExpr = AST.ReturnSm (Just $ 
+                AST.PrimName (AST.NAttribute $ 
+                  AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:=:
+                    AST.PrimLit "0")
+    rotlSpec = AST.Function (mkVHDLExtId rotlId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    -- variable res : fsvec_x (0 to vec'length-1);
+    rotlVar = 
+     AST.VarDec resId 
+            (AST.SubtypeIn vectorTM
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               [AST.ToRange (AST.PrimLit "0")
+                        (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                           (AST.PrimLit "1")) ]))
+            Nothing
+    -- if null(vec) then res := vec else res := last(vec) & init(vec)
+    rotlExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))  
+                          [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)])
+                        [AST.NSimple resId AST.:= (AST.PrimName $ AST.NSimple vecPar)]
+                        []
+                        (Just $ AST.Else [rotlExprRet])
+      where rotlExprRet = 
+                AST.NSimple resId AST.:= 
+                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId lastId))  
+                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
+                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))  
+                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
+    rotlRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)       
+    rotrSpec = AST.Function (mkVHDLExtId rotrId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    -- variable res : fsvec_x (0 to vec'length-1);
+    rotrVar = 
+     AST.VarDec resId 
+            (AST.SubtypeIn vectorTM
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               [AST.ToRange (AST.PrimLit "0")
+                        (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                           (AST.PrimLit "1")) ]))
+            Nothing
+    -- if null(vec) then res := vec else res := tail(vec) & head(vec)
+    rotrExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))  
+                          [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)])
+                        [AST.NSimple resId AST.:= (AST.PrimName $ AST.NSimple vecPar)]
+                        []
+                        (Just $ AST.Else [rotrExprRet])
+      where rotrExprRet = 
+                AST.NSimple resId AST.:= 
+                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))  
+                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
+                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId headId))  
+                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
+    rotrRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
 -----------------------------------------------------------------------------
 -- A table of builtin functions
 -----------------------------------------------------------------------------
@@ -657,11 +753,16 @@ globalNameTable = Map.fromList
   , (foldrId          , (3, genFoldr                ) )
   , (zipId            , (2, genZip                  ) )
   , (unzipId          , (1, genUnzip                ) )
+  , (shiftlId         , (2, genFCall                ) )
+  , (shiftrId         , (2, genFCall                ) )
+  , (rotlId           , (1, genFCall                ) )
+  , (rotrId           , (1, genFCall                ) )
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
   , (copynId          , (2, genFCall                ) )
   , (copyId           , (1, genCopy                 ) )
   , (lengthTId        , (1, genFCall                ) )
+  , (nullId           , (1, genFCall                ) )
   , (hwxorId          , (2, genOperator2 AST.Xor    ) )
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )

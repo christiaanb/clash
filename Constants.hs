@@ -95,8 +95,8 @@ lengthId = "length"
 
 
 -- | isnull (function null in original Haskell source) function identifier
-isnullId :: String
-isnullId = "isnull"
+nullId :: String
+nullId = "null"
 
 
 -- | replace function identifier
