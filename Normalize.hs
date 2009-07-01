@@ -213,6 +213,7 @@ casewild expr@(Case scrut b ty alts) = do
       -- and binds that to b.
       mkextracts :: CoreBndr -> Int -> TransformMonad (Maybe (CoreBndr, CoreExpr))
       mkextracts b i =
+        -- TODO: Use free variables instead of is_wild. is_wild is a hack.
         if is_wild b || Type.isFunTy (Id.idType b) 
           -- Don't create extra bindings for binders that are already wild, or
           -- for binders that bind function types (to prevent loops with
