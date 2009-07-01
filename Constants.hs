@@ -149,9 +149,29 @@ rotlId = "rotl"
 rotrId :: String
 rotrId = "rotr"
 
+-- | concatenate the vectors in a vector
+concatId :: String
+concatId = "concat"
+
 -- | reverse function identifier
 reverseId :: String
 reverseId = "reverse"
+
+-- | iterate function identifier
+iterateId :: String
+iterateId = "iterate"
+
+-- | iteraten function identifier
+iteratenId :: String
+iteratenId = "iteraten"
+
+-- | iterate function identifier
+generateId :: String
+generateId = "generate"
+
+-- | iteraten function identifier
+generatenId :: String
+generatenId = "generaten"
 
 -- | copy function identifier
 copyId :: String
