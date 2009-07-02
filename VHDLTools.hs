@@ -281,6 +281,7 @@ vhdl_ty msg ty = do
         Just (ty_id, ty_def) -> do
           -- TODO: Check name uniqueness
           modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
           return ty_id
         Nothing -> error $ msg ++ "\nVHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
 
@@ -362,6 +363,7 @@ mk_vector_ty ty = do
       let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
       let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
       modA vsTypes (Map.insert (OrdType vec_ty) (vec_id, (Left vec_def)))
+      modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
       let ty_def = AST.SubtypeIn vec_id (Just range)
       return (ty_id, ty_def)
 
@@ -387,3 +389,7 @@ getFieldLabels ty = do
   case Map.lookup (OrdType ty) types of
     Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     _ -> error $ "\nVHDL.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show ty)
+    
+mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
+mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
+mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def

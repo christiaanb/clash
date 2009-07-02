@@ -8,9 +8,9 @@ import Types
 import Data.Param.TFVec
 import Data.RangedWord
 
-constant :: NaturalT n => e -> Op n e
+constant :: e -> Op D4 e
 constant e a b =
-  copy e
+  (e +> (e +> (e +> (singleton e))))
 
 invop :: Op n Bit
 invop a b = map hwnot a
@@ -20,12 +20,14 @@ andop a b = zipWith hwand a b
 
 -- Is any bit set?
 --anyset :: (PositiveT n) => Op n Bit
-anyset :: NaturalT n => Op n Bit
+anyset :: (Bit -> Bit -> Bit) -> Op D4 Bit
 --anyset a b = copy undefined (a' `hwor` b')
-anyset a b = constant (a' `hwor` b') a b
+anyset f a b = constant (a' `hwor` b') a b
   where 
-    a' = foldl hwor Low a
-    b' = foldl hwor Low b
+    a' = foldl f Low a
+    b' = foldl f Low b
+
+xhwor = hwor
 
 type Op n e = (TFVec n e -> TFVec n e -> TFVec n e)
 type Opcode = Bit
@@ -38,4 +40,4 @@ alu op1 op2 opc a b =
 
 actual_alu :: Opcode -> TFVec D4 Bit -> TFVec D4 Bit -> TFVec D4 Bit
 --actual_alu = alu (constant Low) andop
-actual_alu = alu anyset andop
+actual_alu = alu (anyset xhwor)  andop

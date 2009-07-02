@@ -51,6 +51,8 @@ type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 data VHDLState = VHDLState {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
+  -- | A list of type declarations
+  vsTypeDecls_  :: [AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
   vsTypeFuns_   :: TypeFunMap,
   -- | A map of HsFunction -> hardware signature (entity name, port names,
