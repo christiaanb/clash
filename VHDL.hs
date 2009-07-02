@@ -47,12 +47,12 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLState Map.empty Map.empty Map.empty Map.empty
+    init_session = VHDLState Map.empty Map.empty Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = map snd $ Map.elems (final_session ^.vsTypeFuns)
     ty_decls = map mktydecl $ Map.elems (final_session ^. vsTypes)
-    vec_decls = map (\(v_id, v_def) -> AST.PDITD $ AST.TypeDec v_id v_def) (Map.elems (final_session ^. vsElemTypes))
+    --vec_decls = map (\(v_id, v_def) -> AST.PDITD $ AST.TypeDec v_id v_def) (Map.elems (final_session ^. vsElemTypes))
     tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
     tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) highId Nothing)
     tfvec_index_def = AST.SubtypeIn integerTM (Just tfvec_range)
@@ -65,7 +65,7 @@ createDesignFiles binds =
       mkUseAll ["work", "types"]
       : (mkUseAll ["work"]
       : ieee_context)
-    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ vec_decls ++ ty_decls ++ subProgSpecs)
+    type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ ty_decls ++ subProgSpecs)
     type_package_body = AST.LUPackageBody $ AST.PackageBody typesId tyfun_decls
     subProgSpecs = map subProgSpec tyfun_decls
     subProgSpec = \(AST.SubProgBody spec _ _) -> AST.PDISS spec
