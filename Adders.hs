@@ -174,8 +174,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D4 Bit -> (TFVec D4 Bit, TFVec D4 Bit)
-functiontest = \v -> let r = (rotl v, rotr v) in r
+functiontest :: TFVec D4 (TFVec D3 Bit) -> (TFVec D12 Bit, TFVec D3 Bit)
+functiontest = \v -> let r = (concat v, head v) in r
 
 xhwnot x = hwnot x
 

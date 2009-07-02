@@ -281,6 +281,7 @@ vhdl_ty msg ty = do
         Just (ty_id, ty_def) -> do
           -- TODO: Check name uniqueness
           modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
           return ty_id
         Nothing -> error $ msg ++ "\nVHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
 
@@ -292,7 +293,7 @@ construct_vhdl_ty msg ty = do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
         "TFVec" -> do
-          res <- mk_vector_ty (tfvec_len ty) (tfvec_elem ty)
+          res <- mk_vector_ty ty
           return $ Just $ (Arrow.second Right) res
         -- "SizedWord" -> do
         --   res <- mk_vector_ty (sized_word_len ty) ty
@@ -339,17 +340,21 @@ mk_tycon_ty msg tycon args =
 
 -- | Create a VHDL vector type
 mk_vector_ty ::
-  Int -- ^ The length of the vector
-  -> Type.Type -- ^ The Haskell element type of the Vector
+  Type.Type -- ^ The Haskell type of the Vector
   -> VHDLSession (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
 
-mk_vector_ty len el_ty = do
-  elem_types_map <- getA vsElemTypes
+mk_vector_ty ty = do
+  types_map <- getA vsTypes
+  let (nvec_l, nvec_el) = Type.splitAppTy ty
+  let (nvec, leng) = Type.splitAppTy nvec_l
+  let vec_ty = Type.mkAppTy nvec nvec_el
+  let len = tfvec_len ty
+  let el_ty = tfvec_elem ty
   let error_msg = "\nVHDLTools.mk_vector_ty: Can not construct vectortype for elementtype: " ++ pprString el_ty 
   el_ty_tm <- vhdl_ty error_msg el_ty
   let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType el_ty) elem_types_map
+  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType vec_ty) types_map
   case existing_elem_ty of
     Just t -> do
       let ty_def = AST.SubtypeIn t (Just range)
@@ -357,8 +362,8 @@ mk_vector_ty len el_ty = do
     Nothing -> do
       let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
       let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
-      modA vsElemTypes (Map.insert (OrdType el_ty) (vec_id, vec_def))
-      --modA vsTypeFuns (Map.insert (OrdType el_ty) (genUnconsVectorFuns el_ty_tm vec_id)) 
+      modA vsTypes (Map.insert (OrdType vec_ty) (vec_id, (Left vec_def)))
+      modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
       let ty_def = AST.SubtypeIn vec_id (Just range)
       return (ty_id, ty_def)
 
@@ -384,3 +389,7 @@ getFieldLabels ty = do
   case Map.lookup (OrdType ty) types of
     Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     _ -> error $ "\nVHDL.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show ty)
+    
+mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
+mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
+mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def

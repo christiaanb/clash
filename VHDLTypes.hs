@@ -41,9 +41,6 @@ instance Ord OrdType where
 -- A map of a Core type to the corresponding type name
 type TypeMap = Map.Map OrdType (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn)
 
--- A map of Elem types to the corresponding VHDL Id for the Vector
-type ElemTypeMap = Map.Map OrdType (AST.VHDLId, AST.TypeDef)
-
 -- A map of a vector Core element type and function name to the coressponding
 -- VHDLId of the function and the function body.
 type TypeFunMap = Map.Map (OrdType, String) (AST.VHDLId, AST.SubProgBody)
@@ -54,8 +51,8 @@ type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 data VHDLState = VHDLState {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
-  -- | A map of Elem types -> VHDL Vector Id
-  vsElemTypes_   :: ElemTypeMap,
+  -- | A list of type declarations
+  vsTypeDecls_  :: [AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
   vsTypeFuns_   :: TypeFunMap,
   -- | A map of HsFunction -> hardware signature (entity name, port names,

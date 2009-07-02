@@ -292,7 +292,119 @@ genCopy' (Left res) f args@[arg] =
   in 
     return [out_assign]
     
-    
+genConcat :: BuiltinBuilder
+genConcat = genVarArgs genConcat'
+genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+genConcat' (Left res) f args@[arg] =
+  let
+    -- Setup the generate scheme
+    len1        = (tfvec_len . Var.varType) arg
+    (_, nvec)   = splitAppTy (Var.varType arg)
+    len2        = tfvec_len nvec
+    -- TODO: Use something better than varToString
+    label       = mkVHDLExtId ("concatVector" ++ (varToString res))
+    n_id        = mkVHDLBasicId "n"
+    n_expr      = idToVHDLExpr n_id
+    fromRange   = n_expr AST.:*: (AST.PrimLit $ show len2)
+    genScheme   = AST.ForGn n_id range
+    -- Create the content of the generate statement: Applying the mapped_f to
+    -- each of the elements in arg, storing to each element in res
+    toRange     = (n_expr AST.:*: (AST.PrimLit $ show len2)) AST.:+: (AST.PrimLit $ show (len2-1))
+    range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len1-1))
+    resname     = vecSlice fromRange toRange
+    argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
+    out_assign  = mkUncondAssign (Right resname) argexpr
+  in
+    -- Return the generate statement
+    return [AST.CSGSm $ AST.GenerateSm label genScheme [] [out_assign]]
+  where
+    vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res) 
+                            (AST.ToRange init last))
+
+genIteraten :: BuiltinBuilder
+genIteraten dst f args = genIterate dst f (tail args)
+
+genIterate :: BuiltinBuilder
+genIterate = genIterateOrGenerate True
+
+genGeneraten :: BuiltinBuilder
+genGeneraten dst f args = genGenerate dst f (tail args)
+
+genGenerate :: BuiltinBuilder
+genGenerate = genIterateOrGenerate False
+
+genIterateOrGenerate :: Bool -> BuiltinBuilder
+genIterateOrGenerate iter = genVarArgs (genIterateOrGenerate' iter)
+genIterateOrGenerate' :: Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession [AST.ConcSm]
+-- Special case for an empty input vector, just assign start to res
+genIterateOrGenerate' iter (Left res) _ [app_f, start] | len == 0 = return [mkUncondAssign (Left res) (AST.PrimLit "\"\"")]
+    where len = (tfvec_len . Var.varType) res
+genIterateOrGenerate' iter (Left res) f [app_f, start] = do
+  -- -- evec is (TFVec n), so it still needs an element type
+  -- let (nvec, _) = splitAppTy (Var.varType vec)
+  -- -- Put the type of the start value in nvec, this will be the type of our
+  -- -- temporary vector
+  let tmp_ty = Var.varType res
+  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
+  tmp_vhdl_ty <- vhdl_ty error_msg tmp_ty
+  -- Setup the generate scheme
+  let gen_label = mkVHDLExtId ("iterateVector" ++ (varToString start))
+  let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
+  let gen_range = AST.ToRange (AST.PrimLit "0") len_min_expr
+  let gen_scheme   = AST.ForGn n_id gen_range
+  -- Make the intermediate vector
+  let  tmp_dec     = AST.BDISD $ AST.SigDec tmp_id tmp_vhdl_ty Nothing
+  -- Create the generate statement
+  cells <- sequence [genFirstCell, genOtherCell]
+  let gen_sm = AST.GenerateSm gen_label gen_scheme [] (map AST.CSGSm cells)
+  -- Assign tmp[len-1] or tmp[0] to res
+  let out_assign = mkUncondAssign (Left res) $ vhdlNameToVHDLExpr tmp_name    
+  let block = AST.BlockSm block_label [] (AST.PMapAspect []) [tmp_dec] [AST.CSGSm gen_sm, out_assign]
+  return [AST.CSBSm block]
+  where
+    -- The vector length
+    len = (tfvec_len . Var.varType) res
+    -- An id for the counter
+    n_id = mkVHDLBasicId "n"
+    n_cur = idToVHDLExpr n_id
+    -- An expression for previous n
+    n_prev = n_cur AST.:-: (AST.PrimLit "1")
+    -- An expression for len-1
+    len_min_expr = (AST.PrimLit $ show (len-1))
+    -- An id for the tmp result vector
+    tmp_id = mkVHDLBasicId "tmp"
+    tmp_name = AST.NSimple tmp_id
+    -- Generate parts of the fold
+    genFirstCell, genOtherCell :: VHDLSession AST.GenerateSm
+    genFirstCell = do
+      let cond_label = mkVHDLExtId "firstcell"
+      -- if n == 0 or n == len-1
+      let cond_scheme = AST.IfGn $ n_cur AST.:=: (AST.PrimLit "0")
+      -- Output to tmp[current n]
+      let resname = mkIndexedName tmp_name n_cur
+      -- Input from start
+      let argexpr = varToVHDLExpr start
+      let startassign = mkUncondAssign (Right resname) argexpr
+      app_concsms <- genApplication (Right resname) app_f  [Right argexpr]
+      -- Return the conditional generate part
+      return $ AST.GenerateSm cond_label cond_scheme [] (if iter then 
+                                                          [startassign]
+                                                         else 
+                                                          app_concsms
+                                                        )
+
+    genOtherCell = do
+      let cond_label = mkVHDLExtId "othercell"
+      -- if n > 0 or n < len-1
+      let cond_scheme = AST.IfGn $ n_cur AST.:/=: (AST.PrimLit "0")
+      -- Output to tmp[current n]
+      let resname = mkIndexedName tmp_name n_cur
+      -- Input from tmp[previous n]
+      let argexpr = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
+      app_concsms <- genApplication (Right resname) app_f [Right argexpr]
+      -- Return the conditional generate part
+      return $ AST.GenerateSm cond_label cond_scheme [] app_concsms
+
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
@@ -400,6 +512,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (nullId, (AST.SubProgBody nullSpec [] [nullExpr], []))
   , (rotlId, (AST.SubProgBody rotlSpec [AST.SPVD rotlVar] [rotlExpr, rotlRet], [nullId, lastId, initId]))
   , (rotrId, (AST.SubProgBody rotrSpec [AST.SPVD rotrVar] [rotrExpr, rotrRet], [nullId, tailId, headId]))
+  , (reverseId, (AST.SubProgBody reverseSpec [AST.SPVD reverseVar] [reverseFor, reverseRet], []))
   ]
   where 
     ixPar   = AST.unsafeVHDLBasicId "ix"
@@ -727,6 +840,32 @@ genUnconsVectorFuns elemTM vectorTM  =
                       (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId headId))  
                         [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
     rotrRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    reverseSpec = AST.Function (mkVHDLExtId reverseId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
+    reverseVar = 
+      AST.VarDec resId 
+             (AST.SubtypeIn vectorTM
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                [AST.ToRange (AST.PrimLit "0")
+                         (AST.PrimName (AST.NAttribute $ 
+                           AST.AttribName (AST.NSimple vecPar) (mkVHDLBasicId lengthId) Nothing) AST.:-:
+                            (AST.PrimLit "1")) ]))
+             Nothing
+    -- for i in 0 to res'range loop
+    --   res(vec'length-i-1) := vec(i);
+    -- end loop;
+    reverseFor = 
+       AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) rangeId Nothing) [reverseAssign]
+    -- res(vec'length-i-1) := vec(i);
+    reverseAssign = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [destExp]) AST.:=
+      (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) 
+                           [AST.PrimName $ AST.NSimple iId]))
+        where destExp = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple vecPar) 
+                                   (mkVHDLBasicId lengthId) Nothing) AST.:-: 
+                        AST.PrimName (AST.NSimple iId) AST.:-: 
+                        (AST.PrimLit "1") 
+    -- return res;
+    reverseRet = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
+    
 -----------------------------------------------------------------------------
 -- A table of builtin functions
 -----------------------------------------------------------------------------
@@ -757,6 +896,12 @@ globalNameTable = Map.fromList
   , (shiftrId         , (2, genFCall                ) )
   , (rotlId           , (1, genFCall                ) )
   , (rotrId           , (1, genFCall                ) )
+  , (concatId         , (1, genConcat               ) )
+  , (reverseId        , (1, genFCall                ) )
+  , (iteratenId       , (3, genIteraten             ) )
+  , (iterateId        , (2, genIterate              ) )
+  , (generatenId      , (3, genGeneraten            ) )
+  , (generateId       , (2, genGenerate             ) )
   , (emptyId          , (0, genFCall                ) )
   , (singletonId      , (1, genFCall                ) )
   , (copynId          , (2, genFCall                ) )
