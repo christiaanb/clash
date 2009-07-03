@@ -265,7 +265,7 @@ builtin_types =
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
 -- Returns an error value, using the given message, when no type could be
 -- created.
-vhdl_ty :: String -> Type.Type -> VHDLSession AST.TypeMark
+vhdl_ty :: String -> Type.Type -> TypeSession AST.TypeMark
 vhdl_ty msg ty = do
   tm_either <- vhdl_ty_either ty
   case tm_either of
@@ -274,7 +274,7 @@ vhdl_ty msg ty = do
 
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
 -- Returns either an error message or the resulting type.
-vhdl_ty_either :: Type.Type -> VHDLSession (Either String AST.TypeMark)
+vhdl_ty_either :: Type.Type -> TypeSession (Either String AST.TypeMark)
 vhdl_ty_either ty = do
   typemap <- getA vsTypes
   let builtin_ty = do -- See if this is a tycon and lookup its name
@@ -301,7 +301,7 @@ vhdl_ty_either ty = do
 
 -- Construct a new VHDL type for the given Haskell type. Returns an error
 -- message or the resulting typemark and typedef.
-construct_vhdl_ty :: Type.Type -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+construct_vhdl_ty :: Type.Type -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 construct_vhdl_ty ty = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
@@ -317,7 +317,7 @@ construct_vhdl_ty ty = do
     Nothing -> return (Left $ "VHDLTools.construct_vhdl_ty: Cannot create type for non-tycon type: " ++ pprString ty ++ "\n")
 
 -- | Create VHDL type for a custom tycon
-mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 mk_tycon_ty tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
@@ -358,7 +358,7 @@ mk_tycon_ty tycon args =
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Type.Type -- ^ The Haskell type of the Vector
-  -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+  -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
       -- ^ An error message or The typemark created.
 
 mk_vector_ty ty = do
@@ -394,7 +394,7 @@ mk_vector_ty ty = do
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
   -> Int -- ^ The maximum bound (> minimum bound)
-  -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+  -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
       -- ^ An error message or The typemark created.
 mk_natural_ty min_bound max_bound = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
@@ -404,7 +404,7 @@ mk_natural_ty min_bound max_bound = do
 
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
-getFieldLabels :: Type.Type -> VHDLSession [AST.VHDLId]
+getFieldLabels :: Type.Type -> TypeSession [AST.VHDLId]
 getFieldLabels ty = do
   -- Ensure that the type is generated (but throw away it's VHDLId)
   let error_msg = "\nVHDLTools.getFieldLabels: Can not get field labels, because: " ++ pprString ty ++ "can not be generated." 

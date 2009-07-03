@@ -12,6 +12,7 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import Data.Accessor
+import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -47,11 +48,11 @@ createDesignFiles binds =
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLState Map.empty [] Map.empty Map.empty
+    init_session = VHDLState emptyTypeState Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
-    tyfun_decls = map snd $ Map.elems (final_session ^.vsTypeFuns)
-    ty_decls = final_session ^.vsTypeDecls
+    tyfun_decls = map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns)
+    ty_decls = final_session ^. vsType ^. vsTypeDecls
     tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
     tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) highId Nothing)
     tfvec_index_def = AST.SubtypeIn integerTM (Just tfvec_range)
@@ -127,7 +128,7 @@ createEntity (fname, expr) = do
         ty = Var.varType bndr
         error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr 
       in do
-        type_mark <- vhdl_ty error_msg ty
+        type_mark <- MonadState.lift vsType $ vhdl_ty error_msg ty
         return (id, type_mark)
      )
 
@@ -237,7 +238,7 @@ mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
     let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
-    type_mark <- (vhdl_ty error_msg) $ Var.varType bndr
+    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
     return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
   else
     return Nothing
@@ -271,7 +272,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
     (DataAlt dc, bndrs, (Var sel_bndr)) -> do
       case List.elemIndex sel_bndr bndrs of
         Just i -> do
-          labels <- getFieldLabels (Id.idType scrut)
+          labels <- MonadState.lift vsType $ getFieldLabels (Id.idType scrut)
           let label = labels!!i
           let sel_name = mkSelectedName (varToVHDLName scrut) label
           let sel_expr = AST.PrimName sel_name

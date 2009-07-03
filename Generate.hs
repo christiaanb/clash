@@ -6,6 +6,7 @@ import qualified Data.Map as Map
 import qualified Maybe
 import qualified Data.Either as Either
 import Data.Accessor
+import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -77,7 +78,7 @@ genFCall' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Ex
 genFCall' (Left res) f args = do
   let fname = varToString f
   let el_ty = (tfvec_elem . Var.varType) res
-  id <- vectorFunId el_ty fname
+  id <- MonadState.lift vsType $ vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFCall' (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
@@ -155,7 +156,7 @@ genFold' left (Left res) f [folded_f, start, vec] = do
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
-  tmp_vhdl_ty <- vhdl_ty error_msg tmp_ty
+  tmp_vhdl_ty <- MonadState.lift vsType $ vhdl_ty error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("foldlVector" ++ (varToString vec))
   let block_label = mkVHDLExtId ("foldlVector" ++ (varToString start))
@@ -245,7 +246,7 @@ genZip' (Left res) f args@[arg1, arg2] =
     argexpr1        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
     argexpr2        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
   in do
-    labels <- getFieldLabels (tfvec_elem (Var.varType res))
+    labels <- MonadState.lift vsType $ getFieldLabels (tfvec_elem (Var.varType res))
     let resnameA    = mkSelectedName resname' (labels!!0)
     let resnameB    = mkSelectedName resname' (labels!!1)
     let resA_assign = mkUncondAssign (Right resnameA) argexpr1
@@ -270,8 +271,8 @@ genUnzip' (Left res) f args@[arg] =
     resname'        = varToVHDLName res
     argexpr'        = mkIndexedName (varToVHDLName arg) n_expr
   in do
-    reslabels <- getFieldLabels (Var.varType res)
-    arglabels <- getFieldLabels (tfvec_elem (Var.varType arg))
+    reslabels <- MonadState.lift vsType $ getFieldLabels (Var.varType res)
+    arglabels <- MonadState.lift vsType $ getFieldLabels (tfvec_elem (Var.varType arg))
     let resnameA    = mkIndexedName (mkSelectedName resname' (reslabels!!0)) n_expr
     let resnameB    = mkIndexedName (mkSelectedName resname' (reslabels!!1)) n_expr
     let argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!0)
@@ -346,7 +347,7 @@ genIterateOrGenerate' iter (Left res) f [app_f, start] = do
   -- -- temporary vector
   let tmp_ty = Var.varType res
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
-  tmp_vhdl_ty <- vhdl_ty error_msg tmp_ty
+  tmp_vhdl_ty <- MonadState.lift vsType $ vhdl_ty error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("iterateVector" ++ (varToString start))
   let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
@@ -420,7 +421,7 @@ genApplication dst f args =
       -- It's a datacon. Create a record from its arguments.
       Left bndr -> do
         -- We have the bndr, so we can get at the type
-        labels <- getFieldLabels (Var.varType bndr)
+        labels <- MonadState.lift vsType $ getFieldLabels (Var.varType bndr)
         return $ zipWith mkassign labels $ map (either exprToVHDLExpr id) args
         where
           mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
@@ -464,7 +465,7 @@ genApplication dst f args =
 
 -- Returns the VHDLId of the vector function with the given name for the given
 -- element type. Generates -- this function if needed.
-vectorFunId :: Type.Type -> String -> VHDLSession AST.VHDLId
+vectorFunId :: Type.Type -> String -> TypeSession AST.VHDLId
 vectorFunId el_ty fname = do
   let error_msg = "\nGenerate.vectorFunId: Can not construct vector function for element: " ++ pprString el_ty
   elemTM <- vhdl_ty error_msg el_ty
