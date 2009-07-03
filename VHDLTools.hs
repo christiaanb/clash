@@ -277,12 +277,13 @@ vhdl_ty msg ty = do
 vhdl_ty_either :: Type.Type -> TypeSession (Either String AST.TypeMark)
 vhdl_ty_either ty = do
   typemap <- getA vsTypes
+  htype <- mkHType ty
   let builtin_ty = do -- See if this is a tycon and lookup its name
         (tycon, args) <- Type.splitTyConApp_maybe ty
         let name = Name.getOccString (TyCon.tyConName tycon)
         Map.lookup name builtin_types
   -- If not a builtin type, try the custom types
-  let existing_ty = (fmap fst) $ Map.lookup (OrdType ty) typemap
+  let existing_ty = (fmap fst) $ Map.lookup htype typemap
   case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
     -- Found a type, return it
     Just t -> return (Right t)
@@ -292,7 +293,7 @@ vhdl_ty_either ty = do
       case newty_maybe of
         Right (ty_id, ty_def) -> do
           -- TODO: Check name uniqueness
-          modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
+          modA vsTypes (Map.insert htype (ty_id, ty_def))
           modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
           return (Right ty_id)
         Left err -> return $ Left $
@@ -374,7 +375,7 @@ mk_vector_ty ty = do
     Right el_ty_tm -> do
       let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
       let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-      let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType vec_ty) types_map
+      let existing_elem_ty = (fmap fst) $ Map.lookup (StdType $ OrdType vec_ty) types_map
       case existing_elem_ty of
         Just t -> do
           let ty_def = AST.SubtypeIn t (Just range)
@@ -382,7 +383,7 @@ mk_vector_ty ty = do
         Nothing -> do
           let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
           let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
-          modA vsTypes (Map.insert (OrdType vec_ty) (vec_id, (Left vec_def)))
+          modA vsTypes (Map.insert (StdType $ OrdType vec_ty) (vec_id, (Left vec_def)))
           modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Right (ty_id, Right ty_def))
@@ -411,10 +412,49 @@ getFieldLabels ty = do
   vhdl_ty error_msg ty
   -- Get the types map, lookup and unpack the VHDL TypeDef
   types <- getA vsTypes
-  case Map.lookup (OrdType ty) types of
+  htype <- mkHType ty
+  case Map.lookup htype types of
     Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     _ -> error $ "\nVHDL.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show ty)
     
 mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
 mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
 mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def
+
+mkHType :: Type.Type -> TypeSession HType
+mkHType ty = do
+  -- FIXME: Do we really need to do this here again?
+  let builtin_ty = do -- See if this is a tycon and lookup its name
+        (tycon, args) <- Type.splitTyConApp_maybe ty
+        let name = Name.getOccString (TyCon.tyConName tycon)
+        Map.lookup name builtin_types
+  case builtin_ty of
+    Just typ -> 
+      return $ BuiltinType $ prettyShow typ
+    Nothing ->
+      case Type.splitTyConApp_maybe ty of
+        Just (tycon, args) -> do
+          let name = Name.getOccString (TyCon.tyConName tycon)
+          case name of
+            "TFVec" -> do
+              elem_htype <- mkHType (tfvec_elem ty)
+              return $ VecType (tfvec_len ty) elem_htype
+            otherwise -> do
+              mkTyConHType tycon args
+        Nothing -> return $ StdType $ OrdType ty
+
+-- FIXME: Do we really need to do this here again?
+mkTyConHType :: TyCon.TyCon -> [Type.Type] -> TypeSession HType
+mkTyConHType tycon args =
+  case TyCon.tyConDataCons tycon of
+    -- Not an algebraic type
+    [] -> error $ "\nVHDLTools.mkHType: Only custom algebraic types are supported: " ++ pprString tycon
+    [dc] -> do
+      let arg_tys = DataCon.dataConRepArgTys dc
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      elem_htys <- mapM mkHType real_arg_tys
+      return $ ADTType (nameToString (TyCon.tyConName tycon)) elem_htys
+    dcs -> error $ "\nVHDLTools.mkHType: Only single constructor datatypes supported: " ++ pprString tycon
+  where
+    tyvars = TyCon.tyConTyVars tycon
+    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)

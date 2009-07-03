@@ -72,16 +72,16 @@ genOperator1' op _ f [arg] = return $ op arg
 
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
-genFCall :: BuiltinBuilder 
-genFCall = genExprArgs $ genExprRes genFCall'
-genFCall' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
-genFCall' (Left res) f args = do
+genFCall :: Bool -> BuiltinBuilder 
+genFCall switch = genExprArgs $ genExprRes (genFCall' switch)
+genFCall' :: Bool -> Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genFCall' switch (Left res) f args = do
   let fname = varToString f
-  let el_ty = (tfvec_elem . Var.varType) res
+  let el_ty = if switch then (Var.varType res) else ((tfvec_elem . Var.varType) res)
   id <- MonadState.lift vsType $ vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
-genFCall' (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
@@ -875,40 +875,40 @@ genUnconsVectorFuns elemTM vectorTM  =
 -- builder function.
 globalNameTable :: NameTable
 globalNameTable = Map.fromList
-  [ (exId             , (2, genFCall                ) )
-  , (replaceId        , (3, genFCall                ) )
-  , (headId           , (1, genFCall                ) )
-  , (lastId           , (1, genFCall                ) )
-  , (tailId           , (1, genFCall                ) )
-  , (initId           , (1, genFCall                ) )
-  , (takeId           , (2, genFCall                ) )
-  , (dropId           , (2, genFCall                ) )
-  , (selId            , (4, genFCall                ) )
-  , (plusgtId         , (2, genFCall                ) )
-  , (ltplusId         , (2, genFCall                ) )
-  , (plusplusId       , (2, genFCall                ) )
+  [ (exId             , (2, genFCall False          ) )
+  , (replaceId        , (3, genFCall False          ) )
+  , (headId           , (1, genFCall True           ) )
+  , (lastId           , (1, genFCall True           ) )
+  , (tailId           , (1, genFCall False          ) )
+  , (initId           , (1, genFCall False          ) )
+  , (takeId           , (2, genFCall False          ) )
+  , (dropId           , (2, genFCall False          ) )
+  , (selId            , (4, genFCall False          ) )
+  , (plusgtId         , (2, genFCall False          ) )
+  , (ltplusId         , (2, genFCall False          ) )
+  , (plusplusId       , (2, genFCall False          ) )
   , (mapId            , (2, genMap                  ) )
   , (zipWithId        , (3, genZipWith              ) )
   , (foldlId          , (3, genFoldl                ) )
   , (foldrId          , (3, genFoldr                ) )
   , (zipId            , (2, genZip                  ) )
   , (unzipId          , (1, genUnzip                ) )
-  , (shiftlId         , (2, genFCall                ) )
-  , (shiftrId         , (2, genFCall                ) )
-  , (rotlId           , (1, genFCall                ) )
-  , (rotrId           , (1, genFCall                ) )
+  , (shiftlId         , (2, genFCall False          ) )
+  , (shiftrId         , (2, genFCall False          ) )
+  , (rotlId           , (1, genFCall False          ) )
+  , (rotrId           , (1, genFCall False          ) )
   , (concatId         , (1, genConcat               ) )
-  , (reverseId        , (1, genFCall                ) )
+  , (reverseId        , (1, genFCall False          ) )
   , (iteratenId       , (3, genIteraten             ) )
   , (iterateId        , (2, genIterate              ) )
   , (generatenId      , (3, genGeneraten            ) )
   , (generateId       , (2, genGenerate             ) )
-  , (emptyId          , (0, genFCall                ) )
-  , (singletonId      , (1, genFCall                ) )
-  , (copynId          , (2, genFCall                ) )
+  , (emptyId          , (0, genFCall False          ) )
+  , (singletonId      , (1, genFCall False          ) )
+  , (copynId          , (2, genFCall False          ) )
   , (copyId           , (1, genCopy                 ) )
-  , (lengthTId        , (1, genFCall                ) )
-  , (nullId           , (1, genFCall                ) )
+  , (lengthTId        , (1, genFCall False          ) )
+  , (nullId           , (1, genFCall False          ) )
   , (hwxorId          , (2, genOperator2 AST.Xor    ) )
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )
