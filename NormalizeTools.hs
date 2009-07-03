@@ -14,6 +14,7 @@ import qualified Control.Monad.Trans.Writer as Writer
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 import Data.Accessor
+import Data.Accessor.MonadState as MonadState
 
 -- GHC API
 import CoreSyn
@@ -32,6 +33,8 @@ import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import NormalizeTypes
+import Pretty
+import qualified VHDLTools
 
 -- Create a new internal var with the given name and type. A Unique is
 -- appended to the given name, to ensure uniqueness (not strictly neccesary,
@@ -235,3 +238,8 @@ substitute ((b, e):subss) expr = substitute subss' expr'
 -- an initial state.
 runTransformSession :: UniqSupply.UniqSupply -> TransformSession a -> a
 runTransformSession uniqSupply session = State.evalState session (emptyTransformState uniqSupply)
+
+-- Is the given expression representable at runtime, based on the type?
+isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool
+isRepr (Type ty) = return False
+isRepr expr = Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType (CoreUtils.exprType expr)
