@@ -2,6 +2,7 @@ module VHDLTools where
 
 -- Standard modules
 import qualified Maybe
+import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
@@ -262,8 +263,19 @@ builtin_types =
   ]
 
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
+-- Returns an error value, using the given message, when no type could be
+-- created.
 vhdl_ty :: String -> Type.Type -> VHDLSession AST.TypeMark
 vhdl_ty msg ty = do
+  tm_either <- vhdl_ty_either ty
+  case tm_either of
+    Right tm -> return tm
+    Left err -> error $ msg ++ "\n" ++ err
+
+-- Translate a Haskell type to a VHDL type, generating a new type if needed.
+-- Returns either an error message or the resulting type.
+vhdl_ty_either :: Type.Type -> VHDLSession (Either String AST.TypeMark)
+vhdl_ty_either ty = do
   typemap <- getA vsTypes
   let builtin_ty = do -- See if this is a tycon and lookup its name
         (tycon, args) <- Type.splitTyConApp_maybe ty
@@ -273,62 +285,67 @@ vhdl_ty msg ty = do
   let existing_ty = (fmap fst) $ Map.lookup (OrdType ty) typemap
   case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
     -- Found a type, return it
-    Just t -> return t
+    Just t -> return (Right t)
     -- No type yet, try to construct it
     Nothing -> do
-      newty_maybe <- (construct_vhdl_ty msg ty)
+      newty_maybe <- (construct_vhdl_ty ty)
       case newty_maybe of
-        Just (ty_id, ty_def) -> do
+        Right (ty_id, ty_def) -> do
           -- TODO: Check name uniqueness
           modA vsTypes (Map.insert (OrdType ty) (ty_id, ty_def))
           modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
-          return ty_id
-        Nothing -> error $ msg ++ "\nVHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
+          return (Right ty_id)
+        Left err -> return $ Left $
+          "VHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
+          ++ err
 
--- Construct a new VHDL type for the given Haskell type.
-construct_vhdl_ty :: String -> Type.Type -> VHDLSession (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
-construct_vhdl_ty msg ty = do
+-- Construct a new VHDL type for the given Haskell type. Returns an error
+-- message or the resulting typemark and typedef.
+construct_vhdl_ty :: Type.Type -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+construct_vhdl_ty ty = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
-        "TFVec" -> do
-          res <- mk_vector_ty ty
-          return $ Just $ (Arrow.second Right) res
+        "TFVec" -> mk_vector_ty ty
         -- "SizedWord" -> do
         --   res <- mk_vector_ty (sized_word_len ty) ty
         --   return $ Just $ (Arrow.second Left) res
-        "RangedWord" -> do 
-          res <- mk_natural_ty 0 (ranged_word_bound ty)
-          return $ Just $ (Arrow.second Right) res
+        "RangedWord" -> mk_natural_ty 0 (ranged_word_bound ty)
         -- Create a custom type from this tycon
-        otherwise -> mk_tycon_ty msg tycon args
-    Nothing -> return $ Nothing
+        otherwise -> mk_tycon_ty tycon args
+    Nothing -> return (Left $ "VHDLTools.construct_vhdl_ty: Cannot create type for non-tycon type: " ++ pprString ty ++ "\n")
 
 -- | Create VHDL type for a custom tycon
-mk_tycon_ty :: String -> TyCon.TyCon -> [Type.Type] -> VHDLSession (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
-mk_tycon_ty msg tycon args =
+mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
-    [] -> error $ "\nVHDLTools.mk_tycon_ty: Only custom algebraic types are supported: " ++ pprString tycon
+    [] -> return (Left $ "VHDLTools.mk_tycon_ty: Only custom algebraic types are supported: " ++ pprString tycon ++ "\n")
     [dc] -> do
       let arg_tys = DataCon.dataConRepArgTys dc
       -- TODO: CoreSubst docs say each Subs can be applied only once. Is this a
       -- violation? Or does it only mean not to apply it again to the same
       -- subject?
       let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
-      let error_msg = msg ++ "\nVHDLTools.mk_tycon_ty: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for one of the arguments."
-      elem_tys <- mapM (vhdl_ty error_msg) real_arg_tys
-      let elems = zipWith AST.ElementDec recordlabels elem_tys
-      -- For a single construct datatype, build a record with one field for
-      -- each argument.
-      -- TODO: Add argument type ids to this, to ensure uniqueness
-      -- TODO: Special handling for tuples?
-      let elem_names = concat $ map prettyShow elem_tys
-      let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
-      let ty_def = AST.TDR $ AST.RecordTypeDef elems
-      return $ Just (ty_id, Left ty_def)
-    dcs -> error $ "\nVHDLTools.mk_tycon_ty: Only single constructor datatypes supported: " ++ pprString tycon
+      elem_tys_either <- mapM vhdl_ty_either real_arg_tys
+      case Either.partitionEithers elem_tys_either of
+        -- No errors in element types
+        ([], elem_tys) -> do
+          let elems = zipWith AST.ElementDec recordlabels elem_tys
+          -- For a single construct datatype, build a record with one field for
+          -- each argument.
+          -- TODO: Add argument type ids to this, to ensure uniqueness
+          -- TODO: Special handling for tuples?
+          let elem_names = concat $ map prettyShow elem_tys
+          let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
+          let ty_def = AST.TDR $ AST.RecordTypeDef elems
+          return $ Right (ty_id, Left ty_def)
+        -- There were errors in element types
+        (errors, _) -> return $ Left $
+          "VHDLTools.mk_tycon_ty: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
+          ++ (concat errors)
+    dcs -> return $ Left $ "VHDLTools.mk_tycon_ty: Only single constructor datatypes supported: " ++ pprString tycon ++ "\n"
   where
     -- Create a subst that instantiates all types passed to the tycon
     -- TODO: I'm not 100% sure that this is the right way to do this. It seems
@@ -341,7 +358,8 @@ mk_tycon_ty msg tycon args =
 -- | Create a VHDL vector type
 mk_vector_ty ::
   Type.Type -- ^ The Haskell type of the Vector
-  -> VHDLSession (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+  -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+      -- ^ An error message or The typemark created.
 
 mk_vector_ty ty = do
   types_map <- getA vsTypes
@@ -350,32 +368,39 @@ mk_vector_ty ty = do
   let vec_ty = Type.mkAppTy nvec nvec_el
   let len = tfvec_len ty
   let el_ty = tfvec_elem ty
-  let error_msg = "\nVHDLTools.mk_vector_ty: Can not construct vectortype for elementtype: " ++ pprString el_ty 
-  el_ty_tm <- vhdl_ty error_msg el_ty
-  let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
-  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-  let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType vec_ty) types_map
-  case existing_elem_ty of
-    Just t -> do
-      let ty_def = AST.SubtypeIn t (Just range)
-      return (ty_id, ty_def)
-    Nothing -> do
-      let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
-      let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
-      modA vsTypes (Map.insert (OrdType vec_ty) (vec_id, (Left vec_def)))
-      modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
-      let ty_def = AST.SubtypeIn vec_id (Just range)
-      return (ty_id, ty_def)
+  el_ty_tm_either <- vhdl_ty_either el_ty
+  case el_ty_tm_either of
+    -- Could create element type
+    Right el_ty_tm -> do
+      let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId el_ty_tm) ++ "-0_to_" ++ (show len)
+      let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
+      let existing_elem_ty = (fmap fst) $ Map.lookup (OrdType vec_ty) types_map
+      case existing_elem_ty of
+        Just t -> do
+          let ty_def = AST.SubtypeIn t (Just range)
+          return (Right (ty_id, Right ty_def))
+        Nothing -> do
+          let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
+          let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
+          modA vsTypes (Map.insert (OrdType vec_ty) (vec_id, (Left vec_def)))
+          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
+          let ty_def = AST.SubtypeIn vec_id (Just range)
+          return (Right (ty_id, Right ty_def))
+    -- Could not create element type
+    Left err -> return $ Left $ 
+      "VHDLTools.mk_vector_ty: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
+      ++ err
 
 mk_natural_ty ::
   Int -- ^ The minimum bound (> 0)
   -> Int -- ^ The maximum bound (> minimum bound)
-  -> VHDLSession (AST.TypeMark, AST.SubtypeIn) -- The typemark created.
+  -> VHDLSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+      -- ^ An error message or The typemark created.
 mk_natural_ty min_bound max_bound = do
   let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
   let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
   let ty_def = AST.SubtypeIn naturalTM (Just range)
-  return (ty_id, ty_def)
+  return (Right (ty_id, Right ty_def))
 
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
