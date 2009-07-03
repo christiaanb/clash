@@ -285,13 +285,12 @@ caseremove expr = return expr
 caseremovetop = everywhere ("caseremove", caseremove)
 
 --------------------------------
--- Application simplification
+-- Argument extraction
 --------------------------------
--- Make sure that all arguments in an application are simple variables.
+-- Make sure that all arguments of a representable type are simple variables.
 appsimpl, appsimpltop :: Transform
--- Don't simplify arguments that are already simple. Do simplify datacons,
--- however, since we can't portmap literals.
-appsimpl expr@(App f (Var v)) | not $ Id.isDataConWorkId v = return expr
+-- Don't simplify arguments that are already simple.
+appsimpl expr@(App f (Var v)) = return expr
 -- Simplify all non-applicable (to prevent loops with inlinefun) arguments,
 -- except for type arguments (since a let can't bind type vars, only a lambda
 -- can). Do this by introducing a new Let that binds the argument and passing
