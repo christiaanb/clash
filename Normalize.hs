@@ -308,47 +308,16 @@ appsimpl expr = return expr
 appsimpltop = everywhere ("appsimpl", appsimpl)
 
 --------------------------------
--- Type argument propagation
---------------------------------
--- Remove all applications to type arguments, by duplicating the function
--- called with the type application in its new definition. We leave
--- dictionaries that might be associated with the type untouched, the funprop
--- transform should propagate these later on.
-typeprop, typeproptop :: Transform
--- Transform any function that is applied to a type argument. Since type
--- arguments are always the first ones to apply and we'll remove all type
--- arguments, we can simply do them one by one. We only propagate type
--- arguments without any free tyvars, since tyvars those wouldn't be in scope
--- in the new function.
-typeprop expr@(App (Var f) arg@(Type ty)) | not $ has_free_tyvars arg = do
-  body_maybe <- Trans.lift $ getGlobalBind f
-  case body_maybe of
-    Just body -> do
-      let newbody = App body (Type ty)
-      -- Create a new function with the same name but a new body
-      newf <- mkFunction f newbody
-      -- Replace the application with this new function
-      change (Var newf)
-    -- If we don't have a body for the function called, leave it unchanged (it
-    -- should be a primitive function then).
-    Nothing -> return expr
--- Leave all other expressions unchanged
-typeprop expr = return expr
--- Perform this transform everywhere
-typeproptop = everywhere ("typeprop", typeprop)
-
-
---------------------------------
 -- Function-typed argument propagation
 --------------------------------
 -- Remove all applications to function-typed arguments, by duplication the
 -- function called with the function-typed parameter replaced by the free
 -- variables of the argument passed in.
-funprop, funproptop :: Transform
+argprop, argproptop :: Transform
 -- Transform any application of a named function (i.e., skip applications of
 -- lambda's). Also skip applications that have arguments with free type
 -- variables, since we can't inline those.
-funprop expr@(App _ _) | is_var fexpr && not (any has_free_tyvars args) = do
+argprop expr@(App _ _) | is_var fexpr = do
   -- Find the body of the function called
   body_maybe <- Trans.lift $ getGlobalBind f
   case body_maybe of
@@ -387,32 +356,38 @@ funprop expr@(App _ _) | is_var fexpr && not (any has_free_tyvars args) = do
     -- in the new function body, and arg is the argument to apply to the old
     -- function body.
     doarg :: CoreExpr -> TransformMonad ([CoreExpr], [CoreBndr], CoreExpr)
-    doarg arg | is_fun arg = do
-      bndrs <- Trans.lift getGlobalBinders
-      -- Find interesting free variables, each of which should be passed to
-      -- the new function instead of the original function argument.
-      -- 
-      -- Interesting vars are those that are local, but not available from the
-      -- top level scope (functions from this module are defined as local, but
-      -- they're not local to this function, so we can freely move references
-      -- to them into another function).
-      let interesting var = Var.isLocalVar var && (not $ var `elem` bndrs)
-      let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting arg
-      -- Mark the current expression as changed
-      setChanged
-      return (map Var free_vars, free_vars, arg)
-    -- Non-functiontyped arguments can be unchanged. Note that this handles
-    -- both values and types.
     doarg arg = do
-      -- TODO: preserve original naming?
-      id <- mkBinderFor arg "param"
-      -- Just pass the original argument to the new function, which binds it
-      -- to a new id and just pass that new id to the old function body.
-      return ([arg], [id], mkReferenceTo id) 
+      repr <- isRepr arg
+      bndrs <- Trans.lift getGlobalBinders
+      let interesting var = Var.isLocalVar var && (not $ var `elem` bndrs)
+      if not repr && not (is_var arg && interesting (exprToVar arg)) && not (has_free_tyvars arg) 
+        then do
+          -- Propagate all complex arguments that are not representable, but not
+          -- arguments with free type variables (since those would require types
+          -- not known yet, which will always be known eventually).
+          -- Find interesting free variables, each of which should be passed to
+          -- the new function instead of the original function argument.
+          -- 
+          -- Interesting vars are those that are local, but not available from the
+          -- top level scope (functions from this module are defined as local, but
+          -- they're not local to this function, so we can freely move references
+          -- to them into another function).
+          let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting arg
+          -- Mark the current expression as changed
+          setChanged
+          return (map Var free_vars, free_vars, arg)
+        else do
+          -- Representable types will not be propagated, and arguments with free
+          -- type variables will be propagated later.
+          -- TODO: preserve original naming?
+          id <- mkBinderFor arg "param"
+          -- Just pass the original argument to the new function, which binds it
+          -- to a new id and just pass that new id to the old function body.
+          return ([arg], [id], mkReferenceTo id) 
 -- Leave all other expressions unchanged
-funprop expr = return expr
+argprop expr = return expr
 -- Perform this transform everywhere
-funproptop = everywhere ("funprop", funprop)
+argproptop = everywhere ("argprop", argprop)
 
 --------------------------------
 -- Function-typed argument extraction
@@ -473,7 +448,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [typeproptop, funproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
