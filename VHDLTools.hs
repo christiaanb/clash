@@ -277,28 +277,33 @@ vhdl_ty msg ty = do
 vhdl_ty_either :: Type.Type -> TypeSession (Either String AST.TypeMark)
 vhdl_ty_either ty = do
   typemap <- getA vsTypes
-  htype <- mkHType ty
-  let builtin_ty = do -- See if this is a tycon and lookup its name
-        (tycon, args) <- Type.splitTyConApp_maybe ty
-        let name = Name.getOccString (TyCon.tyConName tycon)
-        Map.lookup name builtin_types
-  -- If not a builtin type, try the custom types
-  let existing_ty = (fmap fst) $ Map.lookup htype typemap
-  case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
-    -- Found a type, return it
-    Just t -> return (Right t)
-    -- No type yet, try to construct it
-    Nothing -> do
-      newty_maybe <- (construct_vhdl_ty ty)
-      case newty_maybe of
-        Right (ty_id, ty_def) -> do
-          -- TODO: Check name uniqueness
-          modA vsTypes (Map.insert htype (ty_id, ty_def))
-          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
-          return (Right ty_id)
-        Left err -> return $ Left $
-          "VHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
-          ++ err
+  htype_either <- mkHType ty
+  case htype_either of
+    -- No errors
+    Right htype -> do
+      let builtin_ty = do -- See if this is a tycon and lookup its name
+            (tycon, args) <- Type.splitTyConApp_maybe ty
+            let name = Name.getOccString (TyCon.tyConName tycon)
+            Map.lookup name builtin_types
+      -- If not a builtin type, try the custom types
+      let existing_ty = (fmap fst) $ Map.lookup htype typemap
+      case Monoid.getFirst $ Monoid.mconcat (map Monoid.First [builtin_ty, existing_ty]) of
+        -- Found a type, return it
+        Just t -> return (Right t)
+        -- No type yet, try to construct it
+        Nothing -> do
+          newty_maybe <- (construct_vhdl_ty ty)
+          case newty_maybe of
+            Right (ty_id, ty_def) -> do
+              -- TODO: Check name uniqueness
+              modA vsTypes (Map.insert htype (ty_id, ty_def))
+              modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
+              return (Right ty_id)
+            Left err -> return $ Left $
+              "VHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
+              ++ err
+    -- Error when constructing htype
+    Left err -> return $ Left err 
 
 -- Construct a new VHDL type for the given Haskell type. Returns an error
 -- message or the resulting typemark and typedef.
@@ -412,7 +417,8 @@ getFieldLabels ty = do
   vhdl_ty error_msg ty
   -- Get the types map, lookup and unpack the VHDL TypeDef
   types <- getA vsTypes
-  htype <- mkHType ty
+  -- Assume the type for which we want labels is really translatable
+  Right htype <- mkHType ty
   case Map.lookup htype types of
     Just (_, Left (AST.TDR (AST.RecordTypeDef elems))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     _ -> error $ "\nVHDL.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show ty)
@@ -421,7 +427,7 @@ mktydecl :: (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn) -> AST.PackageDecItem
 mktydecl (ty_id, Left ty_def) = AST.PDITD $ AST.TypeDec ty_id ty_def
 mktydecl (ty_id, Right ty_def) = AST.PDISD $ AST.SubtypeDec ty_id ty_def
 
-mkHType :: Type.Type -> TypeSession HType
+mkHType :: Type.Type -> TypeSession (Either String HType)
 mkHType ty = do
   -- FIXME: Do we really need to do this here again?
   let builtin_ty = do -- See if this is a tycon and lookup its name
@@ -430,31 +436,46 @@ mkHType ty = do
         Map.lookup name builtin_types
   case builtin_ty of
     Just typ -> 
-      return $ BuiltinType $ prettyShow typ
+      return $ Right $ BuiltinType $ prettyShow typ
     Nothing ->
       case Type.splitTyConApp_maybe ty of
         Just (tycon, args) -> do
           let name = Name.getOccString (TyCon.tyConName tycon)
           case name of
             "TFVec" -> do
-              elem_htype <- mkHType (tfvec_elem ty)
-              return $ VecType (tfvec_len ty) elem_htype
+              let el_ty = tfvec_elem ty
+              elem_htype_either <- mkHType el_ty
+              case elem_htype_either of
+                -- Could create element type
+                Right elem_htype ->
+                  return $ Right $ VecType (tfvec_len ty) elem_htype
+                -- Could not create element type
+                Left err -> return $ Left $ 
+                  "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
+                  ++ err
             otherwise -> do
               mkTyConHType tycon args
-        Nothing -> return $ StdType $ OrdType ty
+        Nothing -> return $ Right $ StdType $ OrdType ty
 
 -- FIXME: Do we really need to do this here again?
-mkTyConHType :: TyCon.TyCon -> [Type.Type] -> TypeSession HType
+mkTyConHType :: TyCon.TyCon -> [Type.Type] -> TypeSession (Either String HType)
 mkTyConHType tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
-    [] -> error $ "\nVHDLTools.mkHType: Only custom algebraic types are supported: " ++ pprString tycon
+    [] -> return $ Left $ "VHDLTools.mkHType: Only custom algebraic types are supported: " ++ pprString tycon ++ "\n"
     [dc] -> do
       let arg_tys = DataCon.dataConRepArgTys dc
       let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
-      elem_htys <- mapM mkHType real_arg_tys
-      return $ ADTType (nameToString (TyCon.tyConName tycon)) elem_htys
-    dcs -> error $ "\nVHDLTools.mkHType: Only single constructor datatypes supported: " ++ pprString tycon
+      elem_htys_either <- mapM mkHType real_arg_tys
+      case Either.partitionEithers elem_htys_either of
+        -- No errors in element types
+        ([], elem_htys) -> do
+          return $ Right $ ADTType (nameToString (TyCon.tyConName tycon)) elem_htys
+        -- There were errors in element types
+        (errors, _) -> return $ Left $
+          "VHDLTools.mkHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
+          ++ (concat errors)
+    dcs -> return $ Left $ "VHDLTools.mkHType: Only single constructor datatypes supported: " ++ pprString tycon ++ "\n"
   where
     tyvars = TyCon.tyConTyVars tycon
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
