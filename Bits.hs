@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts,GADTs,ExistentialQuantification,LiberalTypeSynonyms #-}
+{-# LANGUAGE FlexibleContexts,GADTs,ExistentialQuantification,LiberalTypeSynonyms,TemplateHaskell #-}
 
 module Bits where
 
 import qualified Data.Param.TFVec as TFVec
 import qualified Types
+import Language.Haskell.TH.Lift
 
 --class Signal a where
 --	hwand :: a -> a -> a
@@ -45,6 +46,8 @@ displaysig Low  = "0"
 -- The plain Bit type
 data Bit = High | Low
   deriving (Show, Eq, Read)
+
+$(deriveLift1 ''Bit)
 
 -- A function to prettyprint a bitvector
 
