@@ -38,8 +38,14 @@ instance Eq OrdType where
 instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.tcCmpType a b
 
+data HType = StdType OrdType |
+             ADTType String [HType] |
+             VecType Int HType |
+             BuiltinType String
+  deriving (Eq, Ord)
+
 -- A map of a Core type to the corresponding type name
-type TypeMap = Map.Map OrdType (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn)
+type TypeMap = Map.Map HType (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn)
 
 -- A map of a vector Core element type and function name to the coressponding
 -- VHDLId of the function and the function body.
