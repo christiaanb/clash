@@ -7,6 +7,7 @@ module NormalizeTools where
 import Debug.Trace
 import qualified List
 import qualified Data.Monoid as Monoid
+import qualified Data.Either as Either
 import qualified Control.Arrow as Arrow
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
@@ -185,14 +186,23 @@ dotransforms transs expr = do
   if Monoid.getAny changed then dotransforms transs expr' else return expr'
 
 -- Inline all let bindings that satisfy the given condition
-inlinebind :: ((CoreBndr, CoreExpr) -> Bool) -> Transform
-inlinebind condition (Let (Rec binds) expr) | not $ null replace =
-    change newexpr
+inlinebind :: ((CoreBndr, CoreExpr) -> TransformMonad Bool) -> Transform
+inlinebind condition expr@(Let (Rec binds) res) = do
+    -- Find all bindings that adhere to the condition
+    res_eithers <- mapM docond binds
+    case Either.partitionEithers res_eithers of
+      -- No replaces? No change
+      ([], _) -> return expr
+      (replace, others) -> do
+        -- Substitute the to be replaced binders with their expression
+        let newexpr = substitute replace (Let (Rec others) res)
+        change newexpr
   where 
-    -- Find all simple bindings
-    (replace, others) = List.partition condition binds
-    -- Substitute the to be replaced binders with their expression
-    newexpr = substitute replace (Let (Rec others) expr)
+    docond :: (CoreBndr, CoreExpr) -> TransformMonad (Either (CoreBndr, CoreExpr) (CoreBndr, CoreExpr))
+    docond b = do
+      res <- condition b
+      return $ case res of True -> Left b; False -> Right b
+
 -- Leave all other expressions unchanged
 inlinebind _ expr = return expr
 

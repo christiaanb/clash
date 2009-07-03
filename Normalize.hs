@@ -140,7 +140,7 @@ letflattop = everywhere ("letflat", letflat)
 --------------------------------
 -- Remove a = b bindings from let expressions everywhere
 letremovetop :: Transform
-letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v) | not $ Id.isDataConWorkId v -> True; otherwise -> False))
+letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v) | not $ Id.isDataConWorkId v -> return True; otherwise -> return False))
 
 --------------------------------
 -- Function inlining
@@ -157,8 +157,8 @@ letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v)
 -- will just not work on those function-typed values at first, but the other
 -- transformations (in particular β-reduction) should make sure that the type
 -- of those values eventually becomes primitive.
-inlinefuntop :: Transform
-inlinefuntop = everywhere ("inlinefun", inlinebind (is_applicable . snd))
+inlinenonreptop :: Transform
+inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . isRepr . snd))
 
 --------------------------------
 -- Scrutinee simplification
@@ -448,7 +448,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinefuntop, appsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinenonreptop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule :: 
