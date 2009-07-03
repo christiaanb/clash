@@ -234,5 +234,4 @@ substitute ((b, e):subss) expr = substitute subss' expr'
 -- Run a given TransformSession. Used mostly to setup the right calls and
 -- an initial state.
 runTransformSession :: UniqSupply.UniqSupply -> TransformSession a -> a
-runTransformSession uniqSupply session = State.evalState session initState
-                       where initState = TransformState uniqSupply Map.empty VarSet.emptyVarSet
+runTransformSession uniqSupply session = State.evalState session (emptyTransformState uniqSupply)

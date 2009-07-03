@@ -20,12 +20,16 @@ import Outputable ( Outputable, showSDoc, ppr )
 -- Local imports
 import CoreShow
 import Pretty
+import VHDLTypes -- For TypeState
 
 data TransformState = TransformState {
     tsUniqSupply_ :: UniqSupply.UniqSupply
   , tsBindings_ :: Map.Map CoreBndr CoreExpr
   , tsNormalized_ :: VarSet.VarSet -- ^ The binders that have been normalized
+  , tsType_ :: TypeState
 }
+-- Create an (almost) empty TransformState, containing just a UniqSupply.
+emptyTransformState uniqSupply = TransformState uniqSupply Map.empty VarSet.emptyVarSet emptyTypeState
 
 $( Data.Accessor.Template.deriveAccessors ''TransformState )
 
