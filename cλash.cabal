@@ -14,7 +14,7 @@ maintainer:          christiaan.baaij@gmail.com & matthijs@stdin.nl
 build-depends:       base > 4, syb, ghc, ghc-paths, transformers, haskell98,
                      ForSyDe > 3.0, regex-posix ,data-accessor-template, pretty,
                      data-accessor, containers, prettyclass, tfp > 0.3, 
-                     tfvec > 0.1.1, QuickCheck, template-haskell
+                     tfvec > 0.1.2, QuickCheck, template-haskell, filepath
 
 executable:          clash
 main-is:             Main.hs     
