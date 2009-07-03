@@ -291,18 +291,21 @@ caseremovetop = everywhere ("caseremove", caseremove)
 appsimpl, appsimpltop :: Transform
 -- Don't simplify arguments that are already simple.
 appsimpl expr@(App f (Var v)) = return expr
--- Simplify all non-applicable (to prevent loops with inlinefun) arguments,
--- except for type arguments (since a let can't bind type vars, only a lambda
--- can). Do this by introducing a new Let that binds the argument and passing
--- the new binder in the application.
-appsimpl (App f expr) | (not $ is_applicable expr) && (not $ CoreSyn.isTypeArg expr) = do
-  id <- mkInternalVar "arg" (CoreUtils.exprType expr)
-  change $ Let (Rec [(id, expr)]) (App f (Var id))
+-- Simplify all representable arguments. Do this by introducing a new Let
+-- that binds the argument and passing the new binder in the application.
+appsimpl expr@(App f arg) = do
+  -- Check runtime representability
+  repr <- isRepr arg
+  if repr
+    then do -- Extract representable arguments
+      id <- mkInternalVar "arg" (CoreUtils.exprType arg)
+      change $ Let (Rec [(id, arg)]) (App f (Var id))
+    else -- Leave non-representable arguments unchanged
+      return expr
 -- Leave all other expressions unchanged
 appsimpl expr = return expr
 -- Perform this transform everywhere
 appsimpltop = everywhere ("appsimpl", appsimpl)
-
 
 --------------------------------
 -- Type argument propagation
