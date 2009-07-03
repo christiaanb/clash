@@ -479,3 +479,11 @@ mkTyConHType tycon args =
   where
     tyvars = TyCon.tyConTyVars tycon
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
+
+-- Is the given type representable at runtime?
+isReprType :: Type.Type -> TypeSession Bool
+isReprType ty = do
+  ty_either <- vhdl_ty_either ty
+  return $ case ty_either of
+    Left _ -> False
+    Right _ -> True
