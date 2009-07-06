@@ -176,8 +176,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D4 Bit -> TFVec D8 Bit
-functiontest = \v -> let r = v ++ $(vectorTH ([High,Low,High,Low] :: [Bit])) in r
+functiontest :: TFVec D4 (TFVec D3 Bit) -> (TFVec D12 Bit, TFVec D3 Bit)
+functiontest = \v -> let r = (concat v, head v) in r
 
 xhwnot x = hwnot x
 

@@ -447,8 +447,9 @@ mkHType ty = do
               elem_htype_either <- mkHType el_ty
               case elem_htype_either of
                 -- Could create element type
-                Right elem_htype ->
-                  return $ Right $ VecType (tfvec_len ty) elem_htype
+                Right elem_htype -> do
+                  len <- vec_len ty
+                  return $ Right $ VecType len elem_htype
                 -- Could not create element type
                 Left err -> return $ Left $ 
                   "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
@@ -487,3 +488,15 @@ isReprType ty = do
   return $ case ty_either of
     Left _ -> False
     Right _ -> True
+
+vec_len :: Type.Type -> TypeSession Int
+vec_len ty = do
+  veclens <- getA vsTfpInts
+  let len_ty = tfvec_len_ty ty
+  let existing_len = Map.lookup (OrdType len_ty) veclens
+  case existing_len of
+    Just len -> return len
+    Nothing -> do
+      let new_len = tfvec_len ty
+      modA vsTfpInts (Map.insert (OrdType len_ty) (new_len))
+      return new_len

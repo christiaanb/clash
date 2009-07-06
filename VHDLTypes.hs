@@ -54,18 +54,21 @@ type TypeFunMap = Map.Map (OrdType, String) (AST.VHDLId, AST.SubProgBody)
 -- A map of a Haskell function to a hardware signature
 type SignatureMap = Map.Map CoreSyn.CoreBndr Entity
 
+type TfpIntMap = Map.Map OrdType Int
+
 data TypeState = TypeState {
   -- | A map of Core type -> VHDL Type
   vsTypes_      :: TypeMap,
   -- | A list of type declarations
   vsTypeDecls_  :: [AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
-  vsTypeFuns_   :: TypeFunMap
+  vsTypeFuns_   :: TypeFunMap,
+  vsTfpInts_    :: TfpIntMap
 }
 -- Derive accessors
 $( Data.Accessor.Template.deriveAccessors ''TypeState )
 -- Define an empty TypeState
-emptyTypeState = TypeState Map.empty [] Map.empty
+emptyTypeState = TypeState Map.empty [] Map.empty Map.empty
 -- Define a session
 type TypeSession = State.State TypeState
 

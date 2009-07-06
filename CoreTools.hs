@@ -93,12 +93,14 @@ ranged_word_bound ty =
 
 -- | Get the length of a FSVec type
 tfvec_len :: Type.Type -> Int
-tfvec_len ty =
-  eval_tfp_int len
+tfvec_len ty = eval_tfp_int (tfvec_len_ty ty)
+
+tfvec_len_ty :: Type.Type -> Type.Type
+tfvec_len_ty ty = len
   where  
     args = case Type.splitTyConApp_maybe ty of
       Just (tycon, args) -> args
-      Nothing -> error $ "\nCoreTools.tfvec_len: Not a vector type: " ++ (pprString ty)
+      Nothing -> error $ "\nCoreTools.tfvec_len_ty: Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
     
 -- | Get the element type of a TFVec type
