@@ -13,6 +13,8 @@ import Language.Haskell.Syntax
 import Types
 import Data.Param.TFVec
 import Data.RangedWord
+import Data.SizedInt
+import Data.SizedWord
 
 mainIO f = Sim.simulateIO (Sim.stateless f) ()
 
@@ -176,8 +178,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D4 (TFVec D3 Bit) -> (TFVec D12 Bit, TFVec D3 Bit)
-functiontest = \v -> let r = (concat v, head v) in r
+functiontest :: SizedWord D8 -> RangedWord D255
+functiontest = \a -> let r = fromSizedWord a in r
 
 xhwnot x = hwnot x
 

@@ -83,6 +83,16 @@ genFCall' switch (Left res) f args = do
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
+genFromSizedWord :: BuiltinBuilder
+genFromSizedWord = genExprArgs $ genExprRes genFromSizedWord'
+genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genFromSizedWord' (Left res) f args = do
+  let fname = varToString f
+  return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
+             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
+genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+
+
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
 genMap (Left res) f [Left mapped_f, Left (Var arg)] =
@@ -440,8 +450,8 @@ genApplication dst f args =
           if length args == arg_count then
             builder dst f args
           else
-            error $ "\nGenerate.genApplication: Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-        Nothing -> error $ "\nGenerate.genApplication: Using function from another module that is not a known builtin: " ++ pprString f
+            error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+        Nothing -> error $ "\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ pprString f
     IdInfo.NotGlobalId -> do
       signatures <- getA vsSignatures
       -- This is a local id, so it should be a function whose definition we
@@ -457,6 +467,16 @@ genApplication dst f args =
         portmaps = mkAssocElems (map (either exprToVHDLExpr id) args) ((either varToVHDLName id) dst) signature
         in
           return [mkComponentInst label entity_id portmaps]
+    IdInfo.ClassOpId cls -> do
+      -- FIXME: Not looking for what instance this class op is called for
+      -- Is quite stupid of course.
+      case (Map.lookup (varToString f) globalNameTable) of
+        Just (arg_count, builder) ->
+          if length args == arg_count then
+            builder dst f args
+          else
+            error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+        Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
     details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -----------------------------------------------------------------------------
@@ -913,4 +933,9 @@ globalNameTable = Map.fromList
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )
   , (hwnotId          , (1, genOperator1 AST.Not    ) )
+  , (plusId           , (2, genOperator2 (AST.:+:)  ) )
+  , (timesId          , (2, genOperator2 (AST.:*:)  ) )
+  , (negateId         , (1, genOperator1 AST.Not    ) )
+  , (minusId          , (2, genOperator2 (AST.:-:)  ) )
+  , (fromSizedWordId  , (1, genFromSizedWord        ) )
   ]

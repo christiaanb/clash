@@ -224,6 +224,31 @@ hwandId = "hwand"
 lengthTId :: String
 lengthTId = "lengthT"
 
+-- Numeric Operations
+
+-- | plus operation identifier
+plusId :: String
+plusId = "+"
+
+-- | times operation identifier
+timesId :: String
+timesId = "*"
+
+-- | negate operation identifier
+negateId :: String
+negateId = "negate"
+
+-- | minus operation identifier
+minusId :: String
+minusId = "-"
+
+-- | convert sizedword to ranged
+fromSizedWordId :: String
+fromSizedWordId = "fromSizedWord"
+
+toIntegerId :: String
+toIntegerId = "to_integer"
+
 ------------------
 -- VHDL type marks
 ------------------
@@ -251,3 +276,11 @@ naturalTM = AST.unsafeVHDLBasicId "natural"
 -- | integer TypeMark
 integerTM :: AST.TypeMark
 integerTM = AST.unsafeVHDLBasicId "integer"
+
+-- | signed TypeMark
+signedTM :: AST.TypeMark
+signedTM = AST.unsafeVHDLBasicId "signed"
+
+-- | unsigned TypeMark
+unsignedTM :: AST.TypeMark
+unsignedTM = AST.unsafeVHDLBasicId "unsigned"

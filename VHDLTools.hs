@@ -314,9 +314,7 @@ construct_vhdl_ty ty = do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
         "TFVec" -> mk_vector_ty ty
-        -- "SizedWord" -> do
-        --   res <- mk_vector_ty (sized_word_len ty) ty
-        --   return $ Just $ (Arrow.second Left) res
+        "SizedWord" -> mk_unsigned_ty ty
         "RangedWord" -> mk_natural_ty 0 (ranged_word_bound ty)
         -- Create a custom type from this tycon
         otherwise -> mk_tycon_ty tycon args
@@ -408,6 +406,16 @@ mk_natural_ty min_bound max_bound = do
   let ty_def = AST.SubtypeIn naturalTM (Just range)
   return (Right (ty_id, Right ty_def))
 
+mk_unsigned_ty ::
+  Type.Type -- ^ Haskell type of the signed integer
+  -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_unsigned_ty ty = do
+  let size  = sized_word_len ty
+  let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
+  let ty_def = AST.SubtypeIn signedTM (Just range)
+  return (Right (ty_id, Right ty_def))
+
 -- Finds the field labels for VHDL type generated for the given Core type,
 -- which must result in a record type.
 getFieldLabels :: Type.Type -> TypeSession [AST.VHDLId]
@@ -454,6 +462,8 @@ mkHType ty = do
                 Left err -> return $ Left $ 
                   "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
                   ++ err
+            "SizedWord" -> return $ Right $ StdType $ OrdType ty
+            "RangedWord" -> return $ Right $ StdType $ OrdType ty
             otherwise -> do
               mkTyConHType tycon args
         Nothing -> return $ Right $ StdType $ OrdType ty
