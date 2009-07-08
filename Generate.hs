@@ -17,6 +17,7 @@ import CoreSyn
 import Type
 import qualified Var
 import qualified IdInfo
+import qualified Literal
 
 -- Local imports
 import Constants
@@ -46,6 +47,18 @@ genVarArgs wrap dst func args = wrap dst func args'
   where
     args' = map exprToVar exprargs
     -- Check (rather crudely) that all arguments are CoreExprs
+    (exprargs, []) = Either.partitionEithers args
+
+-- | A function to wrap a builder-like function that expects its arguments to
+-- be Literals
+genLitArgs ::
+  (dst -> func -> [Literal.Literal] -> res)
+  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
+genLitArgs wrap dst func args = wrap dst func args'
+  where
+    args' = map exprToLit litargs
+    -- FIXME: Check if we were passed an CoreSyn.App
+    litargs = concat (map getLiterals exprargs)
     (exprargs, []) = Either.partitionEithers args
 
 -- | A function to wrap a builder-like function that produces an expression
@@ -91,6 +104,15 @@ genFromSizedWord' (Left res) f args = do
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+
+-- FIXME: I'm calling genLitArgs which is very specific function,
+-- which needs to be fixed as well
+genFromInteger :: BuiltinBuilder
+genFromInteger = genLitArgs $ genExprRes genFromInteger'
+genFromInteger' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [Literal.Literal] -> VHDLSession AST.Expr
+genFromInteger' (Left res) f args = do
+  return $ AST.PrimLit (pprString (last args))
+genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 
 -- | Generate a generate statement for the builtin function "map"
@@ -938,4 +960,5 @@ globalNameTable = Map.fromList
   , (negateId         , (1, genOperator1 AST.Not    ) )
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
+  , (fromIntegerId    , (1, genFromInteger          ) )
   ]

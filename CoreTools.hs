@@ -27,6 +27,7 @@ import qualified VarSet
 import qualified Unique
 import qualified CoreUtils
 import qualified CoreFVs
+import qualified Literal
 
 -- Local imports
 import GhcTools
@@ -163,6 +164,10 @@ is_var :: CoreSyn.CoreExpr -> Bool
 is_var (CoreSyn.Var _) = True
 is_var _ = False
 
+is_lit :: CoreSyn.CoreExpr -> Bool
+is_lit (CoreSyn.Lit _) = True
+is_lit _ = False
+
 -- Can the given core expression be applied to something? This is true for
 -- applying to a value as well as a type.
 is_applicable :: CoreSyn.CoreExpr -> Bool
@@ -189,6 +194,11 @@ exprToVar :: CoreSyn.CoreExpr -> Var.Id
 exprToVar (CoreSyn.Var id) = id
 exprToVar expr = error $ "\nCoreTools.exprToVar: Not a var: " ++ show expr
 
+-- Turns a Lit CoreExpr into the Literal inside it.
+exprToLit :: CoreSyn.CoreExpr -> Literal.Literal
+exprToLit (CoreSyn.Lit lit) = lit
+exprToLit expr = error $ "\nCoreTools.exprToLit: Not a lit: " ++ show expr
+
 -- Removes all the type and dictionary arguments from the given argument list,
 -- leaving only the normal value arguments. The type given is the type of the
 -- expression applied to this argument list.
@@ -200,3 +210,9 @@ get_val_args ty args = drop n args
     -- (length predtypes) arguments should be dictionaries. We drop this many
     -- arguments, to get at the value arguments.
     n = length tyvars + length predtypes
+
+getLiterals :: CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
+getLiterals app@(CoreSyn.App _ _) = literals
+  where
+    (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+    literals = filter (is_lit) args

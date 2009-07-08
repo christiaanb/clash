@@ -249,6 +249,9 @@ fromSizedWordId = "fromSizedWord"
 toIntegerId :: String
 toIntegerId = "to_integer"
 
+fromIntegerId :: String
+fromIntegerId = "fromInteger"
+
 ------------------
 -- VHDL type marks
 ------------------
