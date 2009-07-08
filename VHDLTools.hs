@@ -20,6 +20,7 @@ import qualified Name
 import qualified OccName
 import qualified Var
 import qualified Id
+import qualified IdInfo
 import qualified TyCon
 import qualified Type
 import qualified DataCon
@@ -142,6 +143,7 @@ varToVHDLExpr var =
                       otherwise -> AST.PrimName $ AST.NSimple $ varToVHDLId var
         in
           res
+
 
 -- Turn a VHDLName into an AST expression
 vhdlNameToVHDLExpr = AST.PrimName
@@ -315,6 +317,7 @@ construct_vhdl_ty ty = do
       case name of
         "TFVec" -> mk_vector_ty ty
         "SizedWord" -> mk_unsigned_ty ty
+        "SizedInt"  -> mk_signed_ty ty
         "RangedWord" -> mk_natural_ty 0 (ranged_word_bound ty)
         -- Create a custom type from this tycon
         otherwise -> mk_tycon_ty tycon args
@@ -407,11 +410,21 @@ mk_natural_ty min_bound max_bound = do
   return (Right (ty_id, Right ty_def))
 
 mk_unsigned_ty ::
-  Type.Type -- ^ Haskell type of the signed integer
+  Type.Type -- ^ Haskell type of the unsigned integer
   -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 mk_unsigned_ty ty = do
   let size  = sized_word_len ty
   let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
+  let ty_def = AST.SubtypeIn unsignedTM (Just range)
+  return (Right (ty_id, Right ty_def))
+  
+mk_signed_ty ::
+  Type.Type -- ^ Haskell type of the signed integer
+  -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_signed_ty ty = do
+  let size  = sized_word_len ty
+  let ty_id = mkVHDLExtId $ "signed_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn signedTM (Just range)
   return (Right (ty_id, Right ty_def))
@@ -456,14 +469,21 @@ mkHType ty = do
               case elem_htype_either of
                 -- Could create element type
                 Right elem_htype -> do
-                  len <- vec_len ty
+                  len <- tfp_to_int (tfvec_len_ty ty)
                   return $ Right $ VecType len elem_htype
                 -- Could not create element type
                 Left err -> return $ Left $ 
                   "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
                   ++ err
-            "SizedWord" -> return $ Right $ StdType $ OrdType ty
-            "RangedWord" -> return $ Right $ StdType $ OrdType ty
+            "SizedWord" -> do
+              len <- tfp_to_int (sized_word_len_ty ty)
+              return $ Right $ SizedWType len
+            "SizedInt" -> do
+              len <- tfp_to_int (sized_word_len_ty ty)
+              return $ Right $ SizedIType len
+            "RangedWord" -> do
+              bound <- tfp_to_int (ranged_word_bound_ty ty)
+              return $ Right $ RangedWType bound
             otherwise -> do
               mkTyConHType tycon args
         Nothing -> return $ Right $ StdType $ OrdType ty
@@ -499,14 +519,13 @@ isReprType ty = do
     Left _ -> False
     Right _ -> True
 
-vec_len :: Type.Type -> TypeSession Int
-vec_len ty = do
-  veclens <- getA vsTfpInts
-  let len_ty = tfvec_len_ty ty
-  let existing_len = Map.lookup (OrdType len_ty) veclens
+tfp_to_int :: Type.Type -> TypeSession Int
+tfp_to_int ty = do
+  lens <- getA vsTfpInts
+  let existing_len = Map.lookup (OrdType ty) lens
   case existing_len of
     Just len -> return len
     Nothing -> do
-      let new_len = tfvec_len ty
-      modA vsTfpInts (Map.insert (OrdType len_ty) (new_len))
+      let new_len = eval_tfp_int ty
+      modA vsTfpInts (Map.insert (OrdType ty) (new_len))
       return new_len

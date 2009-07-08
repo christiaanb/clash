@@ -41,6 +41,9 @@ instance Ord OrdType where
 data HType = StdType OrdType |
              ADTType String [HType] |
              VecType Int HType |
+             SizedWType Int |
+             RangedWType Int |
+             SizedIType Int |
              BuiltinType String
   deriving (Eq, Ord)
 

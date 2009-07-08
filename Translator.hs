@@ -26,7 +26,7 @@ import NameEnv ( lookupNameEnv )
 import qualified HscTypes
 import HscTypes ( cm_binds, cm_types )
 import MonadUtils ( liftIO )
-import Outputable ( showSDoc, ppr )
+import Outputable ( showSDoc, ppr, showSDocDebug )
 import GHC.Paths ( libdir )
 import DynFlags ( defaultDynFlags )
 import qualified UniqSupply
@@ -65,6 +65,24 @@ makeVHDL filename name stateful = do
   mapM (writeVHDL dir) vhdl
   return ()
 
+listBindings :: String -> IO [()]
+listBindings filename = do
+  core <- loadModule filename
+  let binds = CoreSyn.flattenBinds $ cm_binds core
+  mapM (listBinding) binds
+
+listBinding :: (CoreBndr, CoreExpr) -> IO ()
+listBinding (b, e) = do
+  putStr "\nBinder: "
+  putStr $ show b
+  putStr "\nExpression: \n"
+  putStr $ prettyShow e
+  putStr "\n\n"
+  putStr $ showSDoc $ ppr e
+  putStr "\n\n"
+  putStr $ showSDoc $ ppr $ CoreUtils.exprType e
+  putStr "\n\n"
+  
 -- | Show the core structure of the given binds in the given file.
 listBind :: String -> String -> IO ()
 listBind filename name = do

@@ -1,4 +1,4 @@
-module Pretty (prettyShow, pprString) where
+module Pretty (prettyShow, pprString, pprStringDebug) where
 
 
 import qualified Data.Map as Map
@@ -9,7 +9,7 @@ import qualified CoreSyn
 import qualified Module
 import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
-import Outputable ( showSDoc, ppr, Outputable, OutputableBndr)
+import Outputable ( showSDoc, showSDocDebug, ppr, Outputable, OutputableBndr)
 
 import qualified ForSyDe.Backend.Ppr
 import qualified ForSyDe.Backend.VHDL.Ppr
@@ -158,3 +158,6 @@ instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
 -- Convenience method for turning an Outputable into a string
 pprString :: (Outputable x) => x -> String
 pprString = showSDoc . ppr
+
+pprStringDebug :: (Outputable x) => x -> String
+pprStringDebug = showSDocDebug . ppr

@@ -61,18 +61,38 @@ eval_tfp_int ty =
 
 -- | Get the width of a SizedWord type
 sized_word_len :: Type.Type -> Int
-sized_word_len ty =
-  eval_tfp_int len
-  where 
-    (tycon, args) = Type.splitTyConApp ty
-    [len] = args
+sized_word_len ty = eval_tfp_int (sized_word_len_ty ty)
+    
+sized_word_len_ty :: Type.Type -> Type.Type
+sized_word_len_ty ty = len
+  where
+    args = case Type.splitTyConApp_maybe ty of
+      Just (tycon, args) -> args
+      Nothing -> error $ "\nCoreTools.sized_word_len_ty: Not a sized word type: " ++ (pprString ty)
+    [len]         = args
+
+-- | Get the width of a SizedInt type
+sized_int_len :: Type.Type -> Int
+sized_int_len ty = eval_tfp_int (sized_int_len_ty ty)
+
+sized_int_len_ty :: Type.Type -> Type.Type
+sized_int_len_ty ty = len
+  where
+    args = case Type.splitTyConApp_maybe ty of
+      Just (tycon, args) -> args
+      Nothing -> error $ "\nCoreTools.sized_int_len_ty: Not a sized int type: " ++ (pprString ty)
+    [len]         = args
     
 -- | Get the upperbound of a RangedWord type
 ranged_word_bound :: Type.Type -> Int
-ranged_word_bound ty =
-  eval_tfp_int len
+ranged_word_bound ty = eval_tfp_int (ranged_word_bound_ty ty)
+    
+ranged_word_bound_ty :: Type.Type -> Type.Type
+ranged_word_bound_ty ty = len
   where
-    (tycon, args) = Type.splitTyConApp ty
+    args = case Type.splitTyConApp_maybe ty of
+      Just (tycon, args) -> args
+      Nothing -> error $ "\nCoreTools.ranged_word_bound_ty: Not a sized word type: " ++ (pprString ty)
     [len]         = args
 
 -- | Evaluate a core Type representing type level int from the TypeLevel
