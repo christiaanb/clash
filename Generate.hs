@@ -18,6 +18,8 @@ import Type
 import qualified Var
 import qualified IdInfo
 import qualified Literal
+import qualified Name
+import qualified TyCon
 
 -- Local imports
 import Constants
@@ -110,8 +112,20 @@ genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cann
 genFromInteger :: BuiltinBuilder
 genFromInteger = genLitArgs $ genExprRes genFromInteger'
 genFromInteger' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [Literal.Literal] -> VHDLSession AST.Expr
-genFromInteger' (Left res) f args = do
-  return $ AST.PrimLit (pprString (last args))
+genFromInteger' (Left res) f lits = 
+  return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname)) 
+            [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+  where
+  ty = Var.varType res
+  (tycon, args) = Type.splitTyConApp ty
+  name = Name.getOccString (TyCon.tyConName tycon)
+  len = case name of
+    "SizedInt" -> sized_int_len ty
+    "SizedWord" -> sized_word_len ty
+  fname = case name of
+    "SizedInt" -> toSignedId
+    "SizedWord" -> toUnsignedId
+
 genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 
@@ -957,7 +971,7 @@ globalNameTable = Map.fromList
   , (hwnotId          , (1, genOperator1 AST.Not    ) )
   , (plusId           , (2, genOperator2 (AST.:+:)  ) )
   , (timesId          , (2, genOperator2 (AST.:*:)  ) )
-  , (negateId         , (1, genOperator1 AST.Not    ) )
+  , (negateId         , (1, genOperator1 AST.Neg    ) )
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
   , (fromIntegerId    , (1, genFromInteger          ) )

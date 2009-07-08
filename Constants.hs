@@ -252,6 +252,12 @@ toIntegerId = "to_integer"
 fromIntegerId :: String
 fromIntegerId = "fromInteger"
 
+toSignedId :: String
+toSignedId = "to_signed"
+
+toUnsignedId :: String
+toUnsignedId = "to_unsigned"
+
 ------------------
 -- VHDL type marks
 ------------------

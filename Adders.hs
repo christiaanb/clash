@@ -178,8 +178,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: SizedInt D8 -> SizedInt D8
-functiontest = \a -> let r = a + (1 :: SizedInt D8) in r
+functiontest :: SizedWord D8 -> SizedWord D8
+functiontest = \a -> let r = a + ((-1) :: SizedWord D8) in r
 
 xhwnot x = hwnot x
 
