@@ -85,6 +85,19 @@ genOperator1 op = genExprArgs $ genExprRes (genOperator1' op)
 genOperator1' :: (AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
 genOperator1' op _ f [arg] = return $ op arg
 
+-- | Generate a unary operator application
+genNegation :: BuiltinBuilder 
+genNegation = genVarArgs $ genExprRes genNegation'
+genNegation' :: dst -> CoreSyn.CoreBndr -> [Var.Var] -> VHDLSession AST.Expr
+genNegation' _ f [arg] = return $ op (varToVHDLExpr arg)
+  where
+    ty = Var.varType arg
+    (tycon, args) = Type.splitTyConApp ty
+    name = Name.getOccString (TyCon.tyConName tycon)
+    op = case name of
+      "SizedInt" -> AST.Neg
+      otherwise -> error $ "\nGenerate.genNegation': Negation allowed for type: " ++ show name 
+
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
 genFCall :: Bool -> BuiltinBuilder 
@@ -971,7 +984,7 @@ globalNameTable = Map.fromList
   , (hwnotId          , (1, genOperator1 AST.Not    ) )
   , (plusId           , (2, genOperator2 (AST.:+:)  ) )
   , (timesId          , (2, genOperator2 (AST.:*:)  ) )
-  , (negateId         , (1, genOperator1 AST.Neg    ) )
+  , (negateId         , (1, genNegation             ) )
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
   , (fromIntegerId    , (1, genFromInteger          ) )

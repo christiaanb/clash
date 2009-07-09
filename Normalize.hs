@@ -21,9 +21,11 @@ import CoreSyn
 import qualified UniqSupply
 import qualified CoreUtils
 import qualified Type
+import qualified TcType
 import qualified Id
 import qualified Var
 import qualified VarSet
+import qualified NameSet
 import qualified CoreFVs
 import qualified CoreUtils
 import qualified MkCore
@@ -512,6 +514,25 @@ normalizeBind bndr =
                 let used_funcs = VarSet.varSetElems used_funcs_set
                 -- Process each of the used functions recursively
                 mapM normalizeBind used_funcs
+                -- FIXME: Can't we inline these 'implicit' function calls or something?
+                -- TODO: Add an extra let expression to the current finding, so the VHDL
+                --       Will make a signa assignment for this 'implicit' function call
+                --
+                -- Find all the other free variables used that are used. This applies to
+                -- variables that are actually a reference to a Class function. Example:
+                --
+                -- functiontest :: SizedInt D8 -> SizedInt D8
+                -- functiontest = \a -> let r = a + 1 in r
+                --
+                -- The literal(Lit) '1' will be turned into a variable (Var)
+                -- As it will call the 'fromInteger' class function that belongs
+                -- to the Num class. So we need to translate the refenced function
+                -- let used_vars_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isAlgType . snd . Type.splitForAllTys . Id.idType) v) expr'
+                -- let used_vars = VarSet.varSetElems used_vars_set
+                -- -- Filter for dictionary args, they should not be translated
+                -- -- FIXME: check for other non-translatable stuff as well
+                -- let trans_vars = filter (\v -> (not . TcType.isDictTy . Id.idType) v) used_vars
+                -- mapM normalizeBind trans_vars
                 return ()
               -- We don't have a value for this binder. This really shouldn't
               -- happen for local id's...
