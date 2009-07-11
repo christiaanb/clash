@@ -40,15 +40,16 @@ import Constants
 import Generate
 
 createDesignFiles ::
-  [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
+  TypeState
+  -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
   -> [(AST.VHDLId, AST.DesignFile)]
 
-createDesignFiles binds =
+createDesignFiles init_typestate binds =
   (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package_dec, type_package_body]) :
   map (Arrow.second $ AST.DesignFile full_context) units
   
   where
-    init_session = VHDLState emptyTypeState Map.empty
+    init_session = VHDLState init_typestate Map.empty
     (units, final_session) = 
       State.runState (createLibraryUnits binds) init_session
     tyfun_decls = map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns)
@@ -257,7 +258,9 @@ mkConcSm (bndr, Cast expr ty) = mkConcSm (bndr, expr)
 -- assignment. This should only happen for dataconstructors without arguments.
 -- TODO: Integrate this with the below code for application (essentially this
 -- is an application without arguments)
-mkConcSm (bndr, Var v) = return $ [mkUncondAssign (Left bndr) (varToVHDLExpr v)]
+mkConcSm (bndr, Var v) = do
+  ty_state <- getA vsType
+  return $ [mkUncondAssign (Left bndr) ((varToVHDLExpr ty_state) v)]
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
@@ -285,13 +288,14 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
 -- binders in the alts and only variables in the case values and a variable
 -- for a scrutinee. We check the constructor of the second alt, since the
 -- first is the default case, if there is any.
-mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) =
-  let
-    cond_expr = (varToVHDLExpr scrut) AST.:=: (altconToVHDLExpr con)
-    true_expr  = (varToVHDLExpr true)
-    false_expr  = (varToVHDLExpr false)
-  in
-    return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
+mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) = do {
+  ; ty_state <- getA vsType
+  ; let { cond_expr = (varToVHDLExpr ty_state scrut) AST.:=: (altconToVHDLExpr con)
+        ; true_expr  = (varToVHDLExpr ty_state true)
+        ; false_expr  = (varToVHDLExpr ty_state false)
+        } ;
+  ; return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
+  }
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr

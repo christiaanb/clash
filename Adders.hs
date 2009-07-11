@@ -178,8 +178,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: SizedWord D8 -> SizedWord D8
-functiontest = \a -> let r = a + ((-1) :: SizedWord D8) in r
+functiontest :: TFVec D3 (TFVec D4 Bit) -> TFVec D12 Bit
+functiontest = \v -> let r = concat v in r
 
 xhwnot x = hwnot x
 

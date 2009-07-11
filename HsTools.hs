@@ -3,7 +3,7 @@ module HsTools where
 
 -- Standard modules
 import qualified Unsafe.Coerce
-
+import qualified Maybe
 
 -- GHC API
 import qualified GHC
@@ -31,6 +31,7 @@ import qualified RnEnv
 import qualified TcExpr
 import qualified TcEnv
 import qualified TcSimplify
+import qualified TcTyFuns
 import qualified Desugar
 import qualified InstEnv
 import qualified FamInstEnv
@@ -122,6 +123,20 @@ mkId rdr_name = do
         -- tcLookupId to find out.
         TcEnv.tcLookupId name 
   return id
+
+normaliseType ::
+  HscTypes.HscEnv
+  -> Type.Type
+  -> IO Type.Type
+normaliseType env ty = do
+   (err, nty) <- MonadUtils.liftIO $
+     -- Initialize the typechecker monad
+     TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
+       -- Normalize the type
+       (_, nty) <- TcTyFuns.tcNormaliseFamInst ty
+       return nty
+   let normalized_ty = Maybe.fromJust nty
+   return normalized_ty
 
 -- | Translate a core Type to an HsType. Far from complete so far.
 coreToHsType :: Type.Type -> HsTypes.LHsType RdrName.RdrName

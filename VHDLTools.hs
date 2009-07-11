@@ -7,6 +7,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
+import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import Data.Accessor
 import Debug.Trace
@@ -122,8 +123,8 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
 -----------------------------------------------------------------------------
 
 -- Turn a variable reference into a AST expression
-varToVHDLExpr :: Var.Var -> AST.Expr
-varToVHDLExpr var = 
+varToVHDLExpr :: TypeState -> Var.Var -> AST.Expr
+varToVHDLExpr ty_state var =
   case Id.isDataConWorkId_maybe var of
     Just dc -> dataconToVHDLExpr dc
     -- This is a dataconstructor.
@@ -133,13 +134,13 @@ varToVHDLExpr var =
     -- should still be translated to integer literals. It is probebly not the
     -- best solution to translate them here.
     -- FIXME: Find a better solution for translating instances of tfp integers
-    Nothing -> 
+    Nothing ->
         let 
           ty  = Var.varType var
           res = case Type.splitTyConApp_maybe ty of
                   Just (tycon, args) ->
                     case Name.getOccString (TyCon.tyConName tycon) of
-                      "Dec" -> AST.PrimLit $ (show (eval_tfp_int ty))
+                      "Dec" -> AST.PrimLit $ (show (fst ( State.runState (tfp_to_int ty) ty_state ) ) )
                       otherwise -> AST.PrimName $ AST.NSimple $ varToVHDLId var
         in
           res
@@ -152,7 +153,7 @@ vhdlNameToVHDLExpr = AST.PrimName
 idToVHDLExpr = vhdlNameToVHDLExpr . AST.NSimple
 
 -- Turn a Core expression into an AST expression
-exprToVHDLExpr = varToVHDLExpr . exprToVar
+exprToVHDLExpr ty_state = (varToVHDLExpr ty_state) . exprToVar
 
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it
@@ -318,7 +319,9 @@ construct_vhdl_ty ty = do
         "TFVec" -> mk_vector_ty ty
         "SizedWord" -> mk_unsigned_ty ty
         "SizedInt"  -> mk_signed_ty ty
-        "RangedWord" -> mk_natural_ty 0 (ranged_word_bound ty)
+        "RangedWord" -> do 
+          bound <- tfp_to_int (ranged_word_bound_ty ty)
+          mk_natural_ty 0 bound
         -- Create a custom type from this tycon
         otherwise -> mk_tycon_ty tycon args
     Nothing -> return (Left $ "VHDLTools.construct_vhdl_ty: Cannot create type for non-tycon type: " ++ pprString ty ++ "\n")
@@ -370,10 +373,11 @@ mk_vector_ty ::
 
 mk_vector_ty ty = do
   types_map <- getA vsTypes
+  env <- getA vsHscEnv
   let (nvec_l, nvec_el) = Type.splitAppTy ty
   let (nvec, leng) = Type.splitAppTy nvec_l
   let vec_ty = Type.mkAppTy nvec nvec_el
-  let len = tfvec_len ty
+  len <- tfp_to_int (tfvec_len_ty ty)
   let el_ty = tfvec_elem ty
   el_ty_tm_either <- vhdl_ty_either el_ty
   case el_ty_tm_either of
@@ -413,7 +417,7 @@ mk_unsigned_ty ::
   Type.Type -- ^ Haskell type of the unsigned integer
   -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 mk_unsigned_ty ty = do
-  let size  = sized_word_len ty
+  size <- tfp_to_int (sized_word_len_ty ty)
   let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
@@ -423,7 +427,7 @@ mk_signed_ty ::
   Type.Type -- ^ Haskell type of the signed integer
   -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
 mk_signed_ty ty = do
-  let size  = sized_word_len ty
+  size <- tfp_to_int (sized_int_len_ty ty)
   let ty_id = mkVHDLExtId $ "signed_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn signedTM (Just range)
@@ -469,8 +473,9 @@ mkHType ty = do
               case elem_htype_either of
                 -- Could create element type
                 Right elem_htype -> do
-                  len <- tfp_to_int (tfvec_len_ty ty)
-                  return $ Right $ VecType len elem_htype
+                  env <- getA vsHscEnv
+                  let norm_ty = normalise_tfp_int env (tfvec_len_ty ty)
+                  return $ Right $ VecType (OrdType norm_ty) elem_htype
                 -- Could not create element type
                 Left err -> return $ Left $ 
                   "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"

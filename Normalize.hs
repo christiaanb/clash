@@ -29,11 +29,13 @@ import qualified NameSet
 import qualified CoreFVs
 import qualified CoreUtils
 import qualified MkCore
+import qualified HscTypes
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import NormalizeTypes
 import NormalizeTools
+import VHDLTypes
 import CoreTools
 import Pretty
 
@@ -453,14 +455,15 @@ funextracttop = everywhere ("funextract", funextract)
 transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinenonreptop, appsimpltop]
 
 -- Turns the given bind into VHDL
-normalizeModule :: 
-  UniqSupply.UniqSupply -- ^ A UniqSupply we can use
+normalizeModule ::
+  HscTypes.HscEnv
+  -> UniqSupply.UniqSupply -- ^ A UniqSupply we can use
   -> [(CoreBndr, CoreExpr)]  -- ^ All bindings we know (i.e., in the current module)
   -> [CoreBndr]  -- ^ The bindings to generate VHDL for (i.e., the top level bindings)
   -> [Bool] -- ^ For each of the bindings to generate VHDL for, if it is stateful
-  -> [(CoreBndr, CoreExpr)] -- ^ The resulting VHDL
+  -> ([(CoreBndr, CoreExpr)], TypeState) -- ^ The resulting VHDL
 
-normalizeModule uniqsupply bindings generate_for statefuls = runTransformSession uniqsupply $ do
+normalizeModule env uniqsupply bindings generate_for statefuls = runTransformSession env uniqsupply $ do
   -- Put all the bindings in this module in the tsBindings map
   putA tsBindings (Map.fromList bindings)
   -- (Recursively) normalize each of the requested bindings
@@ -469,8 +472,9 @@ normalizeModule uniqsupply bindings generate_for statefuls = runTransformSession
   bindings_map <- getA tsBindings
   let bindings = Map.assocs bindings_map
   normalized_bindings <- getA tsNormalized
+  typestate <- getA tsType
   -- But return only the normalized bindings
-  return $ filter ((flip VarSet.elemVarSet normalized_bindings) . fst) bindings
+  return $ (filter ((flip VarSet.elemVarSet normalized_bindings) . fst) bindings, typestate)
 
 normalizeBind :: CoreBndr -> TransformSession ()
 normalizeBind bndr =

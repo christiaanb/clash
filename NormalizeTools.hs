@@ -30,11 +30,13 @@ import qualified IdInfo
 import qualified CoreUtils
 import qualified CoreSubst
 import qualified VarSet
+import qualified HscTypes
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import NormalizeTypes
 import Pretty
+import VHDLTypes
 import qualified VHDLTools
 
 -- Create a new internal var with the given name and type. A Unique is
@@ -246,8 +248,11 @@ substitute ((b, e):subss) expr = substitute subss' expr'
 
 -- Run a given TransformSession. Used mostly to setup the right calls and
 -- an initial state.
-runTransformSession :: UniqSupply.UniqSupply -> TransformSession a -> a
-runTransformSession uniqSupply session = State.evalState session (emptyTransformState uniqSupply)
+runTransformSession :: HscTypes.HscEnv -> UniqSupply.UniqSupply -> TransformSession a -> a
+runTransformSession env uniqSupply session = State.evalState session emptyTransformState
+  where
+    emptyTypeState = TypeState Map.empty [] Map.empty Map.empty env
+    emptyTransformState = TransformState uniqSupply Map.empty VarSet.emptyVarSet emptyTypeState
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool

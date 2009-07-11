@@ -28,8 +28,6 @@ data TransformState = TransformState {
   , tsNormalized_ :: VarSet.VarSet -- ^ The binders that have been normalized
   , tsType_ :: TypeState
 }
--- Create an (almost) empty TransformState, containing just a UniqSupply.
-emptyTransformState uniqSupply = TransformState uniqSupply Map.empty VarSet.emptyVarSet emptyTypeState
 
 $( Data.Accessor.Template.deriveAccessors ''TransformState )
 

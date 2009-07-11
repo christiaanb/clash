@@ -6,6 +6,7 @@ module CoreTools where
 
 --Standard modules
 import qualified Maybe
+import System.IO.Unsafe
 
 -- GHC API
 import qualified GHC
@@ -14,6 +15,7 @@ import qualified TcType
 import qualified HsExpr
 import qualified HsTypes
 import qualified HsBinds
+import qualified HscTypes
 import qualified RdrName
 import qualified Name
 import qualified OccName
@@ -41,7 +43,6 @@ eval_tfp_int ty =
   unsafeRunGhc $ do
     -- Automatically import modules for any fully qualified identifiers
     setDynFlag DynFlags.Opt_ImplicitImportQualified
-    --setDynFlag DynFlags.Opt_D_dump_if_trace
 
     let from_int_t_name = mkRdrName "Types.Data.Num" "fromIntegerT"
     let from_int_t = SrcLoc.noLoc $ HsExpr.HsVar from_int_t_name
@@ -60,9 +61,15 @@ eval_tfp_int ty =
     core <- toCore modules expr
     execCore core 
 
+normalise_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
+normalise_tfp_int env ty =
+   unsafePerformIO $ do
+     nty <- normaliseType env ty
+     return nty
+
 -- | Get the width of a SizedWord type
-sized_word_len :: Type.Type -> Int
-sized_word_len ty = eval_tfp_int (sized_word_len_ty ty)
+-- sized_word_len :: HscTypes.HscEnv -> Type.Type -> Int
+-- sized_word_len env ty = eval_tfp_int env (sized_word_len_ty ty)
     
 sized_word_len_ty :: Type.Type -> Type.Type
 sized_word_len_ty ty = len
@@ -73,8 +80,8 @@ sized_word_len_ty ty = len
     [len]         = args
 
 -- | Get the width of a SizedInt type
-sized_int_len :: Type.Type -> Int
-sized_int_len ty = eval_tfp_int (sized_int_len_ty ty)
+-- sized_int_len :: HscTypes.HscEnv -> Type.Type -> Int
+-- sized_int_len env ty = eval_tfp_int env (sized_int_len_ty ty)
 
 sized_int_len_ty :: Type.Type -> Type.Type
 sized_int_len_ty ty = len
@@ -85,8 +92,8 @@ sized_int_len_ty ty = len
     [len]         = args
     
 -- | Get the upperbound of a RangedWord type
-ranged_word_bound :: Type.Type -> Int
-ranged_word_bound ty = eval_tfp_int (ranged_word_bound_ty ty)
+-- ranged_word_bound :: HscTypes.HscEnv -> Type.Type -> Int
+-- ranged_word_bound env ty = eval_tfp_int env (ranged_word_bound_ty ty)
     
 ranged_word_bound_ty :: Type.Type -> Type.Type
 ranged_word_bound_ty ty = len
@@ -113,8 +120,8 @@ ranged_word_bound_ty ty = len
 --     execCore core 
 
 -- | Get the length of a FSVec type
-tfvec_len :: Type.Type -> Int
-tfvec_len ty = eval_tfp_int (tfvec_len_ty ty)
+-- tfvec_len :: HscTypes.HscEnv -> Type.Type -> Int
+-- tfvec_len env ty = eval_tfp_int env (tfvec_len_ty ty)
 
 tfvec_len_ty :: Type.Type -> Type.Type
 tfvec_len_ty ty = len

@@ -13,6 +13,7 @@ import qualified Data.Accessor.Template
 -- GHC API imports
 import qualified Type
 import qualified CoreSyn
+import qualified HscTypes
 
 -- ForSyDe imports
 import qualified ForSyDe.Backend.VHDL.AST as AST
@@ -40,7 +41,7 @@ instance Ord OrdType where
 
 data HType = StdType OrdType |
              ADTType String [HType] |
-             VecType Int HType |
+             VecType OrdType HType |
              SizedWType Int |
              RangedWType Int |
              SizedIType Int |
@@ -66,12 +67,11 @@ data TypeState = TypeState {
   vsTypeDecls_  :: [AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
   vsTypeFuns_   :: TypeFunMap,
-  vsTfpInts_    :: TfpIntMap
+  vsTfpInts_    :: TfpIntMap,
+  vsHscEnv_     :: HscTypes.HscEnv
 }
 -- Derive accessors
 $( Data.Accessor.Template.deriveAccessors ''TypeState )
--- Define an empty TypeState
-emptyTypeState = TypeState Map.empty [] Map.empty Map.empty
 -- Define a session
 type TypeSession = State.State TypeState
 
