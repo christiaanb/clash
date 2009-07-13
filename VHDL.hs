@@ -254,13 +254,11 @@ mkConcSm ::
 -- the type works out.
 mkConcSm (bndr, Cast expr ty) = mkConcSm (bndr, expr)
 
--- For simple a = b assignments, just generate an unconditional signal
--- assignment. This should only happen for dataconstructors without arguments.
--- TODO: Integrate this with the below code for application (essentially this
--- is an application without arguments)
+-- Simple a = b assignments are just like applications, but without arguments.
+-- We can't just generate an unconditional assignment here, since b might be a
+-- top level binding (e.g., a function with no arguments).
 mkConcSm (bndr, Var v) = do
-  ty_state <- getA vsType
-  return $ [mkUncondAssign (Left bndr) ((varToVHDLExpr ty_state) v)]
+  genApplication (Left bndr) v []
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
