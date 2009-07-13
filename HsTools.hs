@@ -162,7 +162,7 @@ execCore expr = do
         -- to run an IO-monad-inside-a-GHC-monad for some reason. I don't really
         -- understand what it means, but it works.
         env <- GHC.getSession
-        let srcspan = SrcLoc.mkGeneralSrcSpan (FastString.fsLit "XXX")
+        let srcspan = SrcLoc.noSrcSpan
         hval <- MonadUtils.liftIO $ HscMain.compileExpr env srcspan expr
         let res = Unsafe.Coerce.unsafeCoerce hval :: Int
         return $ Unsafe.Coerce.unsafeCoerce hval
