@@ -181,6 +181,9 @@ xand a b = hwand a b
 functiontest :: TFVec D3 (TFVec D4 Bit) -> TFVec D12 Bit
 functiontest = \v -> let r = concat v in r
 
+functiontest2 :: SizedInt D8 -> SizedInt D8
+functiontest2 = \a -> let r = a + 1 in r
+
 xhwnot x = hwnot x
 
 maptest :: TFVec D4 Bit -> TFVec D4 Bit
