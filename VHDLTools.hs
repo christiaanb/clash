@@ -122,11 +122,10 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
 -- Functions to generate VHDL Exprs
 -----------------------------------------------------------------------------
 
--- Turn a variable reference into a AST expression
-varToVHDLExpr :: TypeState -> Var.Var -> AST.Expr
-varToVHDLExpr ty_state var =
+varToVHDLExpr :: Var.Var -> TypeSession AST.Expr
+varToVHDLExpr var = do
   case Id.isDataConWorkId_maybe var of
-    Just dc -> dataconToVHDLExpr dc
+    Just dc -> return $ dataconToVHDLExpr dc
     -- This is a dataconstructor.
     -- Not a datacon, just another signal. Perhaps we should check for
     -- local/global here as well?
@@ -134,17 +133,15 @@ varToVHDLExpr ty_state var =
     -- should still be translated to integer literals. It is probebly not the
     -- best solution to translate them here.
     -- FIXME: Find a better solution for translating instances of tfp integers
-    Nothing ->
-        let 
-          ty  = Var.varType var
-          res = case Type.splitTyConApp_maybe ty of
-                  Just (tycon, args) ->
-                    case Name.getOccString (TyCon.tyConName tycon) of
-                      "Dec" -> AST.PrimLit $ (show (fst ( State.runState (tfp_to_int ty) ty_state ) ) )
-                      otherwise -> AST.PrimName $ AST.NSimple $ varToVHDLId var
-        in
-          res
-
+    Nothing -> do
+        let ty  = Var.varType var
+        case Type.splitTyConApp_maybe ty of
+                Just (tycon, args) ->
+                  case Name.getOccString (TyCon.tyConName tycon) of
+                    "Dec" -> do
+                      len <- tfp_to_int ty
+                      return $ AST.PrimLit $ (show len)
+                    otherwise -> return $ AST.PrimName $ AST.NSimple $ varToVHDLId var
 
 -- Turn a VHDLName into an AST expression
 vhdlNameToVHDLExpr = AST.PrimName
@@ -153,7 +150,7 @@ vhdlNameToVHDLExpr = AST.PrimName
 idToVHDLExpr = vhdlNameToVHDLExpr . AST.NSimple
 
 -- Turn a Core expression into an AST expression
-exprToVHDLExpr ty_state = (varToVHDLExpr ty_state) . exprToVar
+exprToVHDLExpr core = varToVHDLExpr (exprToVar core)
 
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it

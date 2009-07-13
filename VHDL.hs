@@ -286,14 +286,13 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) =
 -- binders in the alts and only variables in the case values and a variable
 -- for a scrutinee. We check the constructor of the second alt, since the
 -- first is the default case, if there is any.
-mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) = do {
-  ; ty_state <- getA vsType
-  ; let { cond_expr = (varToVHDLExpr ty_state scrut) AST.:=: (altconToVHDLExpr con)
-        ; true_expr  = (varToVHDLExpr ty_state true)
-        ; false_expr  = (varToVHDLExpr ty_state false)
-        } ;
-  ; return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
-  }
+mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)])) = do
+  scrut' <- MonadState.lift vsType $ varToVHDLExpr scrut
+  let cond_expr = scrut' AST.:=: (altconToVHDLExpr con)
+  true_expr <- MonadState.lift vsType $ varToVHDLExpr true
+  false_expr <- MonadState.lift vsType $ varToVHDLExpr false
+  return [mkCondAssign (Left bndr) cond_expr true_expr false_expr]
+
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
