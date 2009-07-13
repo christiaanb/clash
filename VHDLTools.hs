@@ -473,9 +473,8 @@ mkHType ty = do
               case elem_htype_either of
                 -- Could create element type
                 Right elem_htype -> do
-                  env <- getA vsHscEnv
-                  let norm_ty = normalise_tfp_int env (tfvec_len_ty ty)
-                  return $ Right $ VecType (OrdType norm_ty) elem_htype
+                  len <- tfp_to_int (tfvec_len_ty ty)
+                  return $ Right $ VecType len elem_htype
                 -- Could not create element type
                 Left err -> return $ Left $ 
                   "VHDLTools.mkHType: Can not construct vectortype for elementtype: " ++ pprString el_ty  ++ "\n"
@@ -528,10 +527,11 @@ tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
   lens <- getA vsTfpInts
   hscenv <- getA vsHscEnv
-  let existing_len = Map.lookup (OrdType ty) lens
+  let norm_ty = normalise_tfp_int hscenv ty
+  let existing_len = Map.lookup (OrdType norm_ty) lens
   case existing_len of
     Just len -> return len
     Nothing -> do
       let new_len = eval_tfp_int hscenv ty
-      modA vsTfpInts (Map.insert (OrdType ty) (new_len))
+      modA vsTfpInts (Map.insert (OrdType norm_ty) (new_len))
       return new_len
