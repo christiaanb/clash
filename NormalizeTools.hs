@@ -258,3 +258,9 @@ runTransformSession env uniqSupply session = State.evalState session emptyTransf
 isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool
 isRepr (Type ty) = return False
 isRepr expr = Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType (CoreUtils.exprType expr)
+
+is_local_var :: CoreSyn.CoreExpr -> TransformSession Bool
+is_local_var (CoreSyn.Var v) = do
+  bndrs <- getGlobalBinders
+  return $ not $ v `elem` bndrs
+is_local_var _ = return False
