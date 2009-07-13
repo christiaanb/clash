@@ -527,10 +527,11 @@ isReprType ty = do
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
   lens <- getA vsTfpInts
+  hscenv <- getA vsHscEnv
   let existing_len = Map.lookup (OrdType ty) lens
   case existing_len of
     Just len -> return len
     Nothing -> do
-      let new_len = eval_tfp_int ty
+      let new_len = eval_tfp_int hscenv ty
       modA vsTfpInts (Map.insert (OrdType ty) (new_len))
       return new_len

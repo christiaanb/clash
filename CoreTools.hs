@@ -38,9 +38,10 @@ import Pretty
 
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int.
-eval_tfp_int :: Type.Type -> Int
-eval_tfp_int ty =
+eval_tfp_int :: HscTypes.HscEnv -> Type.Type -> Int
+eval_tfp_int env ty =
   unsafeRunGhc $ do
+    GHC.setSession env
     -- Automatically import modules for any fully qualified identifiers
     setDynFlag DynFlags.Opt_ImplicitImportQualified
 
