@@ -44,7 +44,7 @@ genExprArgs ::
   -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
 genExprArgs ty_state wrap dst func args = wrap dst func args'
   where args' = map (either ((varToVHDLExpr ty_state).exprToVar) id) args
-  
+
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be variables.
 genVarArgs ::
@@ -514,17 +514,25 @@ genApplication dst f args = do
       signatures <- getA vsSignatures
       -- This is a local id, so it should be a function whose definition we
       -- have and which can be turned into a component instantiation.
-      let  
-        signature = Maybe.fromMaybe 
-          (error $ "\nGenerate.genApplication: Using function '" ++ (varToString f) ++ "' without signature? This should not happen!") 
-          (Map.lookup f signatures)
-        entity_id = ent_id signature
-        -- TODO: Using show here isn't really pretty, but we'll need some
-        -- unique-ish value...
-        label = "comp_ins_" ++ (either show prettyShow) dst
-        portmaps = mkAssocElems (map (either (exprToVHDLExpr ty_state) id) args) ((either varToVHDLName id) dst) signature
-        in
-          return [mkComponentInst label entity_id portmaps]
+      case (Map.lookup f signatures) of
+        Just signature -> let
+          -- We have a signature, this is a top level binding. Generate a
+          -- component instantiation.
+          entity_id = ent_id signature
+          -- TODO: Using show here isn't really pretty, but we'll need some
+          -- unique-ish value...
+          label = "comp_ins_" ++ (either show prettyShow) dst
+          portmaps = mkAssocElems (map (either (exprToVHDLExpr ty_state) id) args) ((either varToVHDLName id) dst) signature
+          in
+            return [mkComponentInst label entity_id portmaps]
+        Nothing -> do
+          -- No signature, so this must be a local variable reference. It
+          -- should have a representable type (and thus, no arguments) and a
+          -- signal should be generated for it. Just generate an
+          -- unconditional assignment here.
+          ty_state <- getA vsType
+          return $ [mkUncondAssign dst ((varToVHDLExpr ty_state) f)]
+            
     IdInfo.ClassOpId cls -> do
       -- FIXME: Not looking for what instance this class op is called for
       -- Is quite stupid of course.

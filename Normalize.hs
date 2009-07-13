@@ -101,14 +101,21 @@ letrectop = everywhere ("letrec", letrec)
 -- let simplification
 --------------------------------
 letsimpl, letsimpltop :: Transform
--- Don't simplifiy lets that are already simple
-letsimpl expr@(Let _ (Var _)) = return expr
 -- Put the "in ..." value of a let in its own binding, but not when the
 -- expression is applicable (to prevent loops with inlinefun).
-letsimpl (Let (Rec binds) expr) | not $ is_applicable expr = do
-  id <- mkInternalVar "foo" (CoreUtils.exprType expr)
-  let bind = (id, expr)
-  change $ Let (Rec (bind:binds)) (Var id)
+letsimpl expr@(Let (Rec binds) res) | not $ is_applicable expr = do
+  local_var <- Trans.lift $ is_local_var res
+  if not local_var
+    then do
+      -- If the result is not a local var already (to prevent loops with
+      -- ourselves), extract it.
+      id <- mkInternalVar "foo" (CoreUtils.exprType res)
+      let bind = (id, res)
+      change $ Let (Rec (bind:binds)) (Var id)
+    else
+      -- If the result is already a local var, don't extract it.
+      return expr
+
 -- Leave all other expressions unchanged
 letsimpl expr = return expr
 -- Perform this transform everywhere
@@ -144,7 +151,7 @@ letflattop = everywhere ("letflat", letflat)
 --------------------------------
 -- Remove a = b bindings from let expressions everywhere
 letremovetop :: Transform
-letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> case e of (Var v) | not $ Id.isDataConWorkId v -> return True; otherwise -> return False))
+letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> Trans.lift $ is_local_var e))
 
 --------------------------------
 -- Function inlining
@@ -293,14 +300,13 @@ caseremovetop = everywhere ("caseremove", caseremove)
 --------------------------------
 -- Make sure that all arguments of a representable type are simple variables.
 appsimpl, appsimpltop :: Transform
--- Don't simplify arguments that are already simple.
-appsimpl expr@(App f (Var v)) = return expr
 -- Simplify all representable arguments. Do this by introducing a new Let
 -- that binds the argument and passing the new binder in the application.
 appsimpl expr@(App f arg) = do
   -- Check runtime representability
   repr <- isRepr arg
-  if repr
+  local_var <- Trans.lift $ is_local_var arg
+  if repr && not local_var
     then do -- Extract representable arguments
       id <- mkInternalVar "arg" (CoreUtils.exprType arg)
       change $ Let (Rec [(id, arg)]) (App f (Var id))
@@ -514,29 +520,11 @@ normalizeBind bndr =
                 -- Find all vars used with a function type. All of these should be global
                 -- binders (i.e., functions used), since any local binders with a function
                 -- type should have been inlined already.
-                let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isFunTy . snd . Type.splitForAllTys . Id.idType) v) expr'
+                bndrs <- getGlobalBinders
+                let used_funcs_set = CoreFVs.exprSomeFreeVars (\v -> not (Id.isDictId v) && v `elem` bndrs) expr'
                 let used_funcs = VarSet.varSetElems used_funcs_set
                 -- Process each of the used functions recursively
                 mapM normalizeBind used_funcs
-                -- FIXME: Can't we inline these 'implicit' function calls or something?
-                -- TODO: Add an extra let expression to the current finding, so the VHDL
-                --       Will make a signa assignment for this 'implicit' function call
-                --
-                -- Find all the other free variables used that are used. This applies to
-                -- variables that are actually a reference to a Class function. Example:
-                --
-                -- functiontest :: SizedInt D8 -> SizedInt D8
-                -- functiontest = \a -> let r = a + 1 in r
-                --
-                -- The literal(Lit) '1' will be turned into a variable (Var)
-                -- As it will call the 'fromInteger' class function that belongs
-                -- to the Num class. So we need to translate the refenced function
-                -- let used_vars_set = CoreFVs.exprSomeFreeVars (\v -> (Type.isAlgType . snd . Type.splitForAllTys . Id.idType) v) expr'
-                -- let used_vars = VarSet.varSetElems used_vars_set
-                -- -- Filter for dictionary args, they should not be translated
-                -- -- FIXME: check for other non-translatable stuff as well
-                -- let trans_vars = filter (\v -> (not . TcType.isDictTy . Id.idType) v) used_vars
-                -- mapM normalizeBind trans_vars
                 return ()
               -- We don't have a value for this binder. This really shouldn't
               -- happen for local id's...
