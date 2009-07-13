@@ -57,9 +57,7 @@ eval_tfp_int env ty =
     let letexpr = HsExpr.HsLet 
           (HsBinds.HsValBinds $ (HsBinds.ValBindsIn binds) [])
           (SrcLoc.noLoc expr)
-
-    let modules = map GHC.mkModuleName ["Types.Data.Num"]
-    core <- toCore modules expr
+    core <- toCore expr
     execCore core 
 
 normalise_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
