@@ -42,17 +42,8 @@ genExprArgs wrap dst func args = do
   args' <- eitherCoreOrExprArgs args
   wrap dst func args'
 
-idM :: a -> VHDLSession a
-idM e = return e
-
-eitherM :: (a -> m c) -> (b -> m c) -> Either a b -> m c
-eitherM f1 f2 e = do
-  case e of
-    Left e1 -> f1 e1
-    Right e2 -> f2 e2
-    
 eitherCoreOrExprArgs :: [Either CoreSyn.CoreExpr AST.Expr] -> VHDLSession [AST.Expr]
-eitherCoreOrExprArgs args = mapM (eitherM (\x -> MonadState.lift vsType $ (varToVHDLExpr (exprToVar x))) idM) args
+eitherCoreOrExprArgs args = mapM (Either.either ((MonadState.lift vsType) . varToVHDLExpr . exprToVar) return) args
 
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be variables.
