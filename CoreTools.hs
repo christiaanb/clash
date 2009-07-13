@@ -51,12 +51,6 @@ eval_tfp_int env ty =
     let app = SrcLoc.noLoc $ HsExpr.HsApp (from_int_t) (undef)
     let int_ty = SrcLoc.noLoc $ HsTypes.HsTyVar TysWiredIn.intTyCon_RDR
     let expr = HsExpr.ExprWithTySig app int_ty
-    let foo_name = mkRdrName "Types.Data.Num" "foo"
-    let foo_bind_name = RdrName.mkRdrUnqual $ OccName.mkVarOcc "foo"
-    let binds = Bag.listToBag [SrcLoc.noLoc $ HsBinds.VarBind foo_bind_name (SrcLoc.noLoc $ HsExpr.HsVar foo_name)]
-    let letexpr = HsExpr.HsLet 
-          (HsBinds.HsValBinds $ (HsBinds.ValBindsIn binds) [])
-          (SrcLoc.noLoc expr)
     core <- toCore expr
     execCore core 
 
