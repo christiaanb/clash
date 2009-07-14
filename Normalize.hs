@@ -220,14 +220,16 @@ casewild expr@(Case scrut b ty alts) = do
     where
       -- Make all binders wild
       wildbndrs = map (\bndr -> Id.mkWildId (Id.idType bndr)) bndrs
+      -- A set of all the binders that are used by the expression
+      free_vars = CoreFVs.exprSomeFreeVars (`elem` bndrs) expr
       -- Creates a case statement to retrieve the ith element from the scrutinee
       -- and binds that to b.
       mkextracts :: CoreBndr -> Int -> TransformMonad (Maybe (CoreBndr, CoreExpr))
       mkextracts b i =
-        -- TODO: Use free variables instead of is_wild. is_wild is a hack.
-        if is_wild b || Type.isFunTy (Id.idType b) 
-          -- Don't create extra bindings for binders that are already wild, or
-          -- for binders that bind function types (to prevent loops with
+        if not (VarSet.elemVarSet b free_vars) || Type.isFunTy (Id.idType b) 
+          -- Don't create extra bindings for binders that are already wild
+          -- (e.g. not in the free variables of expr, so unused), or for
+          -- binders that bind function types (to prevent loops with
           -- inlinefun).
           then return Nothing
           else do
