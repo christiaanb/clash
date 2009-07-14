@@ -134,6 +134,22 @@ genFromSizedWord' (Left res) f args = do
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
+genResize :: BuiltinBuilder
+genResize = genExprArgs $ genExprRes genResize'
+genResize' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> VHDLSession AST.Expr
+genResize' (Left res) f [arg] = do {
+  ; let { ty = Var.varType res
+        ; (tycon, args) = Type.splitTyConApp ty
+        ; name = Name.getOccString (TyCon.tyConName tycon)
+        } ;
+  ; len <- case name of
+      "SizedInt" -> MonadState.lift vsType $ tfp_to_int (sized_int_len_ty ty)
+      "SizedWord" -> MonadState.lift vsType $ tfp_to_int (sized_word_len_ty ty)
+  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId resizeId))
+             [Nothing AST.:=>: AST.ADExpr arg, Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+  }
+genResize' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+
 -- FIXME: I'm calling genLitArgs which is very specific function,
 -- which needs to be fixed as well
 genFromInteger :: BuiltinBuilder
@@ -1026,4 +1042,5 @@ globalNameTable = Map.fromList
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
   , (fromIntegerId    , (1, genFromInteger          ) )
+  , (resizeId         , (1, genResize               ) )
   ]
