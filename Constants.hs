@@ -258,6 +258,9 @@ toSignedId = "to_signed"
 toUnsignedId :: String
 toUnsignedId = "to_unsigned"
 
+resizeId :: String
+resizeId = "resize"
+
 ------------------
 -- VHDL type marks
 ------------------
