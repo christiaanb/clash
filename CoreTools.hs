@@ -133,14 +133,6 @@ tfvec_elem ty = el_ty
       Nothing -> error $ "\nCoreTools.tfvec_len: Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
 
--- Is this a wild binder?
-is_wild :: CoreSyn.CoreBndr -> Bool
--- wild binders have a particular unique, that we copied from MkCore.lhs to
--- here. However, this comparison didn't work, so we'll just check the
--- occstring for now... TODO
---(Var.varUnique bndr) == (Unique.mkBuiltinUnique 1)
-is_wild bndr = "wild" == (OccName.occNameString . Name.nameOccName . Var.varName) bndr
-
 -- Is the given core expression a lambda abstraction?
 is_lam :: CoreSyn.CoreExpr -> Bool
 is_lam (CoreSyn.Lam _ _) = True
