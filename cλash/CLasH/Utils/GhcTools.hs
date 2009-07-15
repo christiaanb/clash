@@ -1,4 +1,4 @@
-module GhcTools where
+module CLasH.Utils.GhcTools where
 -- Standard modules
 import qualified System.IO.Unsafe
 

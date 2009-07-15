@@ -2,7 +2,7 @@
 -- Some types used by the VHDL module.
 --
 {-# LANGUAGE TemplateHaskell #-}
-module VHDLTypes where
+module CLasH.VHDL.VHDLTypes where
 
 -- Standard imports
 import qualified Control.Monad.Trans.State as State

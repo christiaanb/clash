@@ -1,5 +1,5 @@
 {-# LANGUAGE ViewPatterns #-}
-module HsTools where
+module CLasH.Utils.HsTools where
 
 -- Standard modules
 import qualified Unsafe.Coerce
@@ -53,8 +53,8 @@ import qualified TyCon
 
 
 -- Local imports
-import GhcTools
-import CoreShow
+import CLasH.Utils.GhcTools
+import CLasH.Utils.Core.CoreShow
 
 -- | Translate a HsExpr to a Core expression. This does renaming, type
 -- checking, simplification of class instances and desugaring. The result is

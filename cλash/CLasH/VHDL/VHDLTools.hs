@@ -1,4 +1,4 @@
-module VHDLTools where
+module CLasH.VHDL.VHDLTools where
 
 -- Standard modules
 import qualified Maybe
@@ -28,10 +28,10 @@ import qualified DataCon
 import qualified CoreSubst
 
 -- Local imports
-import VHDLTypes
-import CoreTools
-import Pretty
-import Constants
+import CLasH.VHDL.VHDLTypes
+import CLasH.Utils.Core.CoreTools
+import CLasH.Utils.Pretty
+import CLasH.VHDL.Constants
 
 -----------------------------------------------------------------------------
 -- Functions to generate concurrent statements

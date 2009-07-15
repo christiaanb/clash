@@ -2,7 +2,7 @@
 -- 
 -- This module provides functions for program transformations.
 --
-module NormalizeTools where
+module CLasH.Normalize.NormalizeTools where
 -- Standard modules
 import Debug.Trace
 import qualified List
@@ -34,10 +34,10 @@ import qualified HscTypes
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
-import NormalizeTypes
-import Pretty
-import VHDLTypes
-import qualified VHDLTools
+import CLasH.Normalize.NormalizeTypes
+import CLasH.Utils.Pretty
+import CLasH.VHDL.VHDLTypes
+import qualified CLasH.VHDL.VHDLTools as VHDLTools
 
 -- Create a new internal var with the given name and type. A Unique is
 -- appended to the given name, to ensure uniqueness (not strictly neccesary,

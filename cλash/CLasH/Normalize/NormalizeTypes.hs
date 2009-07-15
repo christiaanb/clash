@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module NormalizeTypes where
+module CLasH.Normalize.NormalizeTypes where
 
 
 -- Standard modules
@@ -18,9 +18,9 @@ import qualified VarSet
 import Outputable ( Outputable, showSDoc, ppr )
 
 -- Local imports
-import CoreShow
-import Pretty
-import VHDLTypes -- For TypeState
+import CLasH.Utils.Core.CoreShow
+import CLasH.Utils.Pretty
+import CLasH.VHDL.VHDLTypes -- For TypeState
 
 data TransformState = TransformState {
     tsUniqSupply_ :: UniqSupply.UniqSupply

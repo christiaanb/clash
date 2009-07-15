@@ -1,24 +1,39 @@
-name:                clash
-version:             0.1
-build-type:          Simple
-synopsis:            CAES Languege for Hardware Descriptions (CλasH)
-description:         CλasH is a toolchain/language to translate subsets of 
-                     Haskell to synthesizable VHDL. It does this by 
-                     translating the intermediate System Fc (GHC Core) 
-                     representation to a VHDL AST, which is then written to 
-                     file.
-category:            Development
-license:             BSD3
-license-file:        LICENSE
-package-url:         http://github.com/darchon/clash/tree/master
-copyright:           Copyright (c) 2009 Christiaan Baaij & Matthijs Kooijman
-author:              Christiaan Baaij & Matthijs Kooijman
-stability:           alpha
-maintainer:          christiaan.baaij@gmail.com & matthijs@stdin.nl
-build-depends:       ghc >= 6.11, vhdl, data-accessor-template, data-accessor, 
-                     containers, transformers, base >= 4, haskell98,
-                     prettyclass, ghc-paths, pretty, syb, filepath,
-                     th-lift-ng, tfp > 0.3.2, tfvec > 0.1.2
+name:               clash
+version:            0.1
+build-type:         Simple
+synopsis:           CAES Languege for Hardware Descriptions (CλasH)
+description:        CλasH is a toolchain/language to translate subsets of
+                    Haskell to synthesizable VHDL. It does this by translating
+                    the intermediate System Fc (GHC Core) representation to a
+                    VHDL AST, which is then written to file.
+category:           Development
+license:            BSD3
+license-file:       LICENSE
+package-url:        http://github.com/darchon/clash/tree/master
+copyright:          Copyright (c) 2009 Christiaan Baaij & Matthijs Kooijman
+author:             Christiaan Baaij & Matthijs Kooijman
+stability:          alpha
+maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
+Cabal-Version:      >= 1.2
 
-executable:          clash
-main-is:             Main.hs
+Library
+  build-depends:    ghc >= 6.11, vhdl, data-accessor-template, data-accessor,
+                    containers, transformers, base >= 4, haskell98,
+                    prettyclass, ghc-paths, pretty, syb, filepath, th-lift-ng,
+                    tfp > 0.3.2, tfvec > 0.1.2
+  exposed-modules:  CLasH.Translator
+  other-modules:    CLasH.Translator.TranslatorTypes
+                    CLasH.Normalize
+                    CLasH.Normalize.NormalizeTypes
+                    CLasH.Normalize.NormalizeTools
+                    CLasH.VHDL
+                    CLasH.VHDL.Constants
+                    CLasH.VHDL.Generate
+                    CLasH.VHDL.VHDLTools
+                    CLasH.VHDL.VHDLTypes
+                    CLasH.Utils.GhcTools
+                    CLasH.Utils.HsTools
+                    CLasH.Utils.Pretty
+                    CLasH.Utils.Core.CoreShow
+                    CLasH.Utils.Core.CoreTools
+  

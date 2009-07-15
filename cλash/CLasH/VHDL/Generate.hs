@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
-module Generate where
+module CLasH.VHDL.Generate where
 
 -- Standard modules
 import qualified Control.Monad as Monad
@@ -26,11 +26,11 @@ import qualified Name
 import qualified TyCon
 
 -- Local imports
-import Constants
-import VHDLTypes
-import VHDLTools
-import CoreTools
-import Pretty
+import CLasH.VHDL.Constants
+import CLasH.VHDL.VHDLTypes
+import CLasH.VHDL.VHDLTools
+import CLasH.Utils.Core.CoreTools
+import CLasH.Utils.Pretty
 
 -----------------------------------------------------------------------------
 -- Functions to generate VHDL for builtin functions

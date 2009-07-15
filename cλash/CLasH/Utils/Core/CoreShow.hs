@@ -1,5 +1,5 @@
 {-# LANGUAGE StandaloneDeriving,FlexibleInstances, UndecidableInstances, OverlappingInstances #-}
-module CoreShow where
+module CLasH.Utils.Core.CoreShow where
 
 -- This module derives Show instances for CoreSyn types.
 

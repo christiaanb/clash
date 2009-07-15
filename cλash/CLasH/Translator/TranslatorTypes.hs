@@ -3,7 +3,7 @@
 -- separate module to prevent circular dependencies in Pretty for example.
 --
 {-# LANGUAGE TemplateHaskell #-}
-module TranslatorTypes where
+module CLasH.Translator.TranslatorTypes where
 
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Map as Map
@@ -14,19 +14,11 @@ import qualified HscTypes
 
 import qualified Language.VHDL.AST as AST
 
-import FlattenTypes
-import VHDLTypes
-import HsValueMap
-
-
--- | A map from a HsFunction identifier to various stuff we collect about a
---   function along the way.
-type FlatFuncMap  = Map.Map HsFunction FlatFunction
+import CLasH.VHDL.VHDLTypes
 
 data TranslatorSession = TranslatorSession {
   tsCoreModule_ :: HscTypes.CoreModule, -- ^ The current module
-  tsNameCount_ :: Int, -- ^ A counter that can be used to generate unique names
-  tsFlatFuncs_ :: FlatFuncMap -- ^ A map from HsFunction to FlatFunction
+  tsNameCount_ :: Int -- ^ A counter that can be used to generate unique names
 }
 
 -- Derive accessors

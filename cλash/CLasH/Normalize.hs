@@ -4,7 +4,7 @@
 -- top level function "normalize", and defines the actual transformation passes that
 -- are performed.
 --
-module Normalize (normalizeModule) where
+module CLasH.Normalize (normalizeModule) where
 
 -- Standard modules
 import Debug.Trace
@@ -33,11 +33,11 @@ import qualified HscTypes
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
-import NormalizeTypes
-import NormalizeTools
-import VHDLTypes
-import CoreTools
-import Pretty
+import CLasH.Normalize.NormalizeTypes
+import CLasH.Normalize.NormalizeTools
+import CLasH.VHDL.VHDLTypes
+import CLasH.Utils.Core.CoreTools
+import CLasH.Utils.Pretty
 
 --------------------------------
 -- Start of transformations

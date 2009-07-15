@@ -1,7 +1,7 @@
 --
 -- Functions to generate VHDL from FlatFunctions
 --
-module VHDL where
+module CLasH.VHDL where
 
 -- Standard modules
 import qualified Data.List as List
@@ -32,12 +32,12 @@ import qualified CoreUtils
 import Outputable ( showSDoc, ppr )
 
 -- Local imports
-import VHDLTypes
-import VHDLTools
-import Pretty
-import CoreTools
-import Constants
-import Generate
+import CLasH.VHDL.VHDLTypes
+import CLasH.VHDL.VHDLTools
+import CLasH.Utils.Pretty
+import CLasH.Utils.Core.CoreTools
+import CLasH.VHDL.Constants
+import CLasH.VHDL.Generate
 
 createDesignFiles ::
   TypeState

@@ -1,4 +1,4 @@
-module Pretty (prettyShow, pprString, pprStringDebug) where
+module CLasH.Utils.Pretty (prettyShow, pprString, pprStringDebug) where
 
 
 import qualified Data.Map as Map
@@ -15,92 +15,19 @@ import qualified Language.VHDL.Ppr as Ppr
 import qualified Language.VHDL.AST as AST
 import qualified Language.VHDL.AST.Ppr
 
-import HsValueMap
-import FlattenTypes
-import TranslatorTypes
-import VHDLTypes
-import CoreShow
+import CLasH.Translator.TranslatorTypes
+import CLasH.VHDL.VHDLTypes
+import CLasH.Utils.Core.CoreShow
 
 -- | A version of the default pPrintList method, which uses a custom function
 --   f instead of pPrint to print elements.
 printList :: (a -> Doc) -> [a] -> Doc
 printList f = brackets . fsep . punctuate comma . map f
 
-instance Pretty HsFunction where
-  pPrint (HsFunction name args res) =
-    text name <> char ' ' <> parens (hsep $ punctuate comma args') <> text " -> " <> res'
-    where
-      args' = map pPrint args
-      res'  = pPrint res
-
-instance Pretty x => Pretty (HsValueMap x) where
-  pPrint (Tuple maps) = parens (hsep $ punctuate comma (map pPrint maps))
-  pPrint (Single s)   = pPrint s
-
-instance Pretty HsValueUse where
-  pPrint Port            = char 'P'
-  pPrint (State n)       = char 'S' <> int n
-  pPrint (HighOrder _ _) = text "Higher Order"
-
-instance Pretty FlatFunction where
-  pPrint (FlatFunction args res defs sigs) =
-    (text "Args: ") $$ nest 10 (pPrint args)
-    $+$ (text "Result: ") $$ nest 10 (pPrint res)
-    $+$ (text "Defs: ") $$ nest 10 (ppdefs defs)
-    $+$ text "Signals: " $$ nest 10 (ppsigs sigs)
-    where
-      ppsig (id, info) = pPrint id <> pPrint info
-      ppdefs defs = vcat (map pPrint sorted)
-        where 
-          -- Roughly sort the entries (inaccurate for Fapps)
-          sorted = List.sortBy (\a b -> compare (sigDefDst a) (sigDefDst b)) defs
-          sigDefDst (FApp _ _ dst) = head $ Foldable.toList dst
-          sigDefDst (CondDef _ _ _ dst) = dst
-          sigDefDst (UncondDef _ dst) = dst
-      ppsigs sigs = vcat (map pPrint sorted)
-        where
-          sorted = List.sortBy (\a b -> compare (fst a) (fst b)) sigs
-
-
-instance Pretty SigDef where
-  pPrint (FApp func args res) =
-    pPrint func <> text " : " <> pPrint args <> text " -> " <> pPrint res
-  pPrint (CondDef cond true false res) = 
-    pPrint cond <> text " ? " <> pPrint true <> text " : " <> pPrint false <> text " -> " <> pPrint res
-  pPrint (UncondDef src dst) =
-    ppsrc src <> text " -> " <> pPrint dst
-    where
-      ppsrc (Left id) = pPrint id
-      ppsrc (Right expr) = pPrint expr
-
-instance Pretty SignalExpr where
-  pPrint (EqLit id lit) =
-    parens $ pPrint id <> text " = " <> text lit
-  pPrint (Literal lit ty) =
-    text "(" <> text (show ty) <> text ") " <> text lit
-  pPrint (Eq a b) =
-    parens $ pPrint a <> text " = " <> pPrint b
-
-instance Pretty SignalInfo where
-  pPrint (SignalInfo name use ty hints) =
-    text ":" <> (pPrint use) <> (ppname name)
-    where
-      ppname Nothing = empty
-      ppname (Just name) = text ":" <> text name
-
-instance Pretty SigUse where
-  pPrint SigPortIn   = text "PI"
-  pPrint SigPortOut  = text "PO"
-  pPrint SigInternal = text "I"
-  pPrint (SigStateOld n) = text "SO:" <> int n
-  pPrint (SigStateNew n) = text "SN:" <> int n
-  pPrint SigSubState = text "s"
-
 instance Pretty TranslatorSession where
-  pPrint (TranslatorSession mod nameCount flatfuncs) =
+  pPrint (TranslatorSession mod nameCount) =
     text "Module: " $$ nest 15 (text modname)
     $+$ text "NameCount: " $$ nest 15 (int nameCount)
-    $+$ text "Functions: " $$ nest 15 (vcat (map ppfunc (Map.toList flatfuncs)))
     where
       ppfunc (hsfunc, flatfunc) =
         pPrint hsfunc $+$ nest 5 (pPrint flatfunc)

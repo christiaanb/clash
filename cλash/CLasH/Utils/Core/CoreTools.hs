@@ -2,7 +2,7 @@
 -- programs. This module does not provide the actual plumbing to work with
 -- Core and Haskell (it uses HsTools for this), but only the functions that
 -- know about various libraries and know which functions to call.
-module CoreTools where
+module CLasH.Utils.Core.CoreTools where
 
 --Standard modules
 import qualified Maybe
@@ -32,9 +32,9 @@ import qualified CoreFVs
 import qualified Literal
 
 -- Local imports
-import GhcTools
-import HsTools
-import Pretty
+import CLasH.Utils.GhcTools
+import CLasH.Utils.HsTools
+import CLasH.Utils.Pretty
 
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int.

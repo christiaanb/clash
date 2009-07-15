@@ -1,4 +1,5 @@
-module Translator where
+module CLasH.Translator where
+
 import qualified Directory
 import qualified System.FilePath as FilePath
 import qualified List
@@ -43,14 +44,11 @@ import qualified Language.VHDL.Ppr as Ppr
 -- This is needed for rendering the pretty printed VHDL
 import Text.PrettyPrint.HughesPJ (render)
 
-import TranslatorTypes
-import HsValueMap
-import Pretty
-import Normalize
--- import Flatten
--- import FlattenTypes
-import VHDLTypes
-import qualified VHDL
+import CLasH.Translator.TranslatorTypes
+import CLasH.Utils.Pretty
+import CLasH.Normalize
+import CLasH.VHDL.VHDLTypes
+import qualified CLasH.VHDL as VHDL
 
 makeVHDL :: String -> String -> Bool -> IO ()
 makeVHDL filename name stateful = do

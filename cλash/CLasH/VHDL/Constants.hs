@@ -1,4 +1,4 @@
-module Constants where
+module CLasH.VHDL.Constants where
   
 import qualified Language.VHDL.AST as AST
 
