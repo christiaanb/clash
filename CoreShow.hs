@@ -24,6 +24,7 @@ deriving instance (Show b) => Show (CoreSyn.Expr b)
 deriving instance (Show b) => Show (CoreSyn.Bind b)
 deriving instance Show TypeRep.Type
 deriving instance (Show n, OutputableBndr n) => Show (HsTypes.HsType n)
+deriving instance (Show n, OutputableBndr n) => Show (HsTypes.ConDeclField n)
 deriving instance (Show x) => Show (SrcLoc.Located x)
 deriving instance (Show x, OutputableBndr x) => Show (HsExpr.StmtLR x x)
 deriving instance (Show x, OutputableBndr x) => Show (HsExpr.HsExpr x)

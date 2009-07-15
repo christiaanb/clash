@@ -48,7 +48,7 @@ mkInternalVar str ty = do
   uniq <- mkUnique
   let occname = OccName.mkVarOcc (str ++ show uniq)
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
-  return $ Var.mkLocalIdVar name ty IdInfo.vanillaIdInfo
+  return $ Var.mkLocalVar IdInfo.VanillaId name ty IdInfo.vanillaIdInfo
 
 -- Create a new type variable with the given name and kind. A Unique is
 -- appended to the given name, to ensure uniqueness (not strictly neccesary,
@@ -79,7 +79,7 @@ cloneVar v = do
   uniq <- mkUnique
   -- Swap out the unique, and reset the IdInfo (I'm not 100% sure what it
   -- contains, but vannillaIdInfo is always correct, since it means "no info").
-  return $ Var.lazySetVarIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
+  return $ Var.lazySetIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
 
 -- Creates a new function with the same name as the given binder (but with a
 -- new unique) and with the given function body. Returns the new binder for

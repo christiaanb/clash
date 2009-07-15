@@ -16,7 +16,7 @@ import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
-import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified Language.VHDL.AST as AST
 
 -- GHC API
 import CoreSyn

@@ -11,9 +11,9 @@ import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
 import Outputable ( showSDoc, showSDocDebug, ppr, Outputable, OutputableBndr)
 
-import qualified ForSyDe.Backend.Ppr
-import qualified ForSyDe.Backend.VHDL.Ppr
-import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified Language.VHDL.Ppr as Ppr
+import qualified Language.VHDL.AST as AST
+import qualified Language.VHDL.AST.Ppr
 
 import HsValueMap
 import FlattenTypes
@@ -136,10 +136,10 @@ instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Expr b) where
   pPrint = text . show
 
 instance Pretty AST.VHDLId where
-  pPrint id = ForSyDe.Backend.Ppr.ppr id
+  pPrint id = Ppr.ppr id
   
 instance Pretty AST.VHDLName where
-  pPrint name = ForSyDe.Backend.Ppr.ppr name
+  pPrint name = Ppr.ppr name
 
 prettyBind :: (Show b, Show e) => (b, e) -> Doc
 prettyBind (b, expr) =

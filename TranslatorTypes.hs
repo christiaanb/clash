@@ -12,7 +12,7 @@ import Data.Accessor
 
 import qualified HscTypes
 
-import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified Language.VHDL.AST as AST
 
 import FlattenTypes
 import VHDLTypes

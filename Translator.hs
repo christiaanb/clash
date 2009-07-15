@@ -37,10 +37,9 @@ import qualified Monad
 -- The following modules come from the ForSyDe project. They are really
 -- internal modules, so ForSyDe.cabal has to be modified prior to installing
 -- ForSyDe to get access to these modules.
-import qualified ForSyDe.Backend.VHDL.AST as AST
-import qualified ForSyDe.Backend.VHDL.Ppr
-import qualified ForSyDe.Backend.VHDL.FileIO
-import qualified ForSyDe.Backend.Ppr
+import qualified Language.VHDL.AST as AST
+import qualified Language.VHDL.FileIO
+import qualified Language.VHDL.Ppr as Ppr
 -- This is needed for rendering the pretty printed VHDL
 import Text.PrettyPrint.HughesPJ (render)
 
@@ -113,7 +112,7 @@ moduleToVHDL env core list = do
   let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
   let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds statefuls
   let vhdl = VHDL.createDesignFiles typestate normalized_bindings
-  mapM (putStr . render . ForSyDe.Backend.Ppr.ppr . snd) vhdl
+  mapM (putStr . render . Ppr.ppr . snd) vhdl
   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
   where
@@ -140,7 +139,7 @@ writeVHDL dir (name, vhdl) = do
   -- Find the filename
   let fname = dir ++ (AST.fromVHDLId name) ++ ".vhdl"
   -- Write the file
-  ForSyDe.Backend.VHDL.FileIO.writeDesignFile vhdl fname
+  Language.VHDL.FileIO.writeDesignFile vhdl fname
 
 -- | Loads the given file and turns it into a core module.
 loadModule :: String -> IO (HscTypes.CoreModule, HscTypes.HscEnv)

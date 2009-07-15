@@ -16,7 +16,7 @@ import qualified CoreSyn
 import qualified HscTypes
 
 -- ForSyDe imports
-import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified Language.VHDL.AST as AST
 
 -- Local imports
 

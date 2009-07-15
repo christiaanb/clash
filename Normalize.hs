@@ -205,7 +205,7 @@ casewild expr@(Case scrut b ty alts) = do
   if null bindings || length alts == 1 && length bindings == 1 then return expr else change newlet 
   where
   -- Generate a single wild binder, since they are all the same
-  wild = Id.mkWildId
+  wild = MkCore.mkWildBinder
   -- Wilden the binders of one alt, producing a list of bindings as a
   -- sideeffect.
   doalt :: CoreAlt -> TransformMonad ([(CoreBndr, CoreExpr)], CoreAlt)
@@ -219,7 +219,7 @@ casewild expr@(Case scrut b ty alts) = do
     return (bindings, newalt)
     where
       -- Make all binders wild
-      wildbndrs = map (\bndr -> Id.mkWildId (Id.idType bndr)) bndrs
+      wildbndrs = map (\bndr -> MkCore.mkWildBinder (Id.idType bndr)) bndrs
       -- A set of all the binders that are used by the expression
       free_vars = CoreFVs.exprSomeFreeVars (`elem` bndrs) expr
       -- Creates a case statement to retrieve the ith element from the scrutinee
@@ -488,7 +488,7 @@ normalizeBind :: CoreBndr -> TransformSession ()
 normalizeBind bndr =
   -- Don't normalize global variables, these should be either builtin
   -- functions or data constructors.
-  Monad.when (Var.isLocalIdVar bndr) $ do
+  Monad.when (Var.isLocalId bndr) $ do
     -- Skip binders that have a polymorphic type, since it's impossible to
     -- create polymorphic hardware.
     if is_poly (Var bndr)

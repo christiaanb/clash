@@ -14,7 +14,7 @@ import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
-import qualified ForSyDe.Backend.VHDL.AST as AST
+import qualified Language.VHDL.AST as AST
 
 -- GHC API
 import CoreSyn
@@ -511,34 +511,8 @@ genApplication ::
   -> [Either CoreSyn.CoreExpr AST.Expr] -- ^ The arguments to apply
   -> VHDLSession [AST.ConcSm] -- ^ The resulting concurrent statements
 genApplication dst f args = do
-  case Var.globalIdVarDetails f of
-    IdInfo.DataConWorkId dc -> case dst of
-      -- It's a datacon. Create a record from its arguments.
-      Left bndr -> do
-        -- We have the bndr, so we can get at the type
-        labels <- MonadState.lift vsType $ getFieldLabels (Var.varType bndr)
-        args' <- eitherCoreOrExprArgs args
-        return $ zipWith mkassign labels $ args'
-        where
-          mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
-          mkassign label arg =
-            let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
-            mkUncondAssign (Right sel_name) arg
-      Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
-    IdInfo.VanillaGlobal -> do
-      -- It's a global value imported from elsewhere. These can be builtin
-      -- functions. Look up the function name in the name table and execute
-      -- the associated builder if there is any and the argument count matches
-      -- (this should always be the case if it typechecks, but just to be
-      -- sure...).
-      case (Map.lookup (varToString f) globalNameTable) of
-        Just (arg_count, builder) ->
-          if length args == arg_count then
-            builder dst f args
-          else
-            error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-        Nothing -> error $ "\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ pprString f
-    IdInfo.NotGlobalId -> do
+  case Var.isGlobalId f of
+    False -> do
       signatures <- getA vsSignatures
       -- This is a local id, so it should be a function whose definition we
       -- have and which can be turned into a component instantiation.
@@ -560,18 +534,45 @@ genApplication dst f args = do
           -- unconditional assignment here.
           f' <- MonadState.lift vsType $ varToVHDLExpr f
           return $ [mkUncondAssign dst f']
-            
-    IdInfo.ClassOpId cls -> do
-      -- FIXME: Not looking for what instance this class op is called for
-      -- Is quite stupid of course.
-      case (Map.lookup (varToString f) globalNameTable) of
-        Just (arg_count, builder) ->
-          if length args == arg_count then
-            builder dst f args
-          else
-            error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-        Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
-    details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+    True ->
+      case Var.idDetails f of
+        IdInfo.DataConWorkId dc -> case dst of
+          -- It's a datacon. Create a record from its arguments.
+          Left bndr -> do
+            -- We have the bndr, so we can get at the type
+            labels <- MonadState.lift vsType $ getFieldLabels (Var.varType bndr)
+            args' <- eitherCoreOrExprArgs args
+            return $ zipWith mkassign labels $ args'
+            where
+              mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+              mkassign label arg =
+                let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+                mkUncondAssign (Right sel_name) arg
+          Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
+        IdInfo.VanillaId -> do
+          -- It's a global value imported from elsewhere. These can be builtin
+          -- functions. Look up the function name in the name table and execute
+          -- the associated builder if there is any and the argument count matches
+          -- (this should always be the case if it typechecks, but just to be
+          -- sure...).
+          case (Map.lookup (varToString f) globalNameTable) of
+            Just (arg_count, builder) ->
+              if length args == arg_count then
+                builder dst f args
+              else
+                error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+            Nothing -> error $ "\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ pprString f
+        IdInfo.ClassOpId cls -> do
+          -- FIXME: Not looking for what instance this class op is called for
+          -- Is quite stupid of course.
+          case (Map.lookup (varToString f) globalNameTable) of
+            Just (arg_count, builder) ->
+              if length args == arg_count then
+                builder dst f args
+              else
+                error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+            Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
+        details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
 
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
