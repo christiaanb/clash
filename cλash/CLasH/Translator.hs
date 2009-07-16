@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module CLasH.Translator where
 
 import qualified Directory
@@ -19,6 +21,7 @@ import qualified Maybe
 import qualified Module
 import qualified Data.Foldable as Foldable
 import qualified Control.Monad.Trans.State as State
+import qualified Control.Monad as Monad
 import Name
 import qualified Data.Map as Map
 import Data.Accessor
@@ -34,6 +37,8 @@ import qualified UniqSupply
 import List ( find )
 import qualified List
 import qualified Monad
+import qualified Annotations
+import qualified Serialized
 
 -- The following modules come from the ForSyDe project. They are really
 -- internal modules, so ForSyDe.cabal has to be modified prior to installing
@@ -45,6 +50,7 @@ import qualified Language.VHDL.Ppr as Ppr
 import Text.PrettyPrint.HughesPJ (render)
 
 import CLasH.Translator.TranslatorTypes
+import CLasH.Translator.Annotations
 import CLasH.Utils.Pretty
 import CLasH.Normalize
 import CLasH.VHDL.VHDLTypes
@@ -58,6 +64,18 @@ makeVHDL filename name stateful = do
   vhdl <- moduleToVHDL env core [(name, stateful)]
   -- Write VHDL to file
   let dir = "./vhdl/" ++ name ++ "/"
+  prepareDir dir
+  mapM (writeVHDL dir) vhdl
+  return ()
+  
+makeVHDLAnn :: String -> Bool -> IO ()
+makeVHDLAnn filename stateful = do
+  (core, top, init, env) <- loadModuleAnn filename
+  let top_entity = head top
+  vhdl <- case init of 
+    [] -> moduleToVHDLAnn env core [top_entity]
+    xs -> moduleToVHDLAnnState env core [(top_entity, (head xs))]
+  let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM (writeVHDL dir) vhdl
   return ()
@@ -113,7 +131,39 @@ moduleToVHDL env core list = do
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
-  where
+  
+moduleToVHDLAnn :: HscTypes.HscEnv -> HscTypes.CoreModule -> [CoreSyn.CoreBndr] -> IO [(AST.VHDLId, AST.DesignFile)]
+moduleToVHDLAnn env core binds = do
+  -- Generate a UniqSupply
+  -- Running 
+  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
+  -- unique supply anywhere.
+  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
+  -- Turn bind into VHDL
+  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
+  let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds [False]
+  let vhdl = VHDL.createDesignFiles typestate normalized_bindings
+  mapM (putStr . render . Ppr.ppr . snd) vhdl
+  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
+  return vhdl
+  
+moduleToVHDLAnnState :: HscTypes.HscEnv -> HscTypes.CoreModule -> [(CoreSyn.CoreBndr, CoreSyn.CoreBndr)] -> IO [(AST.VHDLId, AST.DesignFile)]
+moduleToVHDLAnnState env core list = do
+  let (binds, init_states) = unzip list
+  -- Generate a UniqSupply
+  -- Running 
+  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
+  -- unique supply anywhere.
+  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
+  -- Turn bind into VHDL
+  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
+  let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds [True]
+  let vhdl = VHDL.createDesignFiles typestate normalized_bindings
+  mapM (putStr . render . Ppr.ppr . snd) vhdl
+  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
+  return vhdl
 
 -- | Prepares the directory for writing VHDL files. This means creating the
 --   dir if it does not exist and removing all existing .vhdl files from it.
@@ -155,6 +205,59 @@ loadModule filename =
       core <- GHC.compileToCoreModule filename
       env <- GHC.getSession
       return (core, env)
+      
+-- | Loads the given file and turns it into a core module.
+loadModuleAnn :: String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], HscTypes.HscEnv)
+loadModuleAnn filename =
+  defaultErrorHandler defaultDynFlags $ do
+    runGhc (Just libdir) $ do
+      dflags <- getSessionDynFlags
+      setSessionDynFlags dflags
+      --target <- guessTarget "adder.hs" Nothing
+      --liftIO (print (showSDoc (ppr (target))))
+      --liftIO $ printTarget target
+      --setTargets [target]
+      --load LoadAllTargets
+      --core <- GHC.compileToCoreSimplified "Adders.hs"
+      core <- GHC.compileToCoreModule filename
+      env <- GHC.getSession
+      top_entity <- findTopEntity core
+      init_state <- findInitState core
+      return (core, top_entity, init_state, env)
+
+findTopEntity :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreBndr]
+findTopEntity core = do
+  let binds = CoreSyn.flattenBinds $ cm_binds core
+  topbinds <- Monad.filterM (hasTopEntityAnnotation . fst) binds
+  let bndrs = case topbinds of [] -> error $ "Couldn't find top entity in current module." ; xs -> fst (unzip topbinds)
+  return bndrs
+  
+findInitState :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreBndr]
+findInitState core = do
+  let binds = CoreSyn.flattenBinds $ cm_binds core
+  statebinds <- Monad.filterM (hasInitStateAnnotation . fst) binds
+  let bndrs = case statebinds of [] -> [] ; xs -> fst (unzip statebinds)
+  return bndrs
+  
+hasTopEntityAnnotation :: GhcMonad m => Var.Var -> m Bool
+hasTopEntityAnnotation var = do
+  let deserializer = Serialized.deserializeWithData
+  let target = Annotations.NamedTarget (Var.varName var)
+  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
+  let top_ents = filter isTopEntity anns
+  case top_ents of
+    [] -> return False
+    xs -> return True
+    
+hasInitStateAnnotation :: GhcMonad m => Var.Var -> m Bool
+hasInitStateAnnotation var = do
+  let deserializer = Serialized.deserializeWithData
+  let target = Annotations.NamedTarget (Var.varName var)
+  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
+  let top_ents = filter isInitState anns
+  case top_ents of
+    [] -> return False
+    xs -> return True
 
 -- | Extracts the named binds from the given module.
 findBinds :: HscTypes.CoreModule -> [String] -> [(CoreBndr, CoreExpr)]
