@@ -17,12 +17,14 @@ maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
 Cabal-Version:      >= 1.2
 
 Library
-  build-depends:    ghc >= 6.11, vhdl, data-accessor-template, data-accessor,
-                    containers, transformers, base >= 4, haskell98,
-                    prettyclass, ghc-paths, pretty, syb, filepath, th-lift-ng,
-                    tfp > 0.3.2, tfvec > 0.1.2, template-haskell
+  build-depends:    ghc >= 6.11, pretty, vhdl, haskell98, ghc-paths, syb,
+                    data-accessor, containers, base >= 4, transformers,
+                    filepath, template-haskell, data-accessor-template,
+                    prettyclass
+                    
   exposed-modules:  CLasH.Translator,
                     CLasH.Translator.Annotations
+                    
   other-modules:    CLasH.Translator.TranslatorTypes
                     CLasH.Normalize
                     CLasH.Normalize.NormalizeTypes
