@@ -16,22 +16,10 @@ stability:          alpha
 maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
 Cabal-Version:      >= 1.2
 
-flag out-ghc-tree
-  description: Are we outside a GHC tree?
-  default: False
-  manual: True
-
 Library
-  if flag(out-ghc-tree)
-    build-depends:  ghc-paths
-  else
-    cpp-options:    -DIN_GHC_TREE
-
   build-depends:    ghc >= 6.11, pretty, vhdl, haskell98, syb, data-accessor, 
                     containers, base >= 4, transformers, filepath, 
                     template-haskell, data-accessor-template, prettyclass
-                    
-  extensions:       CPP
                     
   exposed-modules:  CLasH.Translator,
                     CLasH.Translator.Annotations

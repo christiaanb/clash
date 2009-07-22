@@ -40,7 +40,7 @@ import CLasH.Utils.Pretty
 -- library to a real int.
 eval_tfp_int :: HscTypes.HscEnv -> Type.Type -> Int
 eval_tfp_int env ty =
-  unsafeRunGhc $ do
+  unsafeRunGhc libdir $ do
     GHC.setSession env
     -- Automatically import modules for any fully qualified identifiers
     setDynFlag DynFlags.Opt_ImplicitImportQualified
@@ -52,7 +52,10 @@ eval_tfp_int env ty =
     let int_ty = SrcLoc.noLoc $ HsTypes.HsTyVar TysWiredIn.intTyCon_RDR
     let expr = HsExpr.ExprWithTySig app int_ty
     core <- toCore expr
-    execCore core 
+    execCore core
+  where
+    libdir = DynFlags.topDir dynflags
+    dynflags = HscTypes.hsc_dflags env
 
 normalise_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
 normalise_tfp_int env ty =

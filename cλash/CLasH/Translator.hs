@@ -31,7 +31,6 @@ import qualified HscTypes
 import HscTypes ( cm_binds, cm_types )
 import MonadUtils ( liftIO )
 import Outputable ( showSDoc, ppr, showSDocDebug )
-import GHC.Paths ( libdir )
 import DynFlags ( defaultDynFlags )
 import qualified UniqSupply
 import List ( find )
@@ -56,10 +55,10 @@ import CLasH.Normalize
 import CLasH.VHDL.VHDLTypes
 import qualified CLasH.VHDL as VHDL
 
-makeVHDL :: String -> String -> Bool -> IO ()
-makeVHDL filename name stateful = do
+makeVHDL :: FilePath -> String -> String -> Bool -> IO ()
+makeVHDL libdir filename name stateful = do
   -- Load the module
-  (core, env) <- loadModule filename
+  (core, env) <- loadModule libdir filename
   -- Translate to VHDL
   vhdl <- moduleToVHDL env core [(name, stateful)]
   -- Write VHDL to file
@@ -68,9 +67,9 @@ makeVHDL filename name stateful = do
   mapM (writeVHDL dir) vhdl
   return ()
   
-makeVHDLAnn :: String -> Bool -> IO ()
-makeVHDLAnn filename stateful = do
-  (core, top, init, env) <- loadModuleAnn filename
+makeVHDLAnn :: FilePath -> String -> IO ()
+makeVHDLAnn libdir filename = do
+  (core, top, init, env) <- loadModuleAnn libdir filename
   let top_entity = head top
   vhdl <- case init of 
     [] -> moduleToVHDLAnn env core [top_entity]
@@ -80,9 +79,9 @@ makeVHDLAnn filename stateful = do
   mapM (writeVHDL dir) vhdl
   return ()
 
-listBindings :: String -> IO [()]
-listBindings filename = do
-  (core, env) <- loadModule filename
+listBindings :: FilePath -> String -> IO [()]
+listBindings libdir filename = do
+  (core, env) <- loadModule libdir filename
   let binds = CoreSyn.flattenBinds $ cm_binds core
   mapM (listBinding) binds
 
@@ -99,9 +98,9 @@ listBinding (b, e) = do
   putStr "\n\n"
   
 -- | Show the core structure of the given binds in the given file.
-listBind :: String -> String -> IO ()
-listBind filename name = do
-  (core, env) <- loadModule filename
+listBind :: FilePath -> String -> String -> IO ()
+listBind libdir filename name = do
+  (core, env) <- loadModule libdir filename
   let [(b, expr)] = findBinds core [name]
   putStr "\n"
   putStr $ prettyShow expr
@@ -190,8 +189,8 @@ writeVHDL dir (name, vhdl) = do
   Language.VHDL.FileIO.writeDesignFile vhdl fname
 
 -- | Loads the given file and turns it into a core module.
-loadModule :: String -> IO (HscTypes.CoreModule, HscTypes.HscEnv)
-loadModule filename =
+loadModule :: FilePath -> String -> IO (HscTypes.CoreModule, HscTypes.HscEnv)
+loadModule libdir filename =
   defaultErrorHandler defaultDynFlags $ do
     runGhc (Just libdir) $ do
       dflags <- getSessionDynFlags
@@ -207,8 +206,8 @@ loadModule filename =
       return (core, env)
       
 -- | Loads the given file and turns it into a core module.
-loadModuleAnn :: String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], HscTypes.HscEnv)
-loadModuleAnn filename =
+loadModuleAnn :: FilePath -> String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], HscTypes.HscEnv)
+loadModuleAnn libdir filename =
   defaultErrorHandler defaultDynFlags $ do
     runGhc (Just libdir) $ do
       dflags <- getSessionDynFlags

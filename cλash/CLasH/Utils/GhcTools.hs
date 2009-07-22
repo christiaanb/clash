@@ -4,7 +4,6 @@ import qualified System.IO.Unsafe
 
 -- GHC API
 import qualified GHC
-import qualified GHC.Paths
 import qualified DynFlags
 import qualified TcRnMonad
 import qualified MonadUtils
@@ -26,19 +25,19 @@ setDynFlag dflag = do
 -- don't have side effects themselves (Or rather, that don't use
 -- unsafePerformIO themselves, since normal side effectful function would
 -- just return an IO monad when they are evaluated).
-unsafeRunGhc :: GHC.Ghc a -> a
-unsafeRunGhc m =
-  System.IO.Unsafe.unsafePerformIO $ 
-      GHC.runGhc (Just GHC.Paths.libdir) $ do
+unsafeRunGhc :: FilePath -> GHC.Ghc a -> a
+unsafeRunGhc libDir m =
+  System.IO.Unsafe.unsafePerformIO $ do
+      GHC.runGhc (Just libDir) $ do
         dflags <- GHC.getSessionDynFlags
         GHC.setSessionDynFlags dflags
         m
 
-runTcM :: TcRnMonad.TcM a -> IO a
-runTcM thing_inside = do
-  GHC.runGhc (Just GHC.Paths.libdir) $ do   
-    dflags <- GHC.getSessionDynFlags
-    GHC.setSessionDynFlags dflags
-    env <- GHC.getSession
-    HscTypes.ioMsgMaybe . MonadUtils.liftIO .  TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
-      thing_inside
+-- runTcM :: TcRnMonad.TcM a -> IO a
+-- runTcM thing_inside = do
+--   GHC.runGhc (Just GHC.Paths.libdir) $ do   
+--     dflags <- GHC.getSessionDynFlags
+--     GHC.setSessionDynFlags dflags
+--     env <- GHC.getSession
+--     HscTypes.ioMsgMaybe . MonadUtils.liftIO .  TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
+--       thing_inside
