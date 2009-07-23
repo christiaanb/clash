@@ -2,7 +2,7 @@
 -- Simple module providing some types used by Translator. These are in a
 -- separate module to prevent circular dependencies in Pretty for example.
 --
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, NoGenerics #-}
 module CLasH.Translator.TranslatorTypes where
 
 import qualified Control.Monad.Trans.State as State

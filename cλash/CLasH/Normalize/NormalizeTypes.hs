@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, NoGenerics #-}
 module CLasH.Normalize.NormalizeTypes where
 
 
