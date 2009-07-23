@@ -1,7 +1,7 @@
 --
 -- Some types used by the VHDL module.
 --
-{-# LANGUAGE TemplateHaskell, NoGenerics #-}
+{-# LANGUAGE TemplateHaskell #-}
 module CLasH.VHDL.VHDLTypes where
 
 -- Standard imports
