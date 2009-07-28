@@ -102,13 +102,7 @@ listBind :: FilePath -> String -> String -> IO ()
 listBind libdir filename name = do
   (core, env) <- loadModule libdir filename
   let [(b, expr)] = findBinds core [name]
-  putStr "\n"
-  putStr $ prettyShow expr
-  putStr "\n\n"
-  putStr $ showSDoc $ ppr expr
-  putStr "\n\n"
-  putStr $ showSDoc $ ppr $ CoreUtils.exprType expr
-  putStr "\n\n"
+  listBinding (b, expr)
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
