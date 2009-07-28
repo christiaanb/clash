@@ -89,11 +89,13 @@ listBinding :: (CoreBndr, CoreExpr) -> IO ()
 listBinding (b, e) = do
   putStr "\nBinder: "
   putStr $ show b
-  putStr "\nExpression: \n"
+  putStr "\nType of Binder: \n"
+  putStr $ showSDoc $ ppr $ Var.varType b
+  putStr "\n\nExpression: \n"
   putStr $ prettyShow e
   putStr "\n\n"
   putStr $ showSDoc $ ppr e
-  putStr "\n\n"
+  putStr "\n\nType of Expression: \n"
   putStr $ showSDoc $ ppr $ CoreUtils.exprType e
   putStr "\n\n"
   
