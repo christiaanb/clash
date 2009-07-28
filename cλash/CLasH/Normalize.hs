@@ -467,22 +467,28 @@ normalizeModule ::
   HscTypes.HscEnv
   -> UniqSupply.UniqSupply -- ^ A UniqSupply we can use
   -> [(CoreBndr, CoreExpr)]  -- ^ All bindings we know (i.e., in the current module)
+  -> [CoreExpr]
   -> [CoreBndr]  -- ^ The bindings to generate VHDL for (i.e., the top level bindings)
   -> [Bool] -- ^ For each of the bindings to generate VHDL for, if it is stateful
-  -> ([(CoreBndr, CoreExpr)], TypeState) -- ^ The resulting VHDL
+  -> ([(CoreBndr, CoreExpr)], [(CoreBndr, CoreExpr)], TypeState) -- ^ The resulting VHDL
 
-normalizeModule env uniqsupply bindings generate_for statefuls = runTransformSession env uniqsupply $ do
+normalizeModule env uniqsupply bindings testexprs generate_for statefuls = runTransformSession env uniqsupply $ do
+  testbinds <- mapM (\x -> do { v <- mkBinderFor' x "test" ; return (v,x) } ) testexprs
+  let testbinders = (map fst testbinds)
   -- Put all the bindings in this module in the tsBindings map
-  putA tsBindings (Map.fromList bindings)
+  putA tsBindings (Map.fromList (bindings ++ testbinds))
   -- (Recursively) normalize each of the requested bindings
-  mapM normalizeBind generate_for
+  mapM normalizeBind (generate_for ++ testbinders)
   -- Get all initial bindings and the ones we produced
   bindings_map <- getA tsBindings
   let bindings = Map.assocs bindings_map
-  normalized_bindings <- getA tsNormalized
+  normalized_binders' <- getA tsNormalized
+  let normalized_binders = VarSet.delVarSetList normalized_binders' testbinders
+  let ret_testbinds = zip testbinders (Maybe.catMaybes $ map (\x -> lookup x bindings) testbinders)
+  let ret_binds = filter ((`VarSet.elemVarSet` normalized_binders) . fst) bindings
   typestate <- getA tsType
   -- But return only the normalized bindings
-  return $ (filter ((flip VarSet.elemVarSet normalized_bindings) . fst) bindings, typestate)
+  return $ (ret_binds, ret_testbinds, typestate)
 
 normalizeBind :: CoreBndr -> TransformSession ()
 normalizeBind bndr =

@@ -261,6 +261,21 @@ toUnsignedId = "to_unsigned"
 resizeId :: String
 resizeId = "resize"
 
+-- | output file identifier (from std.textio)
+showIdString :: String
+showIdString = "show"
+
+showId :: AST.VHDLId
+showId = AST.unsafeVHDLBasicId showIdString
+
+-- | write function identifier (from std.textio)
+writeId :: AST.VHDLId
+writeId = AST.unsafeVHDLBasicId "write"
+
+-- | output file identifier (from std.textio)
+outputId :: AST.VHDLId
+outputId = AST.unsafeVHDLBasicId "output"
+
 ------------------
 -- VHDL type marks
 ------------------

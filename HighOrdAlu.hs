@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module HighOrdAlu where
 
 import Prelude hiding (
@@ -33,6 +35,11 @@ xhwor = hwor
 type Op n e = (TFVec n e -> TFVec n e -> TFVec n e)
 type Opcode = Bit
 
+{-# ANN sim_input TestInput#-}
+sim_input = [ (High,$(vectorTH [High,Low,Low,Low]),$(vectorTH [High,Low,Low,Low]))
+            , (High,$(vectorTH [High,High,High,High]),$(vectorTH [High,High,High,High]))
+            , (Low,$(vectorTH [High,Low,Low,High]),$(vectorTH [High,Low,High,Low]))]
+
 {-# ANN actual_alu InitState #-}
 initstate = High
 
@@ -43,6 +50,6 @@ alu op1 op2 opc a b =
     High -> op2 a b
 
 {-# ANN actual_alu TopEntity #-}
-actual_alu :: Opcode -> TFVec D4 Bit -> TFVec D4 Bit -> TFVec D4 Bit
+actual_alu :: (Opcode, TFVec D4 Bit, TFVec D4 Bit) -> TFVec D4 Bit
 --actual_alu = alu (constant Low) andop
-actual_alu = alu (anyset xhwor)  andop
+actual_alu (opc, a, b) = alu (anyset xhwor) (andop) opc a b

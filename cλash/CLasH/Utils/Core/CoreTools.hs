@@ -211,3 +211,14 @@ getLiterals app@(CoreSyn.App _ _) = literals
   where
     (CoreSyn.Var f, args) = CoreSyn.collectArgs app
     literals = filter (is_lit) args
+
+-- reduceCoreListToHsList :: CoreExpr -> [a]
+reduceCoreListToHsList app@(CoreSyn.App _ _) = out
+  where
+    (fun, args) = CoreSyn.collectArgs app
+    len = length args
+    out = case len of
+          3 -> ((args!!1) : (reduceCoreListToHsList (args!!2)))
+          otherwise -> []
+
+reduceCoreListToHsList _ = []

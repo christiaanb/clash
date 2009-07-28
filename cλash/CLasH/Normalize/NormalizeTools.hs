@@ -44,8 +44,11 @@ import qualified CLasH.VHDL.VHDLTools as VHDLTools
 -- since the Unique is also stored in the name, but this ensures variable
 -- names are unique in the output).
 mkInternalVar :: String -> Type.Type -> TransformMonad Var.Var
-mkInternalVar str ty = do
-  uniq <- mkUnique
+mkInternalVar str ty = Trans.lift (mkInternalVar' str ty)
+  
+mkInternalVar' :: String -> Type.Type -> TransformSession Var.Var
+mkInternalVar' str ty = do
+  uniq <- mkUnique'
   let occname = OccName.mkVarOcc (str ++ show uniq)
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkLocalVar IdInfo.VanillaId name ty IdInfo.vanillaIdInfo
@@ -55,8 +58,11 @@ mkInternalVar str ty = do
 -- since the Unique is also stored in the name, but this ensures variable
 -- names are unique in the output).
 mkTypeVar :: String -> Type.Kind -> TransformMonad Var.Var
-mkTypeVar str kind = do
-  uniq <- mkUnique
+mkTypeVar str kind = Trans.lift (mkTypeVar' str kind)
+  
+mkTypeVar' :: String -> Type.Kind -> TransformSession Var.Var
+mkTypeVar' str kind = do
+  uniq <- mkUnique'
   let occname = OccName.mkVarOcc (str ++ show uniq)
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkTyVar name kind
@@ -65,8 +71,11 @@ mkTypeVar str kind = do
 -- works for both value and type level expressions, so it can return a Var or
 -- TyVar (which is just an alias for Var).
 mkBinderFor :: CoreExpr -> String -> TransformMonad Var.Var
-mkBinderFor (Type ty) string = mkTypeVar string (Type.typeKind ty)
-mkBinderFor expr string = mkInternalVar string (CoreUtils.exprType expr)
+mkBinderFor expr string = Trans.lift (mkBinderFor' expr string)
+
+mkBinderFor' :: CoreExpr -> String -> TransformSession Var.Var
+mkBinderFor' (Type ty) string = mkTypeVar' string (Type.typeKind ty)
+mkBinderFor' expr string = mkInternalVar' string (CoreUtils.exprType expr)
 
 -- Creates a reference to the given variable. This works for both a normal
 -- variable as well as a type variable
@@ -221,11 +230,14 @@ change val = do
 
 -- Create a new Unique
 mkUnique :: TransformMonad Unique.Unique
-mkUnique = Trans.lift $ do
-    us <- getA tsUniqSupply 
-    let (us', us'') = UniqSupply.splitUniqSupply us
-    putA tsUniqSupply us'
-    return $ UniqSupply.uniqFromSupply us''
+mkUnique = Trans.lift $ mkUnique'
+
+mkUnique' :: TransformSession Unique.Unique    
+mkUnique' = do
+  us <- getA tsUniqSupply 
+  let (us', us'') = UniqSupply.splitUniqSupply us
+  putA tsUniqSupply us'
+  return $ UniqSupply.uniqFromSupply us''
 
 -- Replace each of the binders given with the coresponding expressions in the
 -- given expression.
