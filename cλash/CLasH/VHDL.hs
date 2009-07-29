@@ -57,10 +57,10 @@ createDesignFiles init_typestate binds topbind testinput =
       State.runState (createLibraryUnits binds) init_session
     (testbench, final_session) =
       State.runState (createTestBench Nothing testinput topbind) final_session'
-    tyfun_decls = map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns)
+    tyfun_decls = mkBuiltInShow ++ (map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns))
     ty_decls = final_session ^. vsType ^. vsTypeDecls
     tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
-    tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) highId Nothing)
+    tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) (AST.NSimple $ highId) Nothing)
     tfvec_index_def = AST.SubtypeIn integerTM (Just tfvec_range)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
@@ -154,7 +154,7 @@ createEntityAST vhdl_id args res =
               ++ [mkIfaceSigDec AST.Out res]
               ++ [clk_port]
     -- Add a clk port if we have state
-    clk_port = AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logicTM
+    clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
 
 -- | Create a port declaration
 mkIfaceSigDec ::
@@ -409,7 +409,7 @@ createOutputProc outs =
          [clockId]
          [AST.IfSm clkPred (writeOuts outs) [] Nothing]
  where clkPred = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple clockId) 
-                                                   eventId
+                                                   (AST.NSimple $ eventId)
                                                    Nothing          ) `AST.And` 
                  (AST.PrimName (AST.NSimple clockId) AST.:=: AST.PrimLit "'1'")
        writeOuts :: [AST.VHDLId] -> [AST.SeqSm]
@@ -417,12 +417,6 @@ createOutputProc outs =
        writeOuts [i] = [writeOut i (AST.PrimLit "LF")]
        writeOuts (i:is) = writeOut i (AST.PrimLit "HT") : writeOuts is
        writeOut outSig suffix = 
-         genExprFCall2 writeId
+         genExprPCall2 writeId
                         (AST.PrimName $ AST.NSimple outputId)
-                        (genExprFCall1 showId ((AST.PrimName $ AST.NSimple outSig) AST.:&:  suffix))
-       genExprFCall2 entid arg1 arg2 =
-        AST.ProcCall (AST.NSimple entid) $
-         map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg1,arg2]
-       genExprFCall1 entid arg =
-        AST.PrimFCall $ AST.FCall (AST.NSimple entid) $
-         map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg]
+                        ((genExprFCall showId (AST.PrimName $ AST.NSimple outSig)) AST.:&: suffix)

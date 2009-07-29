@@ -16,6 +16,8 @@ resetId, clockId :: AST.VHDLId
 resetId = AST.unsafeVHDLBasicId resetStr
 clockId = AST.unsafeVHDLBasicId clockStr
 
+integerId :: AST.VHDLId
+integerId = AST.unsafeVHDLBasicId "integer"
 
 -- | \"types\" identifier
 typesId :: AST.VHDLId
@@ -266,7 +268,7 @@ showIdString :: String
 showIdString = "show"
 
 showId :: AST.VHDLId
-showId = AST.unsafeVHDLBasicId showIdString
+showId = AST.unsafeVHDLExtId showIdString
 
 -- | write function identifier (from std.textio)
 writeId :: AST.VHDLId
@@ -311,3 +313,11 @@ signedTM = AST.unsafeVHDLBasicId "signed"
 -- | unsigned TypeMark
 unsignedTM :: AST.TypeMark
 unsignedTM = AST.unsafeVHDLBasicId "unsigned"
+
+-- | string TypeMark
+stringTM :: AST.TypeMark
+stringTM = AST.unsafeVHDLBasicId "string"
+
+-- | tup VHDLName suffix
+tupVHDLSuffix :: AST.VHDLId -> AST.Suffix
+tupVHDLSuffix id = AST.SSimple id
