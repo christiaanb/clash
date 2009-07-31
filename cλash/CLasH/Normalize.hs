@@ -198,13 +198,18 @@ scrutsimpltop = everywhere ("scrutsimpl", scrutsimpl)
 --------------------------------
 -- Case binder wildening
 --------------------------------
-casewild, casewildtop :: Transform
--- Make sure that all case alternatives have only wild binders, except for
--- simple selector cases (e.g., case x of (a, ) -> a). This is done by
--- creating a new let binding for each non-wild binder, which is bound to a
--- new simple selector case statement. We do this only for binders with a
--- representable type, to prevent loops with inlinenonrep.
-casewild expr@(Case scrut b ty alts) = do
+casesimpl, casesimpltop :: Transform
+-- This is already a selector case (or, if x does not appear in bndrs, a very
+-- simple case statement that will be removed by caseremove below). Just leave
+-- it be.
+casesimpl expr@(Case scrut b ty [(con, bndrs, Var x)]) = return expr
+-- Make sure that all case alternatives have only wild binders and simple
+-- expressions.
+-- This is done by creating a new let binding for each non-wild binder, which
+-- is bound to a new simple selector case statement and for each complex
+-- expression. We do this only for representable types, to prevent loops with
+-- inlinenonrep.
+casesimpl expr@(Case scrut b ty alts) = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
   -- Replace the case with a let with bindings and a case
@@ -213,7 +218,7 @@ casewild expr@(Case scrut b ty alts) = do
   -- selector (i.e., a single alt with exactly one binding), already a simple
   -- selector altan no bindings (i.e., no wild binders in the original case),
   -- don't change anything, otherwise, replace the case.
-  if null bindings || length alts == 1 && length bindings == 1 then return expr else change newlet 
+  if null bindings then return expr else change newlet 
   where
   -- Generate a single wild binder, since they are all the same
   wild = MkCore.mkWildBinder
@@ -221,31 +226,35 @@ casewild expr@(Case scrut b ty alts) = do
   -- sideeffect.
   doalt :: CoreAlt -> TransformMonad ([(CoreBndr, CoreExpr)], CoreAlt)
   doalt (con, bndrs, expr) = do
-    extracts <- Monad.zipWithM mkextracts bndrs [0..]
-    let (newbndrs, bindings_maybe) = unzip extracts
-    let bindings = Maybe.catMaybes bindings_maybe
-    -- Note that we leave expr unchanged, even though most binders will have
-    -- become wild. The binders that were previously bound by the case
-    -- alternative, will now be bound in a surrounding let expression (e.g.,
-    -- by bindings).
-    let newalt = (con, newbndrs, expr)
+    -- Make each binder wild, if possible
+    bndrs_res <- Monad.zipWithM dobndr bndrs [0..]
+    let (newbndrs, bindings_maybe) = unzip bndrs_res
+    -- Extract a complex expression, if possible. For this we check if any of
+    -- the new list of bndrs are used by expr. We can't use free_vars here,
+    -- since that looks at the old bndrs.
+    let uses_bndrs = not $ VarSet.isEmptyVarSet $ CoreFVs.exprSomeFreeVars (`elem` newbndrs) $ expr
+    (exprbinding_maybe, expr') <- doexpr expr uses_bndrs
+    -- Create a new alternative
+    let newalt = (con, newbndrs, expr')
+    let bindings = Maybe.catMaybes (exprbinding_maybe : bindings_maybe)
     return (bindings, newalt)
     where
-      -- Make all binders wild
+      -- Make wild alternatives for each binder
       wildbndrs = map (\bndr -> MkCore.mkWildBinder (Id.idType bndr)) bndrs
       -- A set of all the binders that are used by the expression
       free_vars = CoreFVs.exprSomeFreeVars (`elem` bndrs) expr
       -- Look at the ith binder in the case alternative. Return a new binder
       -- for it (either the same one, or a wild one) and optionally a let
-      -- binding with a case expression.
-      mkextracts :: CoreBndr -> Int -> TransformMonad (CoreBndr, Maybe (CoreBndr, CoreExpr))
-      mkextracts b i = do
+      -- binding containing a case expression.
+      dobndr :: CoreBndr -> Int -> TransformMonad (CoreBndr, Maybe (CoreBndr, CoreExpr))
+      dobndr b i = do
         repr <- isRepr (Var b)
         -- Is b wild (e.g., not a free var of expr. Since b is only in scope
         -- in expr, this means that b is unused if expr does not use it.)
         let wild = not (VarSet.elemVarSet b free_vars)
         -- Create a new binding for any representable binder that is not
-        -- already wild.
+        -- already wild and is representable (to prevent loops with
+        -- inlinenonrep).
         if (not wild) && repr
           then do
             -- Create on new binder that will actually capture a value in this
@@ -259,52 +268,29 @@ casewild expr@(Case scrut b ty alts) = do
             -- Just leave the original binder in place, and don't generate an
             -- extra selector case.
             return (b, Nothing)
+      -- Process the expression of a case alternative. Accepts an expression
+      -- and whether this expression uses any of the binders in the
+      -- alternative. Returns an optional new binding and a new expression.
+      doexpr :: CoreExpr -> Bool -> TransformMonad (Maybe (CoreBndr, CoreExpr), CoreExpr)
+      doexpr expr uses_bndrs = do
+        local_var <- Trans.lift $ is_local_var expr
+        repr <- isRepr expr
+        -- Extract any expressions that do not use any binders from this
+        -- alternative, is not a local var already and is representable (to
+        -- prevent loops with inlinenonrep).
+        if (not uses_bndrs) && (not local_var) && repr
+          then do
+            id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
+            -- We don't flag a change here, since casevalsimpl will do that above
+            -- based on Just we return here.
+            return $ (Just (id, expr), Var id)
+          else
+            -- Don't simplify anything else
+            return (Nothing, expr)
 -- Leave all other expressions unchanged
-casewild expr = return expr
+casesimpl expr = return expr
 -- Perform this transform everywhere
-casewildtop = everywhere ("casewild", casewild)
-
---------------------------------
--- Case value simplification
---------------------------------
-casevalsimpl, casevalsimpltop :: Transform
-casevalsimpl expr@(Case scrut b ty alts) = do
-  -- Try to simplify each alternative, resulting in an optional binding and a
-  -- new alternative.
-  (bindings_maybe, alts') <- (Monad.liftM unzip) $ mapM doalt alts
-  let bindings = Maybe.catMaybes bindings_maybe
-  -- Create a new let around the case, that binds of the cases values.
-  let newlet = Let (Rec bindings) (Case scrut b ty alts')
-  -- If there were no values that needed and allowed simplification, don't
-  -- change the case.
-  if null bindings then return expr else change newlet 
-  where
-    doalt :: CoreAlt -> TransformMonad (Maybe (CoreBndr, CoreExpr), CoreAlt)
-    -- Don't simplify values that are already simple
-    doalt alt@(con, bndrs, Var _) = return (Nothing, alt)
-    -- Simplify each alt by creating a new id, binding the case value to it and
-    -- replacing the case value with that id. Only do this when the case value
-    -- does not use any of the binders bound by this alternative, for that would
-    -- cause those binders to become unbound when moving the value outside of
-    -- the case statement. Also, don't create a binding for non-representable
-    -- expressions, to prevent loops with inlinenonrep.
-    doalt alt@(con, bndrs, expr) = do
-      repr <- isRepr expr
-      -- Find if any of the binders are used by expr
-      let usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
-      if (not usesvars && repr)
-        then do
-          id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
-          -- We don't flag a change here, since casevalsimpl will do that above
-          -- based on Just we return here.
-          return $ (Just (id, expr), (con, bndrs, Var id))
-        else
-          -- Don't simplify anything else
-          return (Nothing, alt)
--- Leave all other expressions unchanged
-casevalsimpl expr = return expr
--- Perform this transform everywhere
-casevalsimpltop = everywhere ("casevalsimpl", casevalsimpl)
+casesimpltop = everywhere ("casesimpl", casesimpl)
 
 --------------------------------
 -- Case removal
@@ -484,7 +470,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, casewildtop, scrutsimpltop, casevalsimpltop, caseremovetop, inlinenonreptop, appsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop]
 
 -- Turns the given bind into VHDL
 normalizeModule ::
