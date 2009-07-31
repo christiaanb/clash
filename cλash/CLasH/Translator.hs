@@ -1,90 +1,81 @@
 {-# LANGUAGE ScopedTypeVariables, RankNTypes, FlexibleContexts #-}
 
-module CLasH.Translator where
+module CLasH.Translator (makeVHDLStrings, makeVHDLAnnotations) where
 
+-- Standard Modules
 import qualified Directory
-import qualified System.FilePath as FilePath
-import qualified List
-import Debug.Trace
-import qualified Control.Arrow as Arrow
-import GHC hiding (loadModule, sigName)
-import CoreSyn
-import qualified CoreUtils
-import qualified Var
-import qualified Type
-import qualified TyCon
-import qualified DataCon
-import qualified HscMain
-import qualified SrcLoc
-import qualified FastString
 import qualified Maybe
-import qualified Module
-import qualified Data.Foldable as Foldable
-import qualified Control.Monad.Trans.State as State
-import qualified Control.Monad as Monad
-import Name
-import qualified Data.Map as Map
-import Data.Accessor
-import Data.Generics
-import NameEnv ( lookupNameEnv )
+import qualified Monad
+import qualified System.FilePath as FilePath
+import Text.PrettyPrint.HughesPJ (render)
+
+-- GHC API
+import qualified Annotations
+import CoreSyn
+import DynFlags ( defaultDynFlags )
+import GHC hiding (loadModule, sigName)
 import qualified HscTypes
 import HscTypes ( cm_binds, cm_types )
-import MonadUtils ( liftIO )
-import Outputable ( showSDoc, ppr, showSDocDebug )
-import DynFlags ( defaultDynFlags )
-import qualified UniqSupply
-import List ( find )
-import qualified List
-import qualified Monad
-import qualified Annotations
+import Name
 import qualified Serialized
+import qualified UniqSupply
+import qualified Var
 
--- The following modules come from the ForSyDe project. They are really
--- internal modules, so ForSyDe.cabal has to be modified prior to installing
--- ForSyDe to get access to these modules.
+-- VHDL Imports
 import qualified Language.VHDL.AST as AST
 import qualified Language.VHDL.FileIO
 import qualified Language.VHDL.Ppr as Ppr
--- This is needed for rendering the pretty printed VHDL
-import Text.PrettyPrint.HughesPJ (render)
 
-import CLasH.Translator.TranslatorTypes
+-- Local Imports
 import CLasH.Translator.Annotations
-import CLasH.Utils.Pretty
 import CLasH.Normalize
-import CLasH.VHDL.VHDLTypes
 import CLasH.Utils.Core.CoreTools
-import qualified CLasH.VHDL as VHDL
+import CLasH.VHDL
 
--- | Turn Haskell to VHDL
-makeVHDL :: 
-  FilePath  -- ^ The GHC Library Dir
+-- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
+--   State and Test Inputs.
+makeVHDLStrings :: 
+  FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The FileNames
-  -> String -- ^ The TopEntity
-  -> String -- ^ The InitState
-  -> String -- ^ The TestInput
-  -> Bool   -- ^ Is It a stateful (in case InitState is not specified)
+  -> String     -- ^ The TopEntity
+  -> String     -- ^ The InitState
+  -> String     -- ^ The TestInput
+  -> Bool       -- ^ Is it stateful? (in case InitState is empty)
   -> IO ()
-makeVHDL libdir filenames topentity initstate testinput stateful = do
-  -- Load the modules
-  (core, top, init, test, env) <- loadModules libdir filenames (findBind topentity) (findBind initstate) (findExpr testinput)
-  -- Translate to VHDL
-  vhdl <- moduleToVHDL env core top init test stateful
-  -- Write VHDL to file
-  let top_entity = Maybe.fromJust $ head top
-  let dir = "./vhdl/" ++ (show top_entity) ++ "/"
-  prepareDir dir
-  mapM (writeVHDL dir) vhdl
-  return ()
-  
-makeVHDLAnn :: 
-  FilePath  -- ^ The GHC Library Dir
+makeVHDLStrings libdir filenames topentity initstate testinput stateful = do
+  makeVHDL libdir filenames findTopEntity findInitState findTestInput stateful
+    where
+      findTopEntity = findBind (hasVarName topentity)
+      findInitState = findBind (hasVarName initstate)
+      findTestInput = findExpr (hasVarName testinput)
+
+-- | Turn Haskell to VHDL, Using the Annotations for Top Entity, Initial State
+--   and Test Inputs found in the Files. 
+makeVHDLAnnotations :: 
+  FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The FileNames
-  -> Bool   -- ^ Is It a stateful (in case InitState is not specified)
+  -> Bool       -- ^ Is it stateful? (in case InitState is not specified)
   -> IO ()
-makeVHDLAnn libdir filenames stateful = do
+makeVHDLAnnotations libdir filenames stateful = do
+  makeVHDL libdir filenames findTopEntity findInitState findTestInput stateful
+    where
+      findTopEntity = findBind (hasCLasHAnnotation isTopEntity)
+      findInitState = findBind (hasCLasHAnnotation isInitState)
+      findTestInput = findExpr (hasCLasHAnnotation isTestInput)
+
+-- | Turn Haskell to VHDL, using the given finder functions to find the Top
+--   Entity, Initial State and Test Inputs in the Haskell Files.
+makeVHDL ::
+  FilePath      -- ^ The GHC Library Dir
+  -> [FilePath] -- ^ The Filenames
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The Top Entity Finder
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The Init State Finder
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreExpr)) -- ^ The Test Input Finder
+  -> Bool       -- ^ Indicates if it is meant to be stateful
+  -> IO ()
+makeVHDL libdir filenames topEntFinder initStateFinder testInputFinder stateful = do
   -- Load the modules
-  (cores, top, init, test, env) <- loadModules libdir filenames findTopEntity findInitState findTestInput
+  (cores, top, init, test, env) <- loadModules libdir filenames topEntFinder initStateFinder testInputFinder
   -- Translate to VHDL
   vhdl <- moduleToVHDL env cores top init test stateful
   -- Write VHDL to file
@@ -93,10 +84,6 @@ makeVHDLAnn libdir filenames stateful = do
   prepareDir dir
   mapM (writeVHDL dir) vhdl
   return ()
-    where
-      findTopEntity = findBindAnn (hasCLasHAnnotation isTopEntity)
-      findInitState = findBindAnn (hasCLasHAnnotation isInitState)
-      findTestInput = findExprAnn (hasCLasHAnnotation isTestInput)
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
@@ -121,7 +108,7 @@ moduleToVHDL env cores top init test stateful = do
       let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (cm_binds x)) cores)
       let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
       let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topEnt] [isStateful]
-      let vhdl = VHDL.createDesignFiles typestate normalized_bindings topEnt test_bindings
+      let vhdl = createDesignFiles typestate normalized_bindings topEnt test_bindings
       mapM (putStr . render . Ppr.ppr . snd) vhdl
       return vhdl
     xs -> error "More than one topentity found"
@@ -157,11 +144,11 @@ loadModules ::
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The TopEntity finder
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The InitState finder
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreExpr)) -- ^ The TestInput finder
-  -> IO ( [HscTypes.CoreModule] -- The loaded modules
-        , [Maybe CoreBndr]  -- The TopEntity
-        , [Maybe CoreBndr]  -- The InitState
-        , [Maybe CoreExpr]  -- The TestInput
-        , HscTypes.HscEnv   -- The Environment corresponding ot the loaded modules 
+  -> IO ( [HscTypes.CoreModule] -- ^ The loaded modules
+        , [Maybe CoreBndr]  -- ^ The TopEntity
+        , [Maybe CoreBndr]  -- ^ The InitState
+        , [Maybe CoreExpr]  -- ^ The TestInput
+        , HscTypes.HscEnv   -- ^ The Environment corresponding ot the loaded modules 
         )
 loadModules libdir filenames topEntLoc initSLoc testLoc =
   defaultErrorHandler defaultDynFlags $ do
@@ -175,70 +162,51 @@ loadModules libdir filenames topEntLoc initSLoc testLoc =
       test_input <- mapM testLoc cores
       return (cores, top_entity, init_state, test_input, env)
 
-findBindAnn :: 
-  GhcMonad m => 
-  (Var.Var -> m Bool)
-  -> HscTypes.CoreModule 
-  -> m (Maybe CoreBndr)
-findBindAnn annotation core = do
+-- | Find a binder in module according to a certain criteria
+findBind :: 
+  GhcMonad m =>           -- ^ Expected to be run in some kind of GHC Monad
+  (Var.Var -> m Bool)     -- ^ The criteria to filter the binds on
+  -> HscTypes.CoreModule  -- ^ The module to be inspected
+  -> m (Maybe CoreBndr)   -- ^ The (first) bind to meet the criteria
+findBind annotation core = do
   let binds = CoreSyn.flattenBinds $ cm_binds core
   annbinds <- Monad.filterM (annotation . fst) binds
   let bndr = case annbinds of [] -> Nothing ; xs -> Just $ head $ fst (unzip annbinds)
   return bndr
-  
-findExprAnn :: 
-  GhcMonad m => 
-  (Var.Var -> m Bool)
-  -> HscTypes.CoreModule 
-  -> m (Maybe CoreExpr)
-findExprAnn annotation core = do
+
+-- | Find an expresion in module according to a certain criteria  
+findExpr :: 
+  GhcMonad m =>           -- ^ Expected to be run in some kind off GHC Monad
+  (Var.Var -> m Bool)     -- ^ The criteria to filter the binds on
+  -> HscTypes.CoreModule  -- ^ The module to be inspected
+  -> m (Maybe CoreExpr)   -- ^ The (first) expr to meet the criteria
+findExpr annotation core = do
   let binds = CoreSyn.flattenBinds $ cm_binds core
   annbinds <- Monad.filterM (annotation . fst) binds
   let exprs = case annbinds of [] -> Nothing ; xs -> Just $ head $ snd (unzip annbinds)
   return exprs
 
+-- | Determine if a binder has an Annotation meeting a certain criteria
 hasCLasHAnnotation ::
-  GhcMonad m =>
-  (CLasHAnn -> Bool)
-  -> Var.Var
-  -> m Bool
+  GhcMonad m =>       -- ^ Expected to be run in some kind of GHC Monad
+  (CLasHAnn -> Bool)  -- ^ The criteria the Annotation has to meet
+  -> Var.Var          -- ^ The Binder
+  -> m Bool           -- ^ Indicates if binder has the Annotation
 hasCLasHAnnotation clashAnn var = do
   let deserializer = Serialized.deserializeWithData
   let target = Annotations.NamedTarget (Var.varName var)
   (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
-  let top_ents = filter clashAnn anns
-  case top_ents of
+  let annEnts = filter clashAnn anns
+  case annEnts of
     [] -> return False
     xs -> return True
 
--- | Extracts the named binder from the given module.
-findBind ::
-  GhcMonad m =>
-  String             -- ^ The Name of the Binder
-  -> HscTypes.CoreModule   -- ^ The Module to look in
-  -> m (Maybe CoreBndr) -- ^ The resulting binder
-findBind name core = 
-  case (findBinder (CoreSyn.flattenBinds $ cm_binds core)) name of
-    Nothing -> return Nothing
-    Just bndr -> return $ Just $ fst bndr
-
--- | Extracts the named expression from the given module.
-findExpr ::
-  GhcMonad m =>
-  String             -- ^ The Name of the Binder
-  -> HscTypes.CoreModule   -- ^ The Module to look in 
-  -> m (Maybe CoreExpr) -- ^ The resulting expression
-findExpr name core = 
-  case (findBinder (CoreSyn.flattenBinds $ cm_binds core)) name of
-    Nothing -> return Nothing
-    Just bndr -> return $ Just $ snd bndr
-
--- | Extract a named bind from the given list of binds
-findBinder :: [(CoreBndr, CoreExpr)] -> String -> Maybe (CoreBndr, CoreExpr)
-findBinder binds lookfor =
-  -- This ignores Recs and compares the name of the bind with lookfor,
-  -- disregarding any namespaces in OccName and extra attributes in Name and
-  -- Var.
-  find (\(var, _) -> lookfor == (occNameString $ nameOccName $ getName var)) binds
+-- | Determine if a binder has a certain name
+hasVarName ::   
+  GhcMonad m => -- ^ Exprected to be run in some kind of GHC Monad
+  String        -- ^ The name the binder has to have
+  -> Var.Var    -- ^ The Binder
+  -> m Bool     -- ^ Indicate if the binder has the name
+hasVarName lookfor bind = return $ lookfor == (occNameString $ nameOccName $ getName bind)
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
