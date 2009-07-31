@@ -166,32 +166,40 @@ genSizedInt = genFromInteger
 
 genTFVec :: BuiltinBuilder
 genTFVec (Left res) f [Left veclist] = do {
-  ; let (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) = veclist
-  ; let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-  ; let valargs = get_val_args (Var.varType f) args
-  ; apps <- genApplication (Left bndr) f (map Left valargs)
+  ; let (CoreSyn.Let (CoreSyn.Rec letbndrs) rez) = trace ("\n***\n" ++ show veclist ++ "\n**\n" ++ pprString veclist ++ "\n***\n") veclist
+  ; letapps <- mapM genLetApp letbndrs
+  ; let bndrs = Maybe.catMaybes (map fst letapps)
   ; (aap,kooi) <- reduceFSVECListToHsList rez
-  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) (bndr:aap)
+  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) (bndrs ++ aap)
   ; let vecsigns = concatsigs sigs
   ; let vecassign = mkUncondAssign (Left res) vecsigns
-  ; sig_dec_maybes <- mapM mkSigDec (bndr:aap)
+  ; sig_dec_maybes <- mapM mkSigDec (bndrs ++ aap)
   ; let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
-  ; let block_label = mkVHDLExtId ("FSVec_" ++ (show (map varToString (bndr:aap))))
-  ; let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (apps ++ kooi ++ [vecassign])  
+  ; let block_label = mkVHDLExtId ("FSVec_" ++ (show (map varToString (bndrs ++ aap))))
+  ; let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs ((concat (map snd letapps)) ++ kooi ++ [vecassign])  
   ; return $ [AST.CSBSm block]
   }
   where
     concatsigs x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x) 
-    
 
+genLetApp :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> VHDLSession (Maybe CoreSyn.CoreBndr, [AST.ConcSm])
+genLetApp (bndr, app@(CoreSyn.App _ _)) = do
+  let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+  let valargs = get_val_args (Var.varType f) args
+  apps <- genApplication (Left bndr) f (map Left valargs)
+  return (Just bndr, apps)
+  
+genLetApp _ = return (Nothing,[])
+
+reduceFSVECListToHsList :: CoreSyn.CoreExpr -> VHDLSession ([CoreSyn.CoreBndr], [AST.ConcSm])
 reduceFSVECListToHsList app@(CoreSyn.App _ letexpr) = do
   case letexpr of
-    (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) -> do
-      let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-      let valargs = get_val_args (Var.varType f) args
-      app <- genApplication (Left bndr) f (map Left valargs)
+    (CoreSyn.Let (CoreSyn.Rec letbndrs) rez) -> do
+      letapps <- mapM genLetApp letbndrs
+      let bndrs = Maybe.catMaybes (map fst letapps)
+      let app = (map snd letapps)
       (vars, apps) <- reduceFSVECListToHsList rez
-      return ((bndr:vars),(app ++ apps))
+      return ((bndrs ++ vars),((concat app) ++ apps))
     otherwise -> return ([],[])
 
 
