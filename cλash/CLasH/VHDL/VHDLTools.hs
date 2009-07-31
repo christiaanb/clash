@@ -10,6 +10,7 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import Data.Accessor
+import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -115,7 +116,7 @@ mkComponentInst ::
 mkComponentInst label entity_id portassigns = AST.CSISm compins
   where
     -- We always have a clock port, so no need to map it anywhere but here
-    clk_port = mkAssocElem (mkVHDLExtId "clk") (idToVHDLExpr $ mkVHDLExtId "clk")
+    clk_port = mkAssocElem clockId (idToVHDLExpr clockId)
     compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port]))
 
 -----------------------------------------------------------------------------
@@ -320,12 +321,12 @@ construct_vhdl_ty ty = do
           bound <- tfp_to_int (ranged_word_bound_ty ty)
           mk_natural_ty 0 bound
         -- Create a custom type from this tycon
-        otherwise -> mk_tycon_ty tycon args
+        otherwise -> mk_tycon_ty ty tycon args
     Nothing -> return (Left $ "VHDLTools.construct_vhdl_ty: Cannot create type for non-tycon type: " ++ pprString ty ++ "\n")
 
 -- | Create VHDL type for a custom tycon
-mk_tycon_ty :: TyCon.TyCon -> [Type.Type] -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
-mk_tycon_ty tycon args =
+mk_tycon_ty :: Type.Type -> TyCon.TyCon -> [Type.Type] -> TypeSession (Either String (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn))
+mk_tycon_ty ty tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
     [] -> return (Left $ "VHDLTools.mk_tycon_ty: Only custom algebraic types are supported: " ++ pprString tycon ++ "\n")
@@ -347,6 +348,8 @@ mk_tycon_ty tycon args =
           let elem_names = concat $ map prettyShow elem_tys
           let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
           let ty_def = AST.TDR $ AST.RecordTypeDef elems
+          let tupshow = mkTupleShow elem_tys ty_id
+          modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, tupshow)
           return $ Right (ty_id, Left ty_def)
         -- There were errors in element types
         (errors, _) -> return $ Left $
@@ -391,7 +394,9 @@ mk_vector_ty ty = do
           let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
           let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
           modA vsTypes (Map.insert (StdType $ OrdType vec_ty) (vec_id, (Left vec_def)))
-          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))]) 
+          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))])
+          let vecShowFuns = mkVectorShow el_ty_tm vec_id
+          mapM_ (\(id, subprog) -> modA vsTypeFuns $ Map.insert (OrdType vec_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Right (ty_id, Right ty_def))
     -- Could not create element type
@@ -418,6 +423,8 @@ mk_unsigned_ty ty = do
   let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
+  let unsignedshow = mkIntegerShow ty_id
+  modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, unsignedshow)
   return (Right (ty_id, Right ty_def))
   
 mk_signed_ty ::
@@ -428,6 +435,8 @@ mk_signed_ty ty = do
   let ty_id = mkVHDLExtId $ "signed_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn signedTM (Just range)
+  let signedshow = mkIntegerShow ty_id
+  modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, signedshow)
   return (Right (ty_id, Right ty_def))
 
 -- Finds the field labels for VHDL type generated for the given Core type,
@@ -457,7 +466,7 @@ mkHType ty = do
         let name = Name.getOccString (TyCon.tyConName tycon)
         Map.lookup name builtin_types
   case builtin_ty of
-    Just typ -> 
+    Just typ ->
       return $ Right $ BuiltinType $ prettyShow typ
     Nothing ->
       case Type.splitTyConApp_maybe ty of
@@ -520,8 +529,25 @@ isReprType ty = do
     Left _ -> False
     Right _ -> True
 
+
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
+  hscenv <- getA vsHscEnv
+  let norm_ty = normalise_tfp_int hscenv ty
+  case Type.splitTyConApp_maybe norm_ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "Dec" -> do
+          len <- tfp_to_int' ty
+          return len
+        otherwise -> do
+          modA vsTfpInts (Map.insert (OrdType norm_ty) (-1))
+          return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+    Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+
+tfp_to_int' :: Type.Type -> TypeSession Int
+tfp_to_int' ty = do
   lens <- getA vsTfpInts
   hscenv <- getA vsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
@@ -532,3 +558,146 @@ tfp_to_int ty = do
       let new_len = eval_tfp_int hscenv ty
       modA vsTfpInts (Map.insert (OrdType norm_ty) (new_len))
       return new_len
+      
+mkTupleShow :: 
+  [AST.TypeMark] -- ^ type of each tuple element
+  -> AST.TypeMark -- ^ type of the tuple
+  -> AST.SubProgBody
+mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
+  where
+    tupPar    = AST.unsafeVHDLBasicId "tup"
+    showSpec  = AST.Function showId [AST.IfaceVarDec tupPar tupleTM] stringTM
+    showExpr  = AST.ReturnSm (Just $
+                  AST.PrimLit "'('" AST.:&: showMiddle AST.:&: AST.PrimLit "')'")
+      where
+        showMiddle = foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "','" AST.:&: e2) $
+          map ((genExprFCall showId).
+                AST.PrimName .
+                AST.NSelected .
+                (AST.NSimple tupPar AST.:.:).
+                tupVHDLSuffix)
+              (take tupSize recordlabels)
+    recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
+    tupSize = length elemTMs
+
+mkVectorShow ::
+  AST.TypeMark -- ^ elemtype
+  -> AST.TypeMark -- ^ vectype
+  -> [(String,AST.SubProgBody)]
+mkVectorShow elemTM vectorTM = 
+  [ (headId, AST.SubProgBody headSpec []                   [headExpr])
+  , (tailId, AST.SubProgBody tailSpec [AST.SPVD tailVar]   [tailExpr, tailRet])
+  , (showIdString, AST.SubProgBody showSpec [AST.SPSB doShowDef] [showRet])
+  ]
+  where
+    vecPar  = AST.unsafeVHDLBasicId "vec"
+    resId   = AST.unsafeVHDLBasicId "res"
+    headSpec = AST.Function (mkVHDLExtId headId) [AST.IfaceVarDec vecPar vectorTM] elemTM
+    -- return vec(0);
+    headExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
+                    (AST.NSimple vecPar) [AST.PrimLit "0"])))
+    vecSlice init last =  AST.PrimName (AST.NSlice 
+                                      (AST.SliceName 
+                                            (AST.NSimple vecPar) 
+                                            (AST.ToRange init last)))
+    tailSpec = AST.Function (mkVHDLExtId tailId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
+       -- variable res : fsvec_x (0 to vec'length-2); 
+    tailVar = 
+         AST.VarDec resId 
+                (AST.SubtypeIn vectorTM
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                   [AST.ToRange (AST.PrimLit "0")
+                            (AST.PrimName (AST.NAttribute $ 
+                              AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
+                                (AST.PrimLit "2"))   ]))
+                Nothing       
+       -- res AST.:= vec(1 to vec'length-1)
+    tailExpr = AST.NSimple resId AST.:= (vecSlice 
+                               (AST.PrimLit "1") 
+                               (AST.PrimName (AST.NAttribute $ 
+                                  AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
+                                                             AST.:-: AST.PrimLit "1"))
+    tailRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    showSpec  = AST.Function showId [AST.IfaceVarDec vecPar vectorTM] stringTM
+    doShowId  = AST.unsafeVHDLExtId "doshow"
+    doShowDef = AST.SubProgBody doShowSpec [] [doShowRet]
+      where doShowSpec = AST.Function doShowId [AST.IfaceVarDec vecPar vectorTM] 
+                                           stringTM
+            -- case vec'len is
+            --  when  0 => return "";
+            --  when  1 => return head(vec);
+            --  when others => return show(head(vec)) & ',' &
+            --                        doshow (tail(vec));
+            -- end case;
+            doShowRet = 
+              AST.CaseSm (AST.PrimName (AST.NAttribute $ 
+                          AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))
+              [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit "0"] 
+                         [AST.ReturnSm (Just $ AST.PrimLit "\"\"")],
+               AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit "1"] 
+                         [AST.ReturnSm (Just $ 
+                          genExprFCall showId 
+                               (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar)) )],
+               AST.CaseSmAlt [AST.Others] 
+                         [AST.ReturnSm (Just $ 
+                           genExprFCall showId 
+                             (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar)) AST.:&:
+                           AST.PrimLit "','" AST.:&:
+                           genExprFCall doShowId 
+                             (genExprFCall (mkVHDLExtId tailId) (AST.PrimName $ AST.NSimple vecPar)) ) ]]
+    -- return '<' & doshow(vec) & '>';
+    showRet =  AST.ReturnSm (Just $ AST.PrimLit "'<'" AST.:&:
+                               genExprFCall doShowId (AST.PrimName $ AST.NSimple vecPar) AST.:&:
+                               AST.PrimLit "'>'" )
+
+mkIntegerShow ::
+  AST.TypeMark -- ^ The specific signed
+  -> AST.SubProgBody
+mkIntegerShow signedTM = AST.SubProgBody showSpec [] [showExpr]
+  where
+    signedPar = AST.unsafeVHDLBasicId "sint"
+    showSpec = AST.Function showId [AST.IfaceVarDec signedPar signedTM] stringTM
+    showExpr = AST.ReturnSm (Just $
+                AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
+                  (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [signToInt]) Nothing )
+      where
+        signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ signedPar)
+
+mkBuiltInShow :: [AST.SubProgBody]
+mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
+                , AST.SubProgBody showBoolSpec [] [showBoolExpr]
+                ]
+  where
+    bitPar    = AST.unsafeVHDLBasicId "s"
+    boolPar    = AST.unsafeVHDLBasicId "b"
+    showBitSpec = AST.Function showId [AST.IfaceVarDec bitPar std_logicTM] stringTM
+    -- if s = '1' then return "'1'" else return "'0'"
+    showBitExpr = AST.IfSm (AST.PrimName (AST.NSimple bitPar) AST.:=: AST.PrimLit "'1'")
+                        [AST.ReturnSm (Just $ AST.PrimLit "\"High\"")]
+                        []
+                        (Just $ AST.Else [AST.ReturnSm (Just $ AST.PrimLit "\"Low\"")])
+    showBoolSpec = AST.Function showId [AST.IfaceVarDec boolPar booleanTM] stringTM
+    -- if b then return "True" else return "False"
+    showBoolExpr = AST.IfSm (AST.PrimName (AST.NSimple boolPar))
+                        [AST.ReturnSm (Just $ AST.PrimLit "\"True\"")]
+                        []
+                        (Just $ AST.Else [AST.ReturnSm (Just $ AST.PrimLit "\"False\"")])
+  
+genExprFCall :: AST.VHDLId -> AST.Expr -> AST.Expr
+genExprFCall fName args = 
+   AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
+             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [args] 
+
+genExprPCall2 :: AST.VHDLId -> AST.Expr -> AST.Expr -> AST.SeqSm             
+genExprPCall2 entid arg1 arg2 =
+        AST.ProcCall (AST.NSimple entid) $
+         map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg1,arg2]
+
+mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
+mkSigDec bndr =
+  if True then do --isInternalSigUse use || isStateSigUse use then do
+    let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
+    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
+    return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
+  else
+    return Nothing

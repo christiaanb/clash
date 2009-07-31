@@ -45,7 +45,7 @@ eval_tfp_int env ty =
     -- Automatically import modules for any fully qualified identifiers
     setDynFlag DynFlags.Opt_ImplicitImportQualified
 
-    let from_int_t_name = mkRdrName "Types.Data.Num" "fromIntegerT"
+    let from_int_t_name = mkRdrName "Types.Data.Num.Ops" "fromIntegerT"
     let from_int_t = SrcLoc.noLoc $ HsExpr.HsVar from_int_t_name
     let undef = hsTypedUndef $ coreToHsType ty
     let app = SrcLoc.noLoc $ HsExpr.HsApp (from_int_t) (undef)
@@ -211,3 +211,14 @@ getLiterals app@(CoreSyn.App _ _) = literals
   where
     (CoreSyn.Var f, args) = CoreSyn.collectArgs app
     literals = filter (is_lit) args
+
+-- reduceCoreListToHsList :: CoreExpr -> [a]
+reduceCoreListToHsList app@(CoreSyn.App _ _) = out
+  where
+    (fun, args) = CoreSyn.collectArgs app
+    len = length args
+    out = case len of
+          3 -> ((args!!1) : (reduceCoreListToHsList (args!!2)))
+          otherwise -> []
+
+reduceCoreListToHsList _ = []

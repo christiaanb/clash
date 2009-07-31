@@ -38,29 +38,35 @@ import CLasH.Utils.Pretty
 import CLasH.Utils.Core.CoreTools
 import CLasH.VHDL.Constants
 import CLasH.VHDL.Generate
+-- import CLasH.VHDL.Testbench
 
 createDesignFiles ::
   TypeState
   -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
+  -> CoreSyn.CoreBndr -- ^ Top binder
+  -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ Test Input
   -> [(AST.VHDLId, AST.DesignFile)]
 
-createDesignFiles init_typestate binds =
+createDesignFiles init_typestate binds topbind testinput =
   (mkVHDLBasicId "types", AST.DesignFile ieee_context [type_package_dec, type_package_body]) :
-  map (Arrow.second $ AST.DesignFile full_context) units
+  map (Arrow.second $ AST.DesignFile full_context) (units ++ [testbench])
   
   where
     init_session = VHDLState init_typestate Map.empty
-    (units, final_session) = 
+    (units, final_session') = 
       State.runState (createLibraryUnits binds) init_session
-    tyfun_decls = map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns)
+    (testbench, final_session) =
+      State.runState (createTestBench Nothing testinput topbind) final_session'
+    tyfun_decls = mkBuiltInShow ++ (map snd $ Map.elems (final_session ^. vsType ^. vsTypeFuns))
     ty_decls = final_session ^. vsType ^. vsTypeDecls
     tfvec_index_decl = AST.PDISD $ AST.SubtypeDec tfvec_indexTM tfvec_index_def
-    tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) highId Nothing)
+    tfvec_range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit "-1") (AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerTM) (AST.NSimple $ highId) Nothing)
     tfvec_index_def = AST.SubtypeIn integerTM (Just tfvec_range)
     ieee_context = [
         AST.Library $ mkVHDLBasicId "IEEE",
         mkUseAll ["IEEE", "std_logic_1164"],
-        mkUseAll ["IEEE", "numeric_std"]
+        mkUseAll ["IEEE", "numeric_std"],
+        mkUseAll ["std", "textio"]
       ]
     full_context =
       mkUseAll ["work", "types"]
@@ -148,7 +154,7 @@ createEntityAST vhdl_id args res =
               ++ [mkIfaceSigDec AST.Out res]
               ++ [clk_port]
     -- Add a clk port if we have state
-    clk_port = AST.IfaceSigDec (mkVHDLExtId "clk") AST.In std_logicTM
+    clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
 
 -- | Create a port declaration
 mkIfaceSigDec ::
@@ -234,15 +240,6 @@ getSignalId info =
     (error $ "Unnamed signal? This should not happen!")
     (sigName info)
 -}
-   
-mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
-mkSigDec bndr =
-  if True then do --isInternalSigUse use || isStateSigUse use then do
-    let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
-    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
-    return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
-  else
-    return Nothing
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
@@ -296,3 +293,121 @@ mkConcSm (bndr, (Case (Var scrut) b ty [(_, _, Var false), (con, _, Var true)]))
 mkConcSm (_, (Case (Var _) _ _ alts)) = error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
 mkConcSm (_, Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
+
+
+createTestBench :: 
+  Maybe Int -- ^ Number of cycles to simulate
+  -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ Input stimuli
+  -> CoreSyn.CoreBndr -- ^ Top Entity
+  -> VHDLSession (AST.VHDLId, [AST.LibraryUnit]) -- ^ Testbench
+createTestBench mCycles stimuli topEntity = do
+  ent@(AST.EntityDec id _) <- createTestBenchEntity topEntity
+  arch <- createTestBenchArch mCycles stimuli topEntity
+  return (id, [AST.LUEntity ent, AST.LUArch arch])
+  
+
+createTestBenchEntity ::
+  CoreSyn.CoreBndr -- ^ Top Entity
+  -> VHDLSession AST.EntityDec -- ^ TB Entity
+createTestBenchEntity topEntity = do
+  signaturemap <- getA vsSignatures
+  let signature = Maybe.fromMaybe 
+        (error $ "\nTestbench.createTestBenchEntity: Generating testbench for function \n" ++ (pprString topEntity) ++ "\nwithout signature? This should not happen!")
+        (Map.lookup topEntity signaturemap)
+  let signaturename = ent_id signature
+  return $ AST.EntityDec (AST.unsafeIdAppend signaturename "_tb") []
+  
+createTestBenchArch ::
+  Maybe Int -- ^ Number of cycles to simulate
+  -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ Imput stimulie
+  -> CoreSyn.CoreBndr -- ^ Top Entity
+  -> VHDLSession AST.ArchBody
+createTestBenchArch mCycles stimuli topEntity = do
+  signaturemap <- getA vsSignatures
+  let signature = Maybe.fromMaybe 
+        (error $ "\nTestbench.createTestBenchArch: Generating testbench for function \n" ++ (pprString topEntity) ++ "\nwithout signature? This should not happen!")
+        (Map.lookup topEntity signaturemap)
+  let entId   = ent_id signature
+      iIface  = ent_args signature
+      oIface  = ent_res signature
+      iIds    = map fst iIface
+      oIds    = fst oIface
+  let iDecs   = map (\(vId, tm) -> AST.SigDec vId tm Nothing) iIface
+  let finalIDecs = iDecs ++
+                    [AST.SigDec clockId std_logicTM (Just $ AST.PrimLit "'0'"),
+                     AST.SigDec resetId std_logicTM (Just $ AST.PrimLit "'0'")]
+  let oDecs   = AST.SigDec (fst oIface) (snd oIface) Nothing
+  let portmaps = mkAssocElems (map idToVHDLExpr iIds) (AST.NSimple oIds) signature
+  let mIns    = mkComponentInst "totest" entId portmaps
+  (stimuliAssigns, stimuliDecs, cycles) <- createStimuliAssigns mCycles stimuli (head iIds)
+  let finalAssigns = (AST.CSSASm (AST.NSimple resetId AST.:<==:
+                      AST.ConWforms []
+                                    (AST.Wform [AST.WformElem (AST.PrimLit "'1'") (Just $ AST.PrimLit "3 ns")])
+                                    Nothing)) : stimuliAssigns
+  let clkProc     = createClkProc
+  let outputProc  = createOutputProc [oIds]
+  return $ (AST.ArchBody
+              (AST.unsafeVHDLBasicId "test")
+              (AST.NSimple $ AST.unsafeIdAppend entId "_tb")
+              (map AST.BDISD (finalIDecs ++ stimuliDecs ++ [oDecs]))
+              (mIns :
+                ( (AST.CSPSm clkProc) : (AST.CSPSm outputProc) : finalAssigns ) ) )
+
+createStimuliAssigns ::
+  Maybe Int -- ^ Number of cycles to simulate
+  -> [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ Input stimuli
+  -> AST.VHDLId -- ^ Input signal
+  -> VHDLSession ([AST.ConcSm], [AST.SigDec], Int)
+createStimuliAssigns mCycles [] _ = return ([], [], Maybe.maybe 0 id mCycles)
+
+createStimuliAssigns mCycles stimuli signal = do
+  let genWformElem time stim = (AST.WformElem stim (Just $ AST.PrimLit (show time ++ " ns")))
+  let inputlen = length stimuli
+  assigns <- Monad.zipWithM createStimulans stimuli [0..inputlen]
+  let resvars = (map snd assigns)
+  sig_dec_maybes <- mapM mkSigDec resvars
+  let sig_decs = Maybe.catMaybes sig_dec_maybes
+  outps <- mapM (\x -> MonadState.lift vsType (varToVHDLExpr x)) resvars
+  let wformelems = zipWith genWformElem [0,10..] outps
+  let inassign = AST.CSSASm $ AST.NSimple signal AST.:<==: AST.ConWforms [] (AST.Wform wformelems) Nothing
+  return ((map fst assigns) ++ [inassign], sig_decs, inputlen)
+
+createStimulans :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> Int -> VHDLSession (AST.ConcSm, Var.Var)
+createStimulans (bndr, expr) cycl = do 
+  -- There must be a let at top level 
+  let (CoreSyn.Let (CoreSyn.Rec binds) (Var res)) = expr
+  stimulansbinds <- Monad.mapM mkConcSm binds
+  sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
+  let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
+  let block_label = mkVHDLExtId ("testcycle_" ++ (show cycl))
+  let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (concat stimulansbinds)  
+  return (AST.CSBSm block, res)
+  
+-- | generates a clock process with a period of 10ns
+createClkProc :: AST.ProcSm
+createClkProc = AST.ProcSm (AST.unsafeVHDLBasicId "clkproc") [] sms
+ where sms = -- wait for 5 ns -- (half a cycle)
+             [AST.WaitFor $ AST.PrimLit "5 ns",
+              -- clk <= not clk;
+              AST.NSimple clockId `AST.SigAssign` 
+                 AST.Wform [AST.WformElem (AST.Not (AST.PrimName $ AST.NSimple clockId)) Nothing]]
+
+-- | generate the output process
+createOutputProc :: [AST.VHDLId] -- ^ output signal
+              -> AST.ProcSm  
+createOutputProc outs = 
+  AST.ProcSm (AST.unsafeVHDLBasicId "writeoutput") 
+         [clockId]
+         [AST.IfSm clkPred (writeOuts outs) [] Nothing]
+ where clkPred = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple clockId) 
+                                                   (AST.NSimple $ eventId)
+                                                   Nothing          ) `AST.And` 
+                 (AST.PrimName (AST.NSimple clockId) AST.:=: AST.PrimLit "'1'")
+       writeOuts :: [AST.VHDLId] -> [AST.SeqSm]
+       writeOuts []  = []
+       writeOuts [i] = [writeOut i (AST.PrimLit "LF")]
+       writeOuts (i:is) = writeOut i (AST.PrimLit "HT") : writeOuts is
+       writeOut outSig suffix = 
+         genExprPCall2 writeId
+                        (AST.PrimName $ AST.NSimple outputId)
+                        ((genExprFCall showId (AST.PrimName $ AST.NSimple outSig)) AST.:&: suffix)

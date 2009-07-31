@@ -1,8 +1,8 @@
 name:               clash-nolibdir
 version:            0.1
 build-type:         Simple
-synopsis:           CAES Languege for Hardware Descriptions (CλasH)
-description:        CλasH is a toolchain/language to translate subsets of
+synopsis:           CAES Languege for Hardware Descriptions (CLasH)
+description:        CLasH is a toolchain/language to translate subsets of
                     Haskell to synthesizable VHDL. It does this by translating
                     the intermediate System Fc (GHC Core) representation to a
                     VHDL AST, which is then written to file.

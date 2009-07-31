@@ -53,27 +53,29 @@ import CLasH.Translator.Annotations
 import CLasH.Utils.Pretty
 import CLasH.Normalize
 import CLasH.VHDL.VHDLTypes
+import CLasH.Utils.Core.CoreTools
 import qualified CLasH.VHDL as VHDL
 
-makeVHDL :: FilePath -> String -> String -> Bool -> IO ()
-makeVHDL libdir filename name stateful = do
-  -- Load the module
-  (core, env) <- loadModule libdir filename
-  -- Translate to VHDL
-  vhdl <- moduleToVHDL env core [(name, stateful)]
-  -- Write VHDL to file
-  let dir = "./vhdl/" ++ name ++ "/"
-  prepareDir dir
-  mapM (writeVHDL dir) vhdl
-  return ()
+-- makeVHDL :: FilePath -> String -> String -> Bool -> IO ()
+-- makeVHDL libdir filename name stateful = do
+--   -- Load the module
+--   (core, env) <- loadModule libdir filename
+--   -- Translate to VHDL
+--   vhdl <- moduleToVHDL env core [(name, stateful)]
+--   -- Write VHDL to file
+--   let dir = "./vhdl/" ++ name ++ "/"
+--   prepareDir dir
+--   mapM (writeVHDL dir) vhdl
+--   return ()
   
 makeVHDLAnn :: FilePath -> String -> IO ()
 makeVHDLAnn libdir filename = do
-  (core, top, init, env) <- loadModuleAnn libdir filename
+  (core, top, init, test, env) <- loadModuleAnn libdir filename
   let top_entity = head top
+  let test_expr = head test
   vhdl <- case init of 
-    [] -> moduleToVHDLAnn env core [top_entity]
-    xs -> moduleToVHDLAnnState env core [(top_entity, (head xs))]
+    [] -> moduleToVHDLAnn env core (top_entity, test_expr)
+    xs -> moduleToVHDLAnnState env core (top_entity, test_expr, (head xs))
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM (writeVHDL dir) vhdl
@@ -109,10 +111,26 @@ listBind libdir filename name = do
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
 --   stateless (False).
-moduleToVHDL :: HscTypes.HscEnv -> HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDL env core list = do
-  let (names, statefuls) = unzip list
-  let binds = map fst $ findBinds core names
+-- moduleToVHDL :: HscTypes.HscEnv -> HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
+-- moduleToVHDL env core list = do
+--   let (names, statefuls) = unzip list
+--   let binds = map fst $ findBinds core names
+--   -- Generate a UniqSupply
+--   -- Running 
+--   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+--   -- on the compiler dir of ghc suggests that 'z' is not used to generate a
+--   -- unique supply anywhere.
+--   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
+--   -- Turn bind into VHDL
+--   let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
+--   let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds statefuls
+--   let vhdl = VHDL.createDesignFiles typestate normalized_bindings binds
+--   mapM (putStr . render . Ppr.ppr . snd) vhdl
+--   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
+--   return vhdl
+  
+moduleToVHDLAnn :: HscTypes.HscEnv -> HscTypes.CoreModule -> (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO [(AST.VHDLId, AST.DesignFile)]
+moduleToVHDLAnn env core (topbind, test) = do
   -- Generate a UniqSupply
   -- Running 
   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
@@ -121,14 +139,15 @@ moduleToVHDL env core list = do
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   -- Turn bind into VHDL
   let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
-  let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds statefuls
-  let vhdl = VHDL.createDesignFiles typestate normalized_bindings
+  let testexprs = reduceCoreListToHsList test
+  let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topbind] [False]
+  let vhdl = VHDL.createDesignFiles typestate normalized_bindings topbind test_bindings
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
   
-moduleToVHDLAnn :: HscTypes.HscEnv -> HscTypes.CoreModule -> [CoreSyn.CoreBndr] -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDLAnn env core binds = do
+moduleToVHDLAnnState :: HscTypes.HscEnv -> HscTypes.CoreModule -> (CoreSyn.CoreBndr, CoreSyn.CoreExpr, CoreSyn.CoreBndr) -> IO [(AST.VHDLId, AST.DesignFile)]
+moduleToVHDLAnnState env core (topbind, test, init_state) = do
   -- Generate a UniqSupply
   -- Running 
   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
@@ -137,25 +156,9 @@ moduleToVHDLAnn env core binds = do
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   -- Turn bind into VHDL
   let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
-  let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds [False]
-  let vhdl = VHDL.createDesignFiles typestate normalized_bindings
-  mapM (putStr . render . Ppr.ppr . snd) vhdl
-  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
-  return vhdl
-  
-moduleToVHDLAnnState :: HscTypes.HscEnv -> HscTypes.CoreModule -> [(CoreSyn.CoreBndr, CoreSyn.CoreBndr)] -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDLAnnState env core list = do
-  let (binds, init_states) = unzip list
-  -- Generate a UniqSupply
-  -- Running 
-  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
-  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
-  -- unique supply anywhere.
-  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-  -- Turn bind into VHDL
-  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
-  let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds [True]
-  let vhdl = VHDL.createDesignFiles typestate normalized_bindings
+  let testexprs = reduceCoreListToHsList test
+  let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topbind] [True]
+  let vhdl = VHDL.createDesignFiles typestate normalized_bindings topbind test_bindings
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
   return vhdl
@@ -202,7 +205,7 @@ loadModule libdir filename =
       return (core, env)
       
 -- | Loads the given file and turns it into a core module.
-loadModuleAnn :: FilePath -> String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], HscTypes.HscEnv)
+loadModuleAnn :: FilePath -> String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], [CoreSyn.CoreExpr], HscTypes.HscEnv)
 loadModuleAnn libdir filename =
   defaultErrorHandler defaultDynFlags $ do
     runGhc (Just libdir) $ do
@@ -218,7 +221,8 @@ loadModuleAnn libdir filename =
       env <- GHC.getSession
       top_entity <- findTopEntity core
       init_state <- findInitState core
-      return (core, top_entity, init_state, env)
+      test_input <- findTestInput core
+      return (core, top_entity, init_state, test_input, env)
 
 findTopEntity :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreBndr]
 findTopEntity core = do
@@ -233,6 +237,13 @@ findInitState core = do
   statebinds <- Monad.filterM (hasInitStateAnnotation . fst) binds
   let bndrs = case statebinds of [] -> [] ; xs -> fst (unzip statebinds)
   return bndrs
+  
+findTestInput :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreExpr]
+findTestInput core = do
+  let binds = CoreSyn.flattenBinds $ cm_binds core
+  testbinds <- Monad.filterM (hasTestInputAnnotation . fst) binds
+  let exprs = case testbinds of [] -> [] ; xs -> snd (unzip testbinds)
+  return exprs
   
 hasTopEntityAnnotation :: GhcMonad m => Var.Var -> m Bool
 hasTopEntityAnnotation var = do
@@ -250,6 +261,16 @@ hasInitStateAnnotation var = do
   let target = Annotations.NamedTarget (Var.varName var)
   (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
   let top_ents = filter isInitState anns
+  case top_ents of
+    [] -> return False
+    xs -> return True
+    
+hasTestInputAnnotation :: GhcMonad m => Var.Var -> m Bool
+hasTestInputAnnotation var = do
+  let deserializer = Serialized.deserializeWithData
+  let target = Annotations.NamedTarget (Var.varName var)
+  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
+  let top_ents = filter isTestInput anns
   case top_ents of
     [] -> return False
     xs -> return True
