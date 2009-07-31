@@ -144,12 +144,12 @@ loadModules ::
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The TopEntity finder
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The InitState finder
   -> (HscTypes.CoreModule -> Ghc (Maybe CoreExpr)) -- ^ The TestInput finder
-  -> IO ( [HscTypes.CoreModule] -- ^ The loaded modules
-        , [Maybe CoreBndr]  -- ^ The TopEntity
-        , [Maybe CoreBndr]  -- ^ The InitState
-        , [Maybe CoreExpr]  -- ^ The TestInput
-        , HscTypes.HscEnv   -- ^ The Environment corresponding ot the loaded modules 
-        )
+  -> IO ( [HscTypes.CoreModule]
+        , [Maybe CoreBndr]
+        , [Maybe CoreBndr]
+        , [Maybe CoreExpr]
+        , HscTypes.HscEnv
+        ) -- ^ (The loaded modules , The TopEntity , The InitState, The TestInput, The Environment corresponding ot the loaded modules)
 loadModules libdir filenames topEntLoc initSLoc testLoc =
   defaultErrorHandler defaultDynFlags $ do
     runGhc (Just libdir) $ do
@@ -164,7 +164,7 @@ loadModules libdir filenames topEntLoc initSLoc testLoc =
 
 -- | Find a binder in module according to a certain criteria
 findBind :: 
-  GhcMonad m =>           -- ^ Expected to be run in some kind of GHC Monad
+  GhcMonad m =>
   (Var.Var -> m Bool)     -- ^ The criteria to filter the binds on
   -> HscTypes.CoreModule  -- ^ The module to be inspected
   -> m (Maybe CoreBndr)   -- ^ The (first) bind to meet the criteria
@@ -176,7 +176,7 @@ findBind annotation core = do
 
 -- | Find an expresion in module according to a certain criteria  
 findExpr :: 
-  GhcMonad m =>           -- ^ Expected to be run in some kind off GHC Monad
+  GhcMonad m =>
   (Var.Var -> m Bool)     -- ^ The criteria to filter the binds on
   -> HscTypes.CoreModule  -- ^ The module to be inspected
   -> m (Maybe CoreExpr)   -- ^ The (first) expr to meet the criteria
@@ -188,7 +188,7 @@ findExpr annotation core = do
 
 -- | Determine if a binder has an Annotation meeting a certain criteria
 hasCLasHAnnotation ::
-  GhcMonad m =>       -- ^ Expected to be run in some kind of GHC Monad
+  GhcMonad m =>
   (CLasHAnn -> Bool)  -- ^ The criteria the Annotation has to meet
   -> Var.Var          -- ^ The Binder
   -> m Bool           -- ^ Indicates if binder has the Annotation
@@ -203,7 +203,7 @@ hasCLasHAnnotation clashAnn var = do
 
 -- | Determine if a binder has a certain name
 hasVarName ::   
-  GhcMonad m => -- ^ Exprected to be run in some kind of GHC Monad
+  GhcMonad m =>
   String        -- ^ The name the binder has to have
   -> Var.Var    -- ^ The Binder
   -> m Bool     -- ^ Indicate if the binder has the name
