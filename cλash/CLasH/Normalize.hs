@@ -179,12 +179,17 @@ scrutsimpl,scrutsimpltop :: Transform
 -- Don't touch scrutinees that are already simple
 scrutsimpl expr@(Case (Var _) _ _ _) = return expr
 -- Replace all other cases with a let that binds the scrutinee and a new
--- simple scrutinee, but not when the scrutinee is applicable (to prevent
--- loops with inlinefun, though I don't think a scrutinee can be
--- applicable...)
-scrutsimpl (Case scrut b ty alts) | not $ is_applicable scrut = do
-  id <- mkInternalVar "scrut" (CoreUtils.exprType scrut)
-  change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
+-- simple scrutinee, but only when the scrutinee is representable (to prevent
+-- loops with inlinenonrep, though I don't think a non-representable scrutinee
+-- will be supported anyway...) 
+scrutsimpl expr@(Case scrut b ty alts) = do
+  repr <- isRepr scrut
+  if repr
+    then do
+      id <- mkInternalVar "scrut" (CoreUtils.exprType scrut)
+      change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
+    else
+      return expr
 -- Leave all other expressions unchanged
 scrutsimpl expr = return expr
 -- Perform this transform everywhere
@@ -194,6 +199,11 @@ scrutsimpltop = everywhere ("scrutsimpl", scrutsimpl)
 -- Case binder wildening
 --------------------------------
 casewild, casewildtop :: Transform
+-- Make sure that all case alternatives have only wild binders, except for
+-- simple selector cases (e.g., case x of (a, ) -> a). This is done by
+-- creating a new let binding for each non-wild binder, which is bound to a
+-- new simple selector case statement. We do this only for binders with a
+-- representable type, to prevent loops with inlinenonrep.
 casewild expr@(Case scrut b ty alts) = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
@@ -226,20 +236,23 @@ casewild expr@(Case scrut b ty alts) = do
       -- Creates a case statement to retrieve the ith element from the scrutinee
       -- and binds that to b.
       mkextracts :: CoreBndr -> Int -> TransformMonad (Maybe (CoreBndr, CoreExpr))
-      mkextracts b i =
-        if not (VarSet.elemVarSet b free_vars) || Type.isFunTy (Id.idType b) 
-          -- Don't create extra bindings for binders that are already wild
-          -- (e.g. not in the free variables of expr, so unused), or for
-          -- binders that bind function types (to prevent loops with
-          -- inlinefun).
-          then return Nothing
-          else do
+      mkextracts b i = do
+        repr <- isRepr (Var b)
+        -- Is b wild (e.g., not a free var of expr. Since b is only in scope
+        -- in expr, this means that b is unused if expr does not use it.)
+        let wild = not (VarSet.elemVarSet b free_vars)
+        -- Create a new binding for any representable binder that is not
+        -- already wild.
+        if (not wild) && repr
+          then do
             -- Create on new binder that will actually capture a value in this
-            -- case statement, and return it
+            -- case statement, and return it.
             let bty = (Id.idType b)
             id <- mkInternalVar "sel" bty
             let binders = take i wildbndrs ++ [id] ++ drop (i+1) wildbndrs
             return $ Just (b, Case scrut b bty [(con, binders, Var id)])
+          else 
+            return Nothing
 -- Leave all other expressions unchanged
 casewild expr = return expr
 -- Perform this transform everywhere
@@ -267,17 +280,21 @@ casevalsimpl expr@(Case scrut b ty alts) = do
     -- replacing the case value with that id. Only do this when the case value
     -- does not use any of the binders bound by this alternative, for that would
     -- cause those binders to become unbound when moving the value outside of
-    -- the case statement. Also, don't create a binding for applicable
-    -- expressions, to prevent loops with inlinefun.
-    doalt (con, bndrs, expr) | (not usesvars) && (not $ is_applicable expr) = do
-      id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
-      -- We don't flag a change here, since casevalsimpl will do that above
-      -- based on Just we return here.
-      return $ (Just (id, expr), (con, bndrs, Var id))
+    -- the case statement. Also, don't create a binding for non-representable
+    -- expressions, to prevent loops with inlinenonrep.
+    doalt alt@(con, bndrs, expr) = do
+      repr <- isRepr expr
       -- Find if any of the binders are used by expr
-      where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
-    -- Don't simplify anything else
-    doalt alt = return (Nothing, alt)
+      let usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
+      if (not usesvars && repr)
+        then do
+          id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
+          -- We don't flag a change here, since casevalsimpl will do that above
+          -- based on Just we return here.
+          return $ (Just (id, expr), (con, bndrs, Var id))
+        else
+          -- Don't simplify anything else
+          return (Nothing, alt)
 -- Leave all other expressions unchanged
 casevalsimpl expr = return expr
 -- Perform this transform everywhere
@@ -408,7 +425,7 @@ argproptop = everywhere ("argprop", argprop)
 -- This transform takes any function-typed argument that cannot be propagated
 -- (because the function that is applied to it is a builtin function), and
 -- puts it in a brand new top level binder. This allows us to for example
--- apply map to a lambda expression This will not conflict with inlinefun,
+-- apply map to a lambda expression This will not conflict with inlinenonrep,
 -- since that only inlines local let bindings, not top level bindings.
 funextract, funextracttop :: Transform
 funextract expr@(App _ _) | is_var fexpr = do
