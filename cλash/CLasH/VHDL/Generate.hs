@@ -166,7 +166,7 @@ genSizedInt = genFromInteger
 
 genTFVec :: BuiltinBuilder
 genTFVec (Left res) f [Left veclist] = do {
-  ; let (CoreSyn.Let (CoreSyn.Rec letbndrs) rez) = trace ("\n***\n" ++ show veclist ++ "\n**\n" ++ pprString veclist ++ "\n***\n") veclist
+  ; let (CoreSyn.Let (CoreSyn.Rec letbndrs) rez) = veclist
   ; letapps <- mapM genLetApp letbndrs
   ; let bndrs = Maybe.catMaybes (map fst letapps)
   ; (aap,kooi) <- reduceFSVECListToHsList rez
@@ -613,7 +613,7 @@ genApplication dst f args = do
                 builder dst f args
               else
                 error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> return $ trace ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f)) []
+            Nothing -> error $ ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f))
         IdInfo.ClassOpId cls -> do
           -- FIXME: Not looking for what instance this class op is called for
           -- Is quite stupid of course.
