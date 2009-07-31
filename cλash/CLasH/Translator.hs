@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, RankNTypes, FlexibleContexts #-}
 
 module CLasH.Translator where
 
@@ -56,112 +56,75 @@ import CLasH.VHDL.VHDLTypes
 import CLasH.Utils.Core.CoreTools
 import qualified CLasH.VHDL as VHDL
 
--- makeVHDL :: FilePath -> String -> String -> Bool -> IO ()
--- makeVHDL libdir filename name stateful = do
---   -- Load the module
---   (core, env) <- loadModule libdir filename
---   -- Translate to VHDL
---   vhdl <- moduleToVHDL env core [(name, stateful)]
---   -- Write VHDL to file
---   let dir = "./vhdl/" ++ name ++ "/"
---   prepareDir dir
---   mapM (writeVHDL dir) vhdl
---   return ()
-  
-makeVHDLAnn :: FilePath -> String -> IO ()
-makeVHDLAnn libdir filename = do
-  (core, top, init, test, env) <- loadModuleAnn libdir filename
-  let top_entity = head top
-  let test_expr = head test
-  vhdl <- case init of 
-    [] -> moduleToVHDLAnn env core (top_entity, test_expr)
-    xs -> moduleToVHDLAnnState env core (top_entity, test_expr, (head xs))
+-- | Turn Haskell to VHDL
+makeVHDL :: 
+  FilePath  -- ^ The GHC Library Dir
+  -> [FilePath] -- ^ The FileNames
+  -> String -- ^ The TopEntity
+  -> String -- ^ The InitState
+  -> String -- ^ The TestInput
+  -> Bool   -- ^ Is It a stateful (in case InitState is not specified)
+  -> IO ()
+makeVHDL libdir filenames topentity initstate testinput stateful = do
+  -- Load the modules
+  (core, top, init, test, env) <- loadModules libdir filenames (findBind topentity) (findBind initstate) (findExpr testinput)
+  -- Translate to VHDL
+  vhdl <- moduleToVHDL env core top init test stateful
+  -- Write VHDL to file
+  let top_entity = Maybe.fromJust $ head top
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM (writeVHDL dir) vhdl
   return ()
-
-listBindings :: FilePath -> String -> IO [()]
-listBindings libdir filename = do
-  (core, env) <- loadModule libdir filename
-  let binds = CoreSyn.flattenBinds $ cm_binds core
-  mapM (listBinding) binds
-
-listBinding :: (CoreBndr, CoreExpr) -> IO ()
-listBinding (b, e) = do
-  putStr "\nBinder: "
-  putStr $ show b
-  putStr "\nType of Binder: \n"
-  putStr $ showSDoc $ ppr $ Var.varType b
-  putStr "\n\nExpression: \n"
-  putStr $ prettyShow e
-  putStr "\n\n"
-  putStr $ showSDoc $ ppr e
-  putStr "\n\nType of Expression: \n"
-  putStr $ showSDoc $ ppr $ CoreUtils.exprType e
-  putStr "\n\n"
   
--- | Show the core structure of the given binds in the given file.
-listBind :: FilePath -> String -> String -> IO ()
-listBind libdir filename name = do
-  (core, env) <- loadModule libdir filename
-  let [(b, expr)] = findBinds core [name]
-  listBinding (b, expr)
+makeVHDLAnn :: 
+  FilePath  -- ^ The GHC Library Dir
+  -> [FilePath] -- ^ The FileNames
+  -> Bool   -- ^ Is It a stateful (in case InitState is not specified)
+  -> IO ()
+makeVHDLAnn libdir filenames stateful = do
+  -- Load the modules
+  (cores, top, init, test, env) <- loadModules libdir filenames findTopEntity findInitState findTestInput
+  -- Translate to VHDL
+  vhdl <- moduleToVHDL env cores top init test stateful
+  -- Write VHDL to file
+  let top_entity = Maybe.fromJust $ head top
+  let dir = "./vhdl/" ++ (show top_entity) ++ "/"
+  prepareDir dir
+  mapM (writeVHDL dir) vhdl
+  return ()
+    where
+      findTopEntity = findBindAnn (hasCLasHAnnotation isTopEntity)
+      findInitState = findBindAnn (hasCLasHAnnotation isInitState)
+      findTestInput = findExprAnn (hasCLasHAnnotation isTestInput)
 
 -- | Translate the binds with the given names from the given core module to
 --   VHDL. The Bool in the tuple makes the function stateful (True) or
 --   stateless (False).
--- moduleToVHDL :: HscTypes.HscEnv -> HscTypes.CoreModule -> [(String, Bool)] -> IO [(AST.VHDLId, AST.DesignFile)]
--- moduleToVHDL env core list = do
---   let (names, statefuls) = unzip list
---   let binds = map fst $ findBinds core names
---   -- Generate a UniqSupply
---   -- Running 
---   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
---   -- on the compiler dir of ghc suggests that 'z' is not used to generate a
---   -- unique supply anywhere.
---   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
---   -- Turn bind into VHDL
---   let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
---   let (normalized_bindings, typestate) = normalizeModule env uniqSupply all_bindings binds statefuls
---   let vhdl = VHDL.createDesignFiles typestate normalized_bindings binds
---   mapM (putStr . render . Ppr.ppr . snd) vhdl
---   --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
---   return vhdl
-  
-moduleToVHDLAnn :: HscTypes.HscEnv -> HscTypes.CoreModule -> (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDLAnn env core (topbind, test) = do
-  -- Generate a UniqSupply
-  -- Running 
-  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
-  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
-  -- unique supply anywhere.
-  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-  -- Turn bind into VHDL
-  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
-  let testexprs = reduceCoreListToHsList test
-  let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topbind] [False]
-  let vhdl = VHDL.createDesignFiles typestate normalized_bindings topbind test_bindings
-  mapM (putStr . render . Ppr.ppr . snd) vhdl
-  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
-  return vhdl
-  
-moduleToVHDLAnnState :: HscTypes.HscEnv -> HscTypes.CoreModule -> (CoreSyn.CoreBndr, CoreSyn.CoreExpr, CoreSyn.CoreBndr) -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDLAnnState env core (topbind, test, init_state) = do
-  -- Generate a UniqSupply
-  -- Running 
-  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
-  -- on the compiler dir of ghc suggests that 'z' is not used to generate a
-  -- unique supply anywhere.
-  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-  -- Turn bind into VHDL
-  let all_bindings = (CoreSyn.flattenBinds $ cm_binds core)
-  let testexprs = reduceCoreListToHsList test
-  let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topbind] [True]
-  let vhdl = VHDL.createDesignFiles typestate normalized_bindings topbind test_bindings
-  mapM (putStr . render . Ppr.ppr . snd) vhdl
-  --putStr $ "\n\nFinal session:\n" ++ prettyShow sess ++ "\n\n"
-  return vhdl
+moduleToVHDL ::
+  HscTypes.HscEnv           -- ^ The GHC Environment
+  -> [HscTypes.CoreModule]  -- ^ The Core Modules
+  -> [Maybe CoreBndr]       -- ^ The TopEntity
+  -> [Maybe CoreBndr]       -- ^ The InitState
+  -> [Maybe CoreExpr]       -- ^ The TestInput
+  -> Bool                   -- ^ Is it stateful (in case InitState is not specified)
+  -> IO [(AST.VHDLId, AST.DesignFile)]
+moduleToVHDL env cores top init test stateful = do
+  let topEntity = Maybe.catMaybes top
+  case topEntity of
+    [] -> error "Top Entity Not Found"
+    [topEnt] -> do
+      let initialState = Maybe.catMaybes init
+      let isStateful = not (null initialState) || stateful
+      let testInput = Maybe.catMaybes test
+      uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
+      let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (cm_binds x)) cores)
+      let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
+      let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topEnt] [isStateful]
+      let vhdl = VHDL.createDesignFiles typestate normalized_bindings topEnt test_bindings
+      mapM (putStr . render . Ppr.ppr . snd) vhdl
+      return vhdl
+    xs -> error "More than one topentity found"
 
 -- | Prepares the directory for writing VHDL files. This means creating the
 --   dir if it does not exist and removing all existing .vhdl files from it.
@@ -187,303 +150,95 @@ writeVHDL dir (name, vhdl) = do
   -- Write the file
   Language.VHDL.FileIO.writeDesignFile vhdl fname
 
--- | Loads the given file and turns it into a core module.
-loadModule :: FilePath -> String -> IO (HscTypes.CoreModule, HscTypes.HscEnv)
-loadModule libdir filename =
+-- | Loads the given files and turns it into a core module
+loadModules ::
+  FilePath      -- ^ The GHC Library directory 
+  -> [String]   -- ^ The files that need to be loaded
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The TopEntity finder
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreBndr)) -- ^ The InitState finder
+  -> (HscTypes.CoreModule -> Ghc (Maybe CoreExpr)) -- ^ The TestInput finder
+  -> IO ( [HscTypes.CoreModule] -- The loaded modules
+        , [Maybe CoreBndr]  -- The TopEntity
+        , [Maybe CoreBndr]  -- The InitState
+        , [Maybe CoreExpr]  -- The TestInput
+        , HscTypes.HscEnv   -- The Environment corresponding ot the loaded modules 
+        )
+loadModules libdir filenames topEntLoc initSLoc testLoc =
   defaultErrorHandler defaultDynFlags $ do
     runGhc (Just libdir) $ do
       dflags <- getSessionDynFlags
       setSessionDynFlags dflags
-      --target <- guessTarget "adder.hs" Nothing
-      --liftIO (print (showSDoc (ppr (target))))
-      --liftIO $ printTarget target
-      --setTargets [target]
-      --load LoadAllTargets
-      --core <- GHC.compileToCoreSimplified "Adders.hs"
-      core <- GHC.compileToCoreModule filename
+      cores <- mapM GHC.compileToCoreModule filenames
       env <- GHC.getSession
-      return (core, env)
-      
--- | Loads the given file and turns it into a core module.
-loadModuleAnn :: FilePath -> String -> IO (HscTypes.CoreModule, [CoreSyn.CoreBndr], [CoreSyn.CoreBndr], [CoreSyn.CoreExpr], HscTypes.HscEnv)
-loadModuleAnn libdir filename =
-  defaultErrorHandler defaultDynFlags $ do
-    runGhc (Just libdir) $ do
-      dflags <- getSessionDynFlags
-      setSessionDynFlags dflags
-      --target <- guessTarget "adder.hs" Nothing
-      --liftIO (print (showSDoc (ppr (target))))
-      --liftIO $ printTarget target
-      --setTargets [target]
-      --load LoadAllTargets
-      --core <- GHC.compileToCoreSimplified "Adders.hs"
-      core <- GHC.compileToCoreModule filename
-      env <- GHC.getSession
-      top_entity <- findTopEntity core
-      init_state <- findInitState core
-      test_input <- findTestInput core
-      return (core, top_entity, init_state, test_input, env)
+      top_entity <- mapM topEntLoc cores
+      init_state <- mapM initSLoc cores
+      test_input <- mapM testLoc cores
+      return (cores, top_entity, init_state, test_input, env)
 
-findTopEntity :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreBndr]
-findTopEntity core = do
+findBindAnn :: 
+  GhcMonad m => 
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule 
+  -> m (Maybe CoreBndr)
+findBindAnn annotation core = do
   let binds = CoreSyn.flattenBinds $ cm_binds core
-  topbinds <- Monad.filterM (hasTopEntityAnnotation . fst) binds
-  let bndrs = case topbinds of [] -> error $ "Couldn't find top entity in current module." ; xs -> fst (unzip topbinds)
-  return bndrs
+  annbinds <- Monad.filterM (annotation . fst) binds
+  let bndr = case annbinds of [] -> Nothing ; xs -> Just $ head $ fst (unzip annbinds)
+  return bndr
   
-findInitState :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreBndr]
-findInitState core = do
+findExprAnn :: 
+  GhcMonad m => 
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule 
+  -> m (Maybe CoreExpr)
+findExprAnn annotation core = do
   let binds = CoreSyn.flattenBinds $ cm_binds core
-  statebinds <- Monad.filterM (hasInitStateAnnotation . fst) binds
-  let bndrs = case statebinds of [] -> [] ; xs -> fst (unzip statebinds)
-  return bndrs
-  
-findTestInput :: GhcMonad m => HscTypes.CoreModule -> m [CoreSyn.CoreExpr]
-findTestInput core = do
-  let binds = CoreSyn.flattenBinds $ cm_binds core
-  testbinds <- Monad.filterM (hasTestInputAnnotation . fst) binds
-  let exprs = case testbinds of [] -> [] ; xs -> snd (unzip testbinds)
+  annbinds <- Monad.filterM (annotation . fst) binds
+  let exprs = case annbinds of [] -> Nothing ; xs -> Just $ head $ snd (unzip annbinds)
   return exprs
-  
-hasTopEntityAnnotation :: GhcMonad m => Var.Var -> m Bool
-hasTopEntityAnnotation var = do
+
+hasCLasHAnnotation ::
+  GhcMonad m =>
+  (CLasHAnn -> Bool)
+  -> Var.Var
+  -> m Bool
+hasCLasHAnnotation clashAnn var = do
   let deserializer = Serialized.deserializeWithData
   let target = Annotations.NamedTarget (Var.varName var)
   (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
-  let top_ents = filter isTopEntity anns
-  case top_ents of
-    [] -> return False
-    xs -> return True
-    
-hasInitStateAnnotation :: GhcMonad m => Var.Var -> m Bool
-hasInitStateAnnotation var = do
-  let deserializer = Serialized.deserializeWithData
-  let target = Annotations.NamedTarget (Var.varName var)
-  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
-  let top_ents = filter isInitState anns
-  case top_ents of
-    [] -> return False
-    xs -> return True
-    
-hasTestInputAnnotation :: GhcMonad m => Var.Var -> m Bool
-hasTestInputAnnotation var = do
-  let deserializer = Serialized.deserializeWithData
-  let target = Annotations.NamedTarget (Var.varName var)
-  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
-  let top_ents = filter isTestInput anns
+  let top_ents = filter clashAnn anns
   case top_ents of
     [] -> return False
     xs -> return True
 
--- | Extracts the named binds from the given module.
-findBinds :: HscTypes.CoreModule -> [String] -> [(CoreBndr, CoreExpr)]
-findBinds core names = Maybe.mapMaybe (findBind (CoreSyn.flattenBinds $ cm_binds core)) names
+-- | Extracts the named binder from the given module.
+findBind ::
+  GhcMonad m =>
+  String             -- ^ The Name of the Binder
+  -> HscTypes.CoreModule   -- ^ The Module to look in
+  -> m (Maybe CoreBndr) -- ^ The resulting binder
+findBind name core = 
+  case (findBinder (CoreSyn.flattenBinds $ cm_binds core)) name of
+    Nothing -> return Nothing
+    Just bndr -> return $ Just $ fst bndr
+
+-- | Extracts the named expression from the given module.
+findExpr ::
+  GhcMonad m =>
+  String             -- ^ The Name of the Binder
+  -> HscTypes.CoreModule   -- ^ The Module to look in 
+  -> m (Maybe CoreExpr) -- ^ The resulting expression
+findExpr name core = 
+  case (findBinder (CoreSyn.flattenBinds $ cm_binds core)) name of
+    Nothing -> return Nothing
+    Just bndr -> return $ Just $ snd bndr
 
 -- | Extract a named bind from the given list of binds
-findBind :: [(CoreBndr, CoreExpr)] -> String -> Maybe (CoreBndr, CoreExpr)
-findBind binds lookfor =
+findBinder :: [(CoreBndr, CoreExpr)] -> String -> Maybe (CoreBndr, CoreExpr)
+findBinder binds lookfor =
   -- This ignores Recs and compares the name of the bind with lookfor,
   -- disregarding any namespaces in OccName and extra attributes in Name and
   -- Var.
   find (\(var, _) -> lookfor == (occNameString $ nameOccName $ getName var)) binds
-
--- | Flattens the given bind into the given signature and adds it to the
---   session. Then (recursively) finds any functions it uses and does the same
---   with them.
--- flattenBind ::
---   HsFunction                         -- The signature to flatten into
---   -> (CoreBndr, CoreExpr)            -- The bind to flatten
---   -> TranslatorState ()
--- 
--- flattenBind hsfunc bind@(var, expr) = do
---   -- Flatten the function
---   let flatfunc = flattenFunction hsfunc bind
---   -- Propagate state variables
---   let flatfunc' = propagateState hsfunc flatfunc
---   -- Store the flat function in the session
---   modA tsFlatFuncs (Map.insert hsfunc flatfunc')
---   -- Flatten any functions used
---   let used_hsfuncs = Maybe.mapMaybe usedHsFunc (flat_defs flatfunc')
---   mapM_ resolvFunc used_hsfuncs
-
--- | Decide which incoming state variables will become state in the
---   given function, and which will be propagate to other applied
---   functions.
--- propagateState ::
---   HsFunction
---   -> FlatFunction
---   -> FlatFunction
--- 
--- propagateState hsfunc flatfunc =
---     flatfunc {flat_defs = apps', flat_sigs = sigs'} 
---   where
---     (olds, news) = unzip $ getStateSignals hsfunc flatfunc
---     states' = zip olds news
---     -- Find all signals used by all sigdefs
---     uses = concatMap sigDefUses (flat_defs flatfunc)
---     -- Find all signals that are used more than once (is there a
---     -- prettier way to do this?)
---     multiple_uses = uses List.\\ (List.nub uses)
---     -- Find the states whose "old state" signal is used only once
---     single_use_states = filter ((`notElem` multiple_uses) . fst) states'
---     -- See if these single use states can be propagated
---     (substate_sigss, apps') = unzip $ map (propagateState' single_use_states) (flat_defs flatfunc)
---     substate_sigs = concat substate_sigss
---     -- Mark any propagated state signals as SigSubState
---     sigs' = map 
---       (\(id, info) -> (id, if id `elem` substate_sigs then info {sigUse = SigSubState} else info))
---       (flat_sigs flatfunc)
-
--- | Propagate the state into a single function application.
--- propagateState' ::
---   [(SignalId, SignalId)]
---                       -- ^ TODO
---   -> SigDef           -- ^ The SigDef to process.
---   -> ([SignalId], SigDef) 
---                       -- ^ Any signal ids that should become substates,
---                       --   and the resulting application.
--- 
--- propagateState' states def =
---     if (is_FApp def) then
---       (our_old ++ our_new, def {appFunc = hsfunc'})
---     else
---       ([], def)
---   where
---     hsfunc = appFunc def
---     args = appArgs def
---     res = appRes def
---     our_states = filter our_state states
---     -- A state signal belongs in this function if the old state is
---     -- passed in, and the new state returned
---     our_state (old, new) =
---       any (old `Foldable.elem`) args
---       && new `Foldable.elem` res
---     (our_old, our_new) = unzip our_states
---     -- Mark the result
---     zipped_res = zipValueMaps res (hsFuncRes hsfunc)
---     res' = fmap (mark_state (zip our_new [0..])) zipped_res
---     -- Mark the args
---     zipped_args = zipWith zipValueMaps args (hsFuncArgs hsfunc)
---     args' = map (fmap (mark_state (zip our_old [0..]))) zipped_args
---     hsfunc' = hsfunc {hsFuncArgs = args', hsFuncRes = res'}
--- 
---     mark_state :: [(SignalId, StateId)] -> (SignalId, HsValueUse) -> HsValueUse
---     mark_state states (id, use) =
---       case lookup id states of
---         Nothing -> use
---         Just state_id -> State state_id
-
--- | Returns pairs of signals that should be mapped to state in this function.
--- getStateSignals ::
---   HsFunction                      -- | The function to look at
---   -> FlatFunction                 -- | The function to look at
---   -> [(SignalId, SignalId)]   
---         -- | TODO The state signals. The first is the state number, the second the
---         --   signal to assign the current state to, the last is the signal
---         --   that holds the new state.
--- 
--- getStateSignals hsfunc flatfunc =
---   [(old_id, new_id) 
---     | (old_num, old_id) <- args
---     , (new_num, new_id) <- res
---     , old_num == new_num]
---   where
---     sigs = flat_sigs flatfunc
---     -- Translate args and res to lists of (statenum, sigid)
---     args = concat $ zipWith stateList (hsFuncArgs hsfunc) (flat_args flatfunc)
---     res = stateList (hsFuncRes hsfunc) (flat_res flatfunc)
-    
--- | Find the given function, flatten it and add it to the session. Then
---   (recursively) do the same for any functions used.
--- resolvFunc ::
---   HsFunction        -- | The function to look for
---   -> TranslatorState ()
--- 
--- resolvFunc hsfunc = do
---   flatfuncmap <- getA tsFlatFuncs
---   -- Don't do anything if there is already a flat function for this hsfunc or
---   -- when it is a builtin function.
---   Monad.unless (Map.member hsfunc flatfuncmap) $ do
---   -- Not working with new builtins -- Monad.unless (elem hsfunc VHDL.builtin_hsfuncs) $ do
---   -- New function, resolve it
---   core <- getA tsCoreModule
---   -- Find the named function
---   let name = (hsFuncName hsfunc)
---   let bind = findBind (CoreSyn.flattenBinds $ cm_binds core) name 
---   case bind of
---     Nothing -> error $ "Couldn't find function " ++ name ++ " in current module."
---     Just b  -> flattenBind hsfunc b
-
--- | Translate a top level function declaration to a HsFunction. i.e., which
---   interface will be provided by this function. This function essentially
---   defines the "calling convention" for hardware models.
--- mkHsFunction ::
---   Var.Var         -- ^ The function defined
---   -> Type         -- ^ The function type (including arguments!)
---   -> Bool         -- ^ Is this a stateful function?
---   -> HsFunction   -- ^ The resulting HsFunction
--- 
--- mkHsFunction f ty stateful=
---   HsFunction hsname hsargs hsres
---   where
---     hsname  = getOccString f
---     (arg_tys, res_ty) = Type.splitFunTys ty
---     (hsargs, hsres) = 
---       if stateful 
---       then
---         let
---           -- The last argument must be state
---           state_ty = last arg_tys
---           state    = useAsState (mkHsValueMap state_ty)
---           -- All but the last argument are inports
---           inports = map (useAsPort . mkHsValueMap)(init arg_tys)
---           hsargs   = inports ++ [state]
---           hsres    = case splitTupleType res_ty of
---             -- Result type must be a two tuple (state, ports)
---             Just [outstate_ty, outport_ty] -> if Type.coreEqType state_ty outstate_ty
---               then
---                 Tuple [state, useAsPort (mkHsValueMap outport_ty)]
---               else
---                 error $ "Input state type of function " ++ hsname ++ ": " ++ (showSDoc $ ppr state_ty) ++ " does not match output state type: " ++ (showSDoc $ ppr outstate_ty)
---             otherwise                -> error $ "Return type of top-level function " ++ hsname ++ " must be a two-tuple containing a state and output ports."
---         in
---           (hsargs, hsres)
---       else
---         -- Just use everything as a port
---         (map (useAsPort . mkHsValueMap) arg_tys, useAsPort $ mkHsValueMap res_ty)
-
--- | Adds signal names to the given FlatFunction
--- nameFlatFunction ::
---   FlatFunction
---   -> FlatFunction
--- 
--- nameFlatFunction flatfunc =
---   -- Name the signals
---   let 
---     s = flat_sigs flatfunc
---     s' = map nameSignal s in
---   flatfunc { flat_sigs = s' }
---   where
---     nameSignal :: (SignalId, SignalInfo) -> (SignalId, SignalInfo)
---     nameSignal (id, info) =
---       let hints = nameHints info in
---       let parts = ("sig" : hints) ++ [show id] in
---       let name = concat $ List.intersperse "_" parts in
---       (id, info {sigName = Just name})
--- 
--- -- | Splits a tuple type into a list of element types, or Nothing if the type
--- --   is not a tuple type.
--- splitTupleType ::
---   Type              -- ^ The type to split
---   -> Maybe [Type]   -- ^ The tuples element types
--- 
--- splitTupleType ty =
---   case Type.splitTyConApp_maybe ty of
---     Just (tycon, args) -> if TyCon.isTupleTyCon tycon 
---       then
---         Just args
---       else
---         Nothing
---     Nothing -> Nothing
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
