@@ -221,21 +221,24 @@ casewild expr@(Case scrut b ty alts) = do
   -- sideeffect.
   doalt :: CoreAlt -> TransformMonad ([(CoreBndr, CoreExpr)], CoreAlt)
   doalt (con, bndrs, expr) = do
-    bindings_maybe <- Monad.zipWithM mkextracts bndrs [0..]
+    extracts <- Monad.zipWithM mkextracts bndrs [0..]
+    let (newbndrs, bindings_maybe) = unzip extracts
     let bindings = Maybe.catMaybes bindings_maybe
-    -- We replace the binders with wild binders only. We can leave expr
-    -- unchanged, since the new bindings bind the same vars as the original
-    -- did.
-    let newalt = (con, wildbndrs, expr)
+    -- Note that we leave expr unchanged, even though most binders will have
+    -- become wild. The binders that were previously bound by the case
+    -- alternative, will now be bound in a surrounding let expression (e.g.,
+    -- by bindings).
+    let newalt = (con, newbndrs, expr)
     return (bindings, newalt)
     where
       -- Make all binders wild
       wildbndrs = map (\bndr -> MkCore.mkWildBinder (Id.idType bndr)) bndrs
       -- A set of all the binders that are used by the expression
       free_vars = CoreFVs.exprSomeFreeVars (`elem` bndrs) expr
-      -- Creates a case statement to retrieve the ith element from the scrutinee
-      -- and binds that to b.
-      mkextracts :: CoreBndr -> Int -> TransformMonad (Maybe (CoreBndr, CoreExpr))
+      -- Look at the ith binder in the case alternative. Return a new binder
+      -- for it (either the same one, or a wild one) and optionally a let
+      -- binding with a case expression.
+      mkextracts :: CoreBndr -> Int -> TransformMonad (CoreBndr, Maybe (CoreBndr, CoreExpr))
       mkextracts b i = do
         repr <- isRepr (Var b)
         -- Is b wild (e.g., not a free var of expr. Since b is only in scope
@@ -250,9 +253,12 @@ casewild expr@(Case scrut b ty alts) = do
             let bty = (Id.idType b)
             id <- mkInternalVar "sel" bty
             let binders = take i wildbndrs ++ [id] ++ drop (i+1) wildbndrs
-            return $ Just (b, Case scrut b bty [(con, binders, Var id)])
+            let caseexpr = Case scrut b bty [(con, binders, Var id)]
+            return (wildbndrs!!i, Just (b, caseexpr))
           else 
-            return Nothing
+            -- Just leave the original binder in place, and don't generate an
+            -- extra selector case.
+            return (b, Nothing)
 -- Leave all other expressions unchanged
 casewild expr = return expr
 -- Perform this transform everywhere
