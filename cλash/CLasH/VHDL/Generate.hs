@@ -161,6 +161,39 @@ genFromInteger' (Left res) f lits = do {
 
 genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
+genSizedInt :: BuiltinBuilder
+genSizedInt = genFromInteger
+
+genTFVec :: BuiltinBuilder
+genTFVec (Left res) f [Left veclist] = do {
+  ; let (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) = veclist
+  ; let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+  ; let valargs = get_val_args (Var.varType f) args
+  ; apps <- genApplication (Left bndr) f (map Left valargs)
+  ; (aap,kooi) <- reduceFSVECListToHsList rez
+  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) (bndr:aap)
+  ; let vecsigns = concatsigs sigs
+  ; let vecassign = mkUncondAssign (Left res) vecsigns
+  ; sig_dec_maybes <- mapM mkSigDec (bndr:aap)
+  ; let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
+  ; let block_label = mkVHDLExtId ("FSVec_" ++ (show (map varToString (bndr:aap))))
+  ; let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (apps ++ kooi ++ [vecassign])  
+  ; return $ [AST.CSBSm block]
+  }
+  where
+    concatsigs x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x) 
+    
+
+reduceFSVECListToHsList app@(CoreSyn.App _ letexpr) = do
+  case letexpr of
+    (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) -> do
+      let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
+      let valargs = get_val_args (Var.varType f) args
+      app <- genApplication (Left bndr) f (map Left valargs)
+      (vars, apps) <- reduceFSVECListToHsList rez
+      return ((bndr:vars),(app ++ apps))
+    otherwise -> return ([],[])
+
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
@@ -549,6 +582,17 @@ genApplication dst f args = do
                 let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
                 mkUncondAssign (Right sel_name) arg
           Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
+        IdInfo.DataConWrapId dc -> case dst of
+          -- It's a datacon. Create a record from its arguments.
+          Left bndr -> do 
+            case (Map.lookup (varToString f) globalNameTable) of
+             Just (arg_count, builder) ->
+              if length args == arg_count then
+                builder dst f args
+              else
+                error $ "\nGenerate.genApplication(DataConWrapId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+             Nothing -> error $ "\nGenerate.genApplication: Can't generate dataconwrapper: " ++ (show dc)
+          Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconwrapper application without an original binder"
         IdInfo.VanillaId -> do
           -- It's a global value imported from elsewhere. These can be builtin
           -- functions. Look up the function name in the name table and execute
@@ -561,7 +605,7 @@ genApplication dst f args = do
                 builder dst f args
               else
                 error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> error $ "\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ pprString f
+            Nothing -> return $ trace ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f)) []
         IdInfo.ClassOpId cls -> do
           -- FIXME: Not looking for what instance this class op is called for
           -- Is quite stupid of course.
@@ -1012,4 +1056,6 @@ globalNameTable = Map.fromList
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
   , (fromIntegerId    , (1, genFromInteger          ) )
   , (resizeId         , (1, genResize               ) )
+  , (sizedIntId       , (1, genSizedInt             ) )
+  , (tfvecId          , (1, genTFVec                ) )
   ]

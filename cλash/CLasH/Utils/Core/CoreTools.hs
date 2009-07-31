@@ -45,7 +45,7 @@ eval_tfp_int env ty =
     -- Automatically import modules for any fully qualified identifiers
     setDynFlag DynFlags.Opt_ImplicitImportQualified
 
-    let from_int_t_name = mkRdrName "Types.Data.Num" "fromIntegerT"
+    let from_int_t_name = mkRdrName "Types.Data.Num.Ops" "fromIntegerT"
     let from_int_t = SrcLoc.noLoc $ HsExpr.HsVar from_int_t_name
     let undef = hsTypedUndef $ coreToHsType ty
     let app = SrcLoc.noLoc $ HsExpr.HsApp (from_int_t) (undef)

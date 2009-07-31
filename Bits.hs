@@ -1,10 +1,12 @@
-{-# LANGUAGE FlexibleContexts,GADTs,ExistentialQuantification,LiberalTypeSynonyms,TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts,GADTs,ExistentialQuantification,LiberalTypeSynonyms,TemplateHaskell, DeriveDataTypeable #-}
 
 module Bits where
 
-import qualified Data.Param.TFVec as TFVec
-import qualified Types
+-- import qualified Data.Param.TFVec as TFVec
+-- import qualified Types
 import Language.Haskell.TH.Lift
+
+import Data.Typeable
 
 --class Signal a where
 --	hwand :: a -> a -> a
@@ -45,22 +47,22 @@ displaysig Low  = "0"
 
 -- The plain Bit type
 data Bit = High | Low
-  deriving (Show, Eq, Read)
+  deriving (Show, Eq, Read, Typeable)
 
 $(deriveLift1 ''Bit)
 
 -- A function to prettyprint a bitvector
 
 --displaysigs :: (Signal s) => [s] -> String
-displaysigs :: [Bit] -> String
-displaysigs = (foldl (++) "") . (map displaysig)
+-- displaysigs :: [Bit] -> String
+-- displaysigs = (foldl (++) "") . (map displaysig)
 
-type Stream a = [a]
+-- type Stream a = [a]
 
 -- An infinite streams of highs or lows
-lows  = Low : lows
-highs = High : highs
-
-type BitVec len = TFVec.TFVec len Bit
+-- lows  = Low : lows
+-- highs = High : highs
+-- 
+-- type BitVec len = TFVec.TFVec len Bit
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

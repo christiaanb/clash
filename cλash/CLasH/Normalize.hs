@@ -102,10 +102,11 @@ letrectop = everywhere ("letrec", letrec)
 --------------------------------
 letsimpl, letsimpltop :: Transform
 -- Put the "in ..." value of a let in its own binding, but not when the
--- expression is applicable (to prevent loops with inlinefun).
-letsimpl expr@(Let (Rec binds) res) | not $ is_applicable expr = do
+-- expression is already a local variable, or not representable (to prevent loops with inlinenonrep).
+letsimpl expr@(Let (Rec binds) res) = do
+  repr <- isRepr res
   local_var <- Trans.lift $ is_local_var res
-  if not local_var
+  if not local_var && repr
     then do
       -- If the result is not a local var already (to prevent loops with
       -- ourselves), extract it.

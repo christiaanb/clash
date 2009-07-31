@@ -10,6 +10,7 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import Data.Accessor
+import Data.Accessor.MonadState as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -395,7 +396,7 @@ mk_vector_ty ty = do
           modA vsTypes (Map.insert (StdType $ OrdType vec_ty) (vec_id, (Left vec_def)))
           modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))])
           let vecShowFuns = mkVectorShow el_ty_tm vec_id
-          mapM_ (\(id, subprog) -> modA vsTypeFuns $ Map.insert (OrdType el_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns     
+          mapM_ (\(id, subprog) -> modA vsTypeFuns $ Map.insert (OrdType vec_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Right (ty_id, Right ty_def))
     -- Could not create element type
@@ -465,7 +466,7 @@ mkHType ty = do
         let name = Name.getOccString (TyCon.tyConName tycon)
         Map.lookup name builtin_types
   case builtin_ty of
-    Just typ -> 
+    Just typ ->
       return $ Right $ BuiltinType $ prettyShow typ
     Nothing ->
       case Type.splitTyConApp_maybe ty of
@@ -528,8 +529,25 @@ isReprType ty = do
     Left _ -> False
     Right _ -> True
 
+
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
+  hscenv <- getA vsHscEnv
+  let norm_ty = normalise_tfp_int hscenv ty
+  case Type.splitTyConApp_maybe norm_ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "Dec" -> do
+          len <- tfp_to_int' ty
+          return len
+        otherwise -> do
+          modA vsTfpInts (Map.insert (OrdType norm_ty) (-1))
+          return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+    Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+
+tfp_to_int' :: Type.Type -> TypeSession Int
+tfp_to_int' ty = do
   lens <- getA vsTfpInts
   hscenv <- getA vsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
@@ -674,4 +692,12 @@ genExprPCall2 :: AST.VHDLId -> AST.Expr -> AST.Expr -> AST.SeqSm
 genExprPCall2 entid arg1 arg2 =
         AST.ProcCall (AST.NSimple entid) $
          map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg1,arg2]
-         
+
+mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
+mkSigDec bndr =
+  if True then do --isInternalSigUse use || isStateSigUse use then do
+    let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
+    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
+    return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
+  else
+    return Nothing

@@ -263,6 +263,12 @@ toUnsignedId = "to_unsigned"
 resizeId :: String
 resizeId = "resize"
 
+sizedIntId :: String
+sizedIntId = "SizedInt"
+
+tfvecId :: String
+tfvecId = "TFVec"
+
 -- | output file identifier (from std.textio)
 showIdString :: String
 showIdString = "show"

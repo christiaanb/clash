@@ -240,15 +240,6 @@ getSignalId info =
     (error $ "Unnamed signal? This should not happen!")
     (sigName info)
 -}
-   
-mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
-mkSigDec bndr =
-  if True then do --isInternalSigUse use || isStateSigUse use then do
-    let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
-    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
-    return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
-  else
-    return Nothing
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
