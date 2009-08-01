@@ -22,8 +22,9 @@ Library
                     filepath, template-haskell, data-accessor-template,
                     prettyclass
                     
-  exposed-modules:  CLasH.Translator,
+  exposed-modules:  CLasH.Translator
                     CLasH.Translator.Annotations
+                    CLasH.Utils
                     
   other-modules:    CLasH.Translator.TranslatorTypes
                     CLasH.Normalize
