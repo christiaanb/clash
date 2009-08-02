@@ -1,24 +1,27 @@
 module CLasH.Translator where
 
 import qualified GHC.Paths
-import qualified "clash" CLasH.Translator as Original (makeVHDL, makeVHDLAnn, listBindings, listBind)
+import qualified "clash" CLasH.Translator as Original (makeVHDLStrings, makeVHDLAnnotations)
 
-makeVHDL :: String -> String -> Bool -> IO ()
-makeVHDL filename name stateful = do
+-- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
+--   State and Test Inputs.
+makeVHDLStrings ::
+  -> [FilePath] -- ^ The FileNames
+  -> String     -- ^ The TopEntity
+  -> String     -- ^ The InitState
+  -> String     -- ^ The TestInput
+  -> Bool       -- ^ Is it stateful? (in case InitState is empty)
+  -> IO ()
+makeVHDLStrings filenames topentity initstate testinput stateful = do
   let libdir = GHC.Paths.libdir
-  Original.makeVHDL libdir filename name stateful
+  Original.makeVHDLStrings libdir filenames topentity initstate testinput stateful
   
-makeVHDLAnn :: String -> IO ()
-makeVHDLAnn filename = do
+-- | Turn Haskell to VHDL, Using the Annotations for Top Entity, Initial State
+--   and Test Inputs found in the Files. 
+makeVHDLAnnotations ::
+  -> [FilePath] -- ^ The FileNames
+  -> Bool       -- ^ Is it stateful? (in case InitState is not specified)
+  -> IO ()
+makeVHDLAnnotations libdir filenames stateful = do
   let libdir = GHC.Paths.libdir
-  Original.makeVHDLAnn libdir filename
-
-listBindings :: String -> IO [()]
-listBindings filename = do
-  let libdir = GHC.Paths.libdir
-  Original.listBindings libdir filename
-  
-listBind :: String -> String -> IO ()
-listBind filename name = do
-  let libdir = GHC.Paths.libdir
-  Original.listBind libdir filename name
+  Original.makeVHDLAnnotations libdir filenames stateful
