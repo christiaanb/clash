@@ -4,7 +4,7 @@ module CLasH.Translator
   ) where
 
 -- Standard Modules
-import qualified Directory
+import qualified System.Directory as Directory
 import qualified Maybe
 import qualified Monad
 import qualified System.FilePath as FilePath
@@ -114,8 +114,7 @@ moduleToVHDL env cores top init test stateful = do
 prepareDir :: String -> IO()
 prepareDir dir = do
   -- Create the dir if needed
-  exists <- Directory.doesDirectoryExist dir
-  Monad.unless exists $ Directory.createDirectory dir
+  Directory.createDirectoryIfMissing True dir
   -- Find all .vhdl files in the directory
   files <- Directory.getDirectoryContents dir
   let to_remove = filter ((==".vhdl") . FilePath.takeExtension) files
