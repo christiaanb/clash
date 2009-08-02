@@ -1,14 +1,9 @@
-{-# LANGUAGE PackageImports #-}
-
 module CLasH.VHDL.Generate where
 
 -- Standard modules
-import qualified Control.Monad as Monad
 import qualified Data.Map as Map
 import qualified Maybe
 import qualified Data.Either as Either
-import qualified Control.Monad.Trans.State as State
-import qualified "transformers" Control.Monad.Identity as Identity
 import Data.Accessor
 import Data.Accessor.MonadState as MonadState
 import Debug.Trace
@@ -17,8 +12,8 @@ import Debug.Trace
 import qualified Language.VHDL.AST as AST
 
 -- GHC API
-import CoreSyn
-import Type
+import qualified CoreSyn
+import qualified Type
 import qualified Var
 import qualified IdInfo
 import qualified Literal
@@ -205,7 +200,7 @@ reduceFSVECListToHsList app@(CoreSyn.App _ letexpr) = do
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
-genMap (Left res) f [Left mapped_f, Left (Var arg)] = do {
+genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
   -- mapped_f must be a CoreExpr (since we can't represent functions as VHDL
   -- expressions). arg must be a CoreExpr (and should be a CoreSyn.Var), since
   -- we must index it (which we couldn't if it was a VHDL Expr, since only
@@ -281,7 +276,7 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
   -- An expression for len-1
   let len_min_expr = (AST.PrimLit $ show (len-1))
   -- evec is (TFVec n), so it still needs an element type
-  let (nvec, _) = splitAppTy (Var.varType vec)
+  let (nvec, _) = Type.splitAppTy (Var.varType vec)
   -- Put the type of the start value in nvec, this will be the type of our
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
@@ -429,7 +424,7 @@ genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var
 genConcat' (Left res) f args@[arg] = do {
     -- Setup the generate scheme
   ; len1 <- MonadState.lift vsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
-  ; let (_, nvec) = splitAppTy (Var.varType arg)
+  ; let (_, nvec) = Type.splitAppTy (Var.varType arg)
   ; len2 <- MonadState.lift vsType $ tfp_to_int $ tfvec_len_ty nvec
           -- TODO: Use something better than varToString
   ; let { label       = mkVHDLExtId ("concatVector" ++ (varToString res))
