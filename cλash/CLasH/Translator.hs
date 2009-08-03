@@ -100,6 +100,11 @@ moduleToVHDL env cores top init test stateful = do
       let initialState = Maybe.catMaybes init
       let isStateful = not (null initialState) || stateful
       let testInput = Maybe.catMaybes test
+      -- Generate a UniqSupply
+      -- Running 
+      --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+      -- on the compiler dir of ghc suggests that 'z' is not used to generate
+      -- a unique supply anywhere.
       uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
       let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
       let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
