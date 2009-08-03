@@ -1,14 +1,9 @@
-{-# LANGUAGE PackageImports #-}
-
 module CLasH.VHDL.Generate where
 
 -- Standard modules
-import qualified Control.Monad as Monad
 import qualified Data.Map as Map
 import qualified Maybe
 import qualified Data.Either as Either
-import qualified Control.Monad.Trans.State as State
-import qualified "transformers" Control.Monad.Identity as Identity
 import Data.Accessor
 import Data.Accessor.MonadState as MonadState
 import Debug.Trace
@@ -17,8 +12,8 @@ import Debug.Trace
 import qualified Language.VHDL.AST as AST
 
 -- GHC API
-import CoreSyn
-import Type
+import qualified CoreSyn
+import qualified Type
 import qualified Var
 import qualified IdInfo
 import qualified Literal
@@ -164,40 +159,79 @@ genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot g
 genSizedInt :: BuiltinBuilder
 genSizedInt = genFromInteger
 
+-- | Generate a Builder for the builtin datacon TFVec
 genTFVec :: BuiltinBuilder
-genTFVec (Left res) f [Left veclist] = do {
-  ; let (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) = veclist
-  ; let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-  ; let valargs = get_val_args (Var.varType f) args
-  ; apps <- genApplication (Left bndr) f (map Left valargs)
-  ; (aap,kooi) <- reduceFSVECListToHsList rez
-  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) (bndr:aap)
-  ; let vecsigns = concatsigs sigs
-  ; let vecassign = mkUncondAssign (Left res) vecsigns
-  ; sig_dec_maybes <- mapM mkSigDec (bndr:aap)
-  ; let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
-  ; let block_label = mkVHDLExtId ("FSVec_" ++ (show (map varToString (bndr:aap))))
-  ; let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (apps ++ kooi ++ [vecassign])  
+genTFVec (Left res) f [Left (CoreSyn.Let (CoreSyn.Rec letBinders) letRes)] = do {
+  -- Generate Assignments for all the binders
+  ; letAssigns <- mapM genBinderAssign letBinders
+  -- Generate assignments for the result (which might be another let binding)
+  ; (resBinders,resAssignments) <- genResAssign letRes
+  -- Get all the Assigned binders
+  ; let assignedBinders = Maybe.catMaybes (map fst letAssigns)
+  -- Make signal names for all the assigned binders
+  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) (assignedBinders ++ resBinders)
+  -- Assign all the signals to the resulting vector
+  ; let { vecsigns = mkAggregateSignal sigs
+        ; vecassign = mkUncondAssign (Left res) vecsigns
+        } ;
+  -- Generate all the signal declaration for the assigned binders
+  ; sig_dec_maybes <- mapM mkSigDec (assignedBinders ++ resBinders)
+  ; let { sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
+  -- Setup the VHDL Block
+        ; block_label = mkVHDLExtId ("TFVec_" ++ show (varToString res))
+        ; block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs ((concat (map snd letAssigns)) ++ resAssignments ++ [vecassign])
+        } ;
+  -- Return the block statement coressponding to the TFVec literal
   ; return $ [AST.CSBSm block]
   }
   where
-    concatsigs x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x) 
-    
-
-reduceFSVECListToHsList app@(CoreSyn.App _ letexpr) = do
-  case letexpr of
-    (CoreSyn.Let (CoreSyn.Rec [(bndr, app@(CoreSyn.App _ _))]) rez) -> do
+    genBinderAssign :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> VHDLSession (Maybe CoreSyn.CoreBndr, [AST.ConcSm])
+    -- For now we only translate applications
+    genBinderAssign (bndr, app@(CoreSyn.App _ _)) = do
       let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
       let valargs = get_val_args (Var.varType f) args
-      app <- genApplication (Left bndr) f (map Left valargs)
-      (vars, apps) <- reduceFSVECListToHsList rez
-      return ((bndr:vars),(app ++ apps))
-    otherwise -> return ([],[])
+      apps <- genApplication (Left bndr) f (map Left valargs)
+      return (Just bndr, apps)
+    genBinderAssign _ = return (Nothing,[])
+    genResAssign :: CoreSyn.CoreExpr -> VHDLSession ([CoreSyn.CoreBndr], [AST.ConcSm])
+    genResAssign app@(CoreSyn.App _ letexpr) = do
+      case letexpr of
+        (CoreSyn.Let (CoreSyn.Rec letbndrs) letres) -> do
+          letapps <- mapM genBinderAssign letbndrs
+          let bndrs = Maybe.catMaybes (map fst letapps)
+          let app = (map snd letapps)
+          (vars, apps) <- genResAssign letres
+          return ((bndrs ++ vars),((concat app) ++ apps))
+        otherwise -> return ([],[])
+    genResAssign _ = return ([],[])
 
+genTFVec (Left res) f [Left app@(CoreSyn.App _ _)] = do {
+  ; let { elems = reduceCoreListToHsList app
+  -- Make signal names for all the binders
+        ; binders = map (\expr -> case expr of 
+                          (CoreSyn.Var b) -> b
+                          otherwise -> error $ "\nGenerate.genTFVec: Cannot generate TFVec: " 
+                            ++ show res ++ ", with elems:\n" ++ show elems ++ "\n" ++ pprString elems) elems
+        } ;
+  ; sigs <- mapM (\x -> MonadState.lift vsType $ varToVHDLExpr x) binders
+  -- Assign all the signals to the resulting vector
+  ; let { vecsigns = mkAggregateSignal sigs
+        ; vecassign = mkUncondAssign (Left res) vecsigns
+  -- Setup the VHDL Block
+        ; block_label = mkVHDLExtId ("TFVec_" ++ show (varToString res))
+        ; block = AST.BlockSm block_label [] (AST.PMapAspect []) [] [vecassign]
+        } ;
+  -- Return the block statement coressponding to the TFVec literal
+  ; return $ [AST.CSBSm block]
+  }
+  
+genTFVec (Left name) _ [Left xs] = error $ "\nGenerate.genTFVec: Cannot generate TFVec: " ++ show name ++ ", with elems:\n" ++ show xs ++ "\n" ++ pprString xs
+
+genTFVec (Right name) _ _ = error $ "\nGenerate.genTFVec: Cannot generate TFVec assigned to VHDLName: " ++ show name
 
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
-genMap (Left res) f [Left mapped_f, Left (Var arg)] = do {
+genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
   -- mapped_f must be a CoreExpr (since we can't represent functions as VHDL
   -- expressions). arg must be a CoreExpr (and should be a CoreSyn.Var), since
   -- we must index it (which we couldn't if it was a VHDL Expr, since only
@@ -273,7 +307,7 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
   -- An expression for len-1
   let len_min_expr = (AST.PrimLit $ show (len-1))
   -- evec is (TFVec n), so it still needs an element type
-  let (nvec, _) = splitAppTy (Var.varType vec)
+  let (nvec, _) = Type.splitAppTy (Var.varType vec)
   -- Put the type of the start value in nvec, this will be the type of our
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
@@ -421,7 +455,7 @@ genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var
 genConcat' (Left res) f args@[arg] = do {
     -- Setup the generate scheme
   ; len1 <- MonadState.lift vsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
-  ; let (_, nvec) = splitAppTy (Var.varType arg)
+  ; let (_, nvec) = Type.splitAppTy (Var.varType arg)
   ; len2 <- MonadState.lift vsType $ tfp_to_int $ tfvec_len_ty nvec
           -- TODO: Use something better than varToString
   ; let { label       = mkVHDLExtId ("concatVector" ++ (varToString res))
@@ -605,7 +639,7 @@ genApplication dst f args = do
                 builder dst f args
               else
                 error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> return $ trace ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f)) []
+            Nothing -> error $ ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f))
         IdInfo.ClassOpId cls -> do
           -- FIXME: Not looking for what instance this class op is called for
           -- Is quite stupid of course.

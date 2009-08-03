@@ -103,8 +103,8 @@ createLibraryUnits binds = do
 
 -- | Create an entity for a given function
 createEntity ::
-  (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- | The function
-  -> VHDLSession AST.EntityDec -- | The resulting entity
+  (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The function
+  -> VHDLSession AST.EntityDec -- ^ The resulting entity
 
 createEntity (fname, expr) = do
       -- Strip off lambda's, these will be arguments
@@ -139,12 +139,12 @@ createEntity (fname, expr) = do
         return (id, type_mark)
      )
 
-  -- | Create the VHDL AST for an entity
+-- | Create the VHDL AST for an entity
 createEntityAST ::
-  AST.VHDLId                   -- | The name of the function
-  -> [Port]                    -- | The entity's arguments
-  -> Port                      -- | The entity's result
-  -> AST.EntityDec             -- | The entity with the ent_decl filled in as well
+  AST.VHDLId                   -- ^ The name of the function
+  -> [Port]                    -- ^ The entity's arguments
+  -> Port                      -- ^ The entity's result
+  -> AST.EntityDec             -- ^ The entity with the ent_decl filled in as well
 
 createEntityAST vhdl_id args res =
   AST.EntityDec vhdl_id ports
@@ -158,9 +158,9 @@ createEntityAST vhdl_id args res =
 
 -- | Create a port declaration
 mkIfaceSigDec ::
-  AST.Mode                         -- | The mode for the port (In / Out)
-  -> (AST.VHDLId, AST.TypeMark)    -- | The id and type for the port
-  -> AST.IfaceSigDec               -- | The resulting port declaration
+  AST.Mode                         -- ^ The mode for the port (In / Out)
+  -> (AST.VHDLId, AST.TypeMark)    -- ^ The id and type for the port
+  -> AST.IfaceSigDec               -- ^ The resulting port declaration
 
 mkIfaceSigDec mode (id, ty) = AST.IfaceSigDec id mode ty
 

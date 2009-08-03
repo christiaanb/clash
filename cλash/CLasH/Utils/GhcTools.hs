@@ -1,14 +1,23 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module CLasH.Utils.GhcTools where
+  
 -- Standard modules
+import qualified Monad
 import qualified System.IO.Unsafe
 
 -- GHC API
-import qualified GHC
+import qualified Annotations
+import qualified CoreSyn
 import qualified DynFlags
-import qualified TcRnMonad
-import qualified MonadUtils
 import qualified HscTypes
-import qualified PrelNames
+import qualified GHC
+import qualified Name
+import qualified Serialized
+import qualified Var
+
+-- Local Imports
+import CLasH.Translator.Annotations
 
 -- Change a DynFlag from within the Ghc monad. Strangely enough there seems to
 -- be no standard function to do exactly this.
@@ -32,12 +41,86 @@ unsafeRunGhc libDir m =
         dflags <- GHC.getSessionDynFlags
         GHC.setSessionDynFlags dflags
         m
+  
+-- | Loads the given files and turns it into a core module
+loadModules ::
+  FilePath      -- ^ The GHC Library directory 
+  -> [String]   -- ^ The files that need to be loaded
+  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The TopEntity finder
+  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The InitState finder
+  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreExpr)) -- ^ The TestInput finder
+  -> IO ( [HscTypes.CoreModule]
+        , [Maybe CoreSyn.CoreBndr]
+        , [Maybe CoreSyn.CoreBndr]
+        , [Maybe CoreSyn.CoreExpr]
+        , HscTypes.HscEnv
+        ) -- ^ ( The loaded modules, the TopEntity, the InitState, the TestInput
+          --   , The Environment corresponding of the loaded modules
+          --   )
+loadModules libdir filenames topEntLoc initSLoc testLoc =
+  GHC.defaultErrorHandler DynFlags.defaultDynFlags $ do
+    GHC.runGhc (Just libdir) $ do
+      dflags <- GHC.getSessionDynFlags
+      GHC.setSessionDynFlags dflags
+      cores <- mapM GHC.compileToCoreModule filenames
+      env <- GHC.getSession
+      top_entity <- mapM topEntLoc cores
+      init_state <- mapM initSLoc cores
+      test_input <- mapM testLoc cores
+      return (cores, top_entity, init_state, test_input, env)
 
--- runTcM :: TcRnMonad.TcM a -> IO a
--- runTcM thing_inside = do
---   GHC.runGhc (Just GHC.Paths.libdir) $ do   
---     dflags <- GHC.getSessionDynFlags
---     GHC.setSessionDynFlags dflags
---     env <- GHC.getSession
---     HscTypes.ioMsgMaybe . MonadUtils.liftIO .  TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do
---       thing_inside
+findBind ::
+  GHC.GhcMonad m =>
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule
+  -> m (Maybe CoreSyn.CoreBndr)
+findBind criteria core = do
+  binders <- findBinder criteria core
+  case binders of
+    [] -> return Nothing
+    bndrs -> return $ Just $ fst $ head bndrs
+
+findExpr ::
+  GHC.GhcMonad m =>
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule
+  -> m (Maybe CoreSyn.CoreExpr)
+findExpr criteria core = do
+  binders <- findBinder criteria core
+  case binders of
+    [] -> return Nothing
+    bndrs -> return $ Just $ snd $ head bndrs
+
+-- | Find a binder in module according to a certain criteria
+findBinder :: 
+  GHC.GhcMonad m =>
+  (Var.Var -> m Bool)     -- ^ The criteria to filter the binders on
+  -> HscTypes.CoreModule  -- ^ The module to be inspected
+  -> m [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ The binders to meet the criteria
+findBinder criteria core = do
+  let binds = CoreSyn.flattenBinds $ HscTypes.cm_binds core
+  critbinds <- Monad.filterM (criteria . fst) binds
+  return critbinds
+
+-- | Determine if a binder has an Annotation meeting a certain criteria
+hasCLasHAnnotation ::
+  GHC.GhcMonad m =>
+  (CLasHAnn -> Bool)  -- ^ The criteria the Annotation has to meet
+  -> Var.Var          -- ^ The Binder
+  -> m Bool           -- ^ Indicates if binder has the Annotation
+hasCLasHAnnotation clashAnn var = do
+  let deserializer = Serialized.deserializeWithData
+  let target = Annotations.NamedTarget (Var.varName var)
+  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
+  let annEnts = filter clashAnn anns
+  case annEnts of
+    [] -> return False
+    xs -> return True
+
+-- | Determine if a binder has a certain name
+hasVarName ::   
+  GHC.GhcMonad m =>
+  String        -- ^ The name the binder has to have
+  -> Var.Var    -- ^ The Binder
+  -> m Bool     -- ^ Indicate if the binder has the name
+hasVarName lookfor bind = return $ lookfor == (Name.occNameString $ Name.nameOccName $ Name.getName bind)

@@ -20,4 +20,5 @@ Library
   build-depends:    base > 4, clash, ghc-paths
   extensions:       PackageImports          
   exposed-modules:  CLasH.Translator
+                    CLasH.Utils
   

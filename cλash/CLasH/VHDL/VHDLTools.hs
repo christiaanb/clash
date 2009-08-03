@@ -56,11 +56,11 @@ mkCondAssign dst cond true false = mkAssign dst (Just (cond, true)) false
 
 -- Create a conditional or unconditional assignment statement
 mkAssign ::
-  Either CoreBndr AST.VHDLName -> -- ^ The signal to assign to
-  Maybe (AST.Expr , AST.Expr) -> -- ^ Optionally, the condition to test for
+  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  -> Maybe (AST.Expr , AST.Expr) -- ^ Optionally, the condition to test for
                                  -- and the value to assign when true.
-  AST.Expr -> -- ^ The value to assign when false or no condition
-  AST.ConcSm -- ^ The resulting concurrent statement
+  -> AST.Expr -- ^ The value to assign when false or no condition
+  -> AST.ConcSm -- ^ The resulting concurrent statement
 mkAssign dst cond false_expr =
   let
     -- I'm not 100% how this assignment AST works, but this gets us what we
@@ -81,10 +81,10 @@ mkAssign dst cond false_expr =
     AST.CSSASm assign
 
 mkAssocElems :: 
-  [AST.Expr]                    -- | The argument that are applied to function
-  -> AST.VHDLName               -- | The binder in which to store the result
-  -> Entity                     -- | The entity to map against.
-  -> [AST.AssocElem]            -- | The resulting port maps
+  [AST.Expr]                    -- ^ The argument that are applied to function
+  -> AST.VHDLName               -- ^ The binder in which to store the result
+  -> Entity                     -- ^ The entity to map against.
+  -> [AST.AssocElem]            -- ^ The resulting port maps
 mkAssocElems args res entity =
     -- Create the actual AssocElems
     zipWith mkAssocElem ports sigs
@@ -107,6 +107,10 @@ mkAssocElem port signal = Just port AST.:=>: (AST.ADExpr signal)
 mkAssocElemIndexed :: AST.VHDLId -> AST.VHDLId -> AST.VHDLId -> AST.AssocElem
 mkAssocElemIndexed port signal index = Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
                       (AST.NSimple signal) [AST.PrimName $ AST.NSimple index])))
+
+-- | Create an aggregate signal
+mkAggregateSignal :: [AST.Expr] -> AST.Expr
+mkAggregateSignal x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x)
 
 mkComponentInst ::
   String -- ^ The portmap label
