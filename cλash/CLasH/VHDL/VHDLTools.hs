@@ -108,6 +108,10 @@ mkAssocElemIndexed :: AST.VHDLId -> AST.VHDLId -> AST.VHDLId -> AST.AssocElem
 mkAssocElemIndexed port signal index = Just port AST.:=>: (AST.ADName (AST.NIndexed (AST.IndexedName 
                       (AST.NSimple signal) [AST.PrimName $ AST.NSimple index])))
 
+-- | Create an aggregate signal
+mkAggregateSignal :: [AST.Expr] -> AST.Expr
+mkAggregateSignal x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x)
+
 mkComponentInst ::
   String -- ^ The portmap label
   -> AST.VHDLId -- ^ The entity name
