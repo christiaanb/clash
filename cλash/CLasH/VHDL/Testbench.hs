@@ -41,7 +41,7 @@ createTestbench mCycles stimuli top = do
   bndr <- mkInternalVar "testbench" TysWiredIn.unitTy
   let entity = createTestbenchEntity bndr
   modA tsEntities (Map.insert bndr entity)
-  arch <- createTestbenchArch mCycles stimuli' top
+  arch <- createTestbenchArch mCycles stimuli' top entity
   modA tsArchitectures (Map.insert bndr arch)
   return bndr
 
@@ -60,9 +60,10 @@ createTestbenchArch ::
   Maybe Int -- ^ Number of cycles to simulate
   -> [CoreSyn.CoreExpr] -- ^ Imput stimuli
   -> CoreSyn.CoreBndr -- ^ Top Entity
+  -> Entity -- ^ The signature to create an architecture for
   -> TranslatorSession (Architecture, [CoreSyn.CoreBndr])
   -- ^ The architecture and any other entities used.
-createTestbenchArch mCycles stimuli top = do
+createTestbenchArch mCycles stimuli top testent= do
   signature <- getEntity top
   let entId   = ent_id signature
       iIface  = ent_args signature
@@ -85,7 +86,7 @@ createTestbenchArch mCycles stimuli top = do
   let outputProc  = createOutputProc [oId]
   let arch = AST.ArchBody
               (AST.unsafeVHDLBasicId "test")
-              (AST.NSimple $ AST.unsafeIdAppend entId "_tb")
+              (AST.NSimple $ ent_id testent)
               (map AST.BDISD (finalIDecs ++ stimuliDecs ++ [oDecs]))
               (mIns :
                 ( (AST.CSPSm clkProc) : (AST.CSPSm outputProc) : finalAssigns ) )
