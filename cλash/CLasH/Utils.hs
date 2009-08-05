@@ -71,3 +71,14 @@ unzipM :: (Monad m) =>
   m [(a, b)]
   -> m ([a], [b])
 unzipM = Monad.liftM unzip
+
+catMaybesM :: (Monad m) =>
+  m [Maybe a]
+  -> m [a]
+catMaybesM = Monad.liftM Maybe.catMaybes
+
+concatM :: (Monad m) =>
+  m [[a]]
+  -> m [a]
+concatM = Monad.liftM concat
+
