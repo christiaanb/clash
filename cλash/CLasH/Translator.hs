@@ -8,7 +8,10 @@ import qualified System.Directory as Directory
 import qualified Maybe
 import qualified Monad
 import qualified System.FilePath as FilePath
+import qualified Control.Monad.Trans.State as State
 import Text.PrettyPrint.HughesPJ (render)
+import Data.Accessor
+import qualified Data.Map as Map
 
 -- GHC API
 import qualified CoreSyn
@@ -23,6 +26,7 @@ import qualified Language.VHDL.Ppr as Ppr
 
 -- Local Imports
 import CLasH.Normalize
+import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.GhcTools
@@ -92,27 +96,32 @@ moduleToVHDL ::
   -> [Maybe CoreSyn.CoreExpr] -- ^ The TestInput
   -> Bool                     -- ^ Is it stateful (in case InitState is not specified)
   -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDL env cores top init test stateful = do
-  let topEntity = Maybe.catMaybes top
-  case topEntity of
-    [] -> error "Top Entity Not Found"
-    [topEnt] -> do
-      let initialState = Maybe.catMaybes init
-      let isStateful = not (null initialState) || stateful
-      let testInput = Maybe.catMaybes test
-      -- Generate a UniqSupply
-      -- Running 
-      --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
-      -- on the compiler dir of ghc suggests that 'z' is not used to generate
-      -- a unique supply anywhere.
-      uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-      let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
-      let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
-      let (normalized_bindings, test_bindings, typestate) = normalizeModule env uniqSupply all_bindings testexprs [topEnt] [isStateful]
-      let vhdl = createDesignFiles typestate normalized_bindings topEnt test_bindings
-      mapM (putStr . render . Ppr.ppr . snd) vhdl
-      return vhdl
-    xs -> error "More than one topentity found"
+moduleToVHDL env cores topbinds' init test stateful = do
+  let topbinds = Maybe.catMaybes topbinds'
+  let initialState = Maybe.catMaybes init
+  let testInput = Maybe.catMaybes test
+  vhdl <- runTranslatorSession env $ do
+    let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
+    -- Store the bindings we loaded
+    tsBindings %= Map.fromList all_bindings 
+    --let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
+    createDesignFiles topbinds 
+  mapM (putStr . render . Ppr.ppr . snd) vhdl
+  return vhdl
+
+-- Run the given translator session. Generates a new UniqSupply for that
+-- session.
+runTranslatorSession :: HscTypes.HscEnv -> TranslatorSession a -> IO a
+runTranslatorSession env session = do
+  -- Generate a UniqSupply
+  -- Running 
+  --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
+  -- on the compiler dir of ghc suggests that 'z' is not used to generate
+  -- a unique supply anywhere.
+  uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
+  let init_typestate = TypeState Map.empty [] Map.empty Map.empty env
+  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty Map.empty Map.empty
+  return $ State.evalState session init_state
 
 -- | Prepares the directory for writing VHDL files. This means creating the
 --   dir if it does not exist and removing all existing .vhdl files from it.

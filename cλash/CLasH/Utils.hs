@@ -1,10 +1,14 @@
 module CLasH.Utils
   ( listBindings
   , listBind
+  , makeCached
   ) where
 
 -- Standard Imports
 import qualified Maybe
+import Data.Accessor
+import qualified Data.Map as Map
+import qualified Control.Monad.Trans.State as State
 
 -- GHC API
 import qualified CoreSyn
@@ -47,3 +51,21 @@ listBind libdir filenames name = do
     where
       bindFinder  = findBind (hasVarName name)
       exprFinder  = findExpr (hasVarName name)
+
+-- Make a caching version of a stateful computatation.
+makeCached :: (Monad m, Ord k) =>
+  k -- ^ The key to use for the cache
+  -> Accessor s (Map.Map k v) -- ^ The accessor to get at the cache
+  -> State.StateT s m v -- ^ How to compute the value to cache?
+  -> State.StateT s m v -- ^ The resulting value, from the cache or freshly
+                        --   computed.
+makeCached key accessor create = do
+  cache <- getA accessor
+  case Map.lookup key cache of
+    -- Found in cache, just return
+    Just value -> return value
+    -- Not found, compute it and put it in the cache
+    Nothing -> do
+      value <- create
+      modA accessor (Map.insert key value)
+      return value

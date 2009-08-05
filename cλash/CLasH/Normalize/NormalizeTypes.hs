@@ -13,26 +13,14 @@ import Debug.Trace
 
 -- GHC API
 import CoreSyn
-import qualified UniqSupply
 import qualified VarSet
 import Outputable ( Outputable, showSDoc, ppr )
 
 -- Local imports
 import CLasH.Utils.Core.CoreShow
 import CLasH.Utils.Pretty
-import CLasH.VHDL.VHDLTypes -- For TypeState
+import CLasH.Translator.TranslatorTypes
 
-data TransformState = TransformState {
-    tsUniqSupply_ :: UniqSupply.UniqSupply
-  , tsBindings_ :: Map.Map CoreBndr CoreExpr
-  , tsNormalized_ :: VarSet.VarSet -- ^ The binders that have been normalized
-  , tsType_ :: TypeState
-}
-
-$( Data.Accessor.Template.deriveAccessors ''TransformState )
-
--- A session of multiple transformations over multiple expressions
-type TransformSession = (State.State TransformState)
 -- Wrap a writer around a TransformSession, to run a single transformation
 -- over a single expression and track if the expression was changed.
 type TransformMonad = Writer.WriterT Monoid.Any TransformSession

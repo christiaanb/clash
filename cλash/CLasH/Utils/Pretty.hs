@@ -24,14 +24,6 @@ import CLasH.Utils.Core.CoreShow
 printList :: (a -> Doc) -> [a] -> Doc
 printList f = brackets . fsep . punctuate comma . map f
 
-instance Pretty TranslatorSession where
-  pPrint (TranslatorSession mod nameCount) =
-    text "Module: " $$ nest 15 (text modname)
-    $+$ text "NameCount: " $$ nest 15 (int nameCount)
-    where
-      ppfunc (hsfunc, flatfunc) =
-        pPrint hsfunc $+$ nest 5 (pPrint flatfunc)
-      modname = showSDoc $ Module.pprModule (HscTypes.cm_module mod)
 {-
 instance Pretty FuncData where
   pPrint (FuncData flatfunc entity arch) =
@@ -48,10 +40,11 @@ instance Pretty FuncData where
 -}
 
 instance Pretty Entity where
-  pPrint (Entity id args res) =
+  pPrint (Entity id args res decl) =
     text "Entity: " $$ nest 10 (pPrint id)
     $+$ text "Args: " $$ nest 10 (pPrint args)
     $+$ text "Result: " $$ nest 10 (pPrint res)
+    $+$ text "Declaration not shown"
 
 instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Bind b) where
   pPrint (CoreSyn.NonRec b expr) =

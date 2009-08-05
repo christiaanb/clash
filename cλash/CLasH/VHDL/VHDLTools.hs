@@ -30,6 +30,7 @@ import qualified CoreSubst
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
+import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Pretty
 import CLasH.VHDL.Constants

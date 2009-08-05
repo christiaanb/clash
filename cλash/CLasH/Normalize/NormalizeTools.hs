@@ -35,6 +35,7 @@ import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import CLasH.Normalize.NormalizeTypes
+import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.Pretty
 import CLasH.VHDL.VHDLTypes
 import qualified CLasH.VHDL.VHDLTools as VHDLTools
@@ -257,14 +258,6 @@ substitute ((b, e):subss) expr = substitute subss' expr'
     -- Apply this substitution on all the expressions in the remaining
     -- substitutions
     subss' = map (Arrow.second (CoreSubst.substExpr subs)) subss
-
--- Run a given TransformSession. Used mostly to setup the right calls and
--- an initial state.
-runTransformSession :: HscTypes.HscEnv -> UniqSupply.UniqSupply -> TransformSession a -> a
-runTransformSession env uniqSupply session = State.evalState session emptyTransformState
-  where
-    emptyTypeState = TypeState Map.empty [] Map.empty Map.empty env
-    emptyTransformState = TransformState uniqSupply Map.empty VarSet.emptyVarSet emptyTypeState
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool
