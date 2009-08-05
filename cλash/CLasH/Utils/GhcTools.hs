@@ -9,15 +9,48 @@ import qualified System.IO.Unsafe
 -- GHC API
 import qualified Annotations
 import qualified CoreSyn
+import qualified CoreUtils
 import qualified DynFlags
 import qualified HscTypes
 import qualified GHC
 import qualified Name
 import qualified Serialized
 import qualified Var
+import qualified Outputable
 
 -- Local Imports
+import CLasH.Utils.Pretty
+import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
+import CLasH.Utils
+
+listBindings :: FilePath -> [FilePath] -> IO [()]
+listBindings libdir filenames = do
+  (cores,_,_) <- loadModules libdir filenames Nothing
+  let binds = concat $ map (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
+  mapM (listBinding) binds
+
+listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
+listBinding (b, e) = do
+  putStr "\nBinder: "
+  putStr $ show b
+  putStr "\nType of Binder: \n"
+  putStr $ Outputable.showSDoc $ Outputable.ppr $ Var.varType b
+  putStr "\n\nExpression: \n"
+  putStr $ prettyShow e
+  putStr "\n\n"
+  putStr $ Outputable.showSDoc $ Outputable.ppr e
+  putStr "\n\nType of Expression: \n"
+  putStr $ Outputable.showSDoc $ Outputable.ppr $ CoreUtils.exprType e
+  putStr "\n\n"
+  
+-- | Show the core structure of the given binds in the given file.
+listBind :: FilePath -> [FilePath] -> String -> IO ()
+listBind libdir filenames name = do
+  (cores,_,_) <- loadModules libdir filenames Nothing
+  bindings <- concatM $ mapM (findBinder (hasVarName name)) cores
+  mapM listBinding bindings
+  return ()
 
 -- Change a DynFlag from within the Ghc monad. Strangely enough there seems to
 -- be no standard function to do exactly this.
@@ -46,31 +79,25 @@ unsafeRunGhc libDir m =
 loadModules ::
   FilePath      -- ^ The GHC Library directory 
   -> [String]   -- ^ The files that need to be loaded
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The TopEntity finder
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The InitState finder
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreExpr)) -- ^ The TestInput finder
+  -> Maybe Finder -- ^ What entities to build?
   -> IO ( [HscTypes.CoreModule]
-        , [Maybe CoreSyn.CoreBndr]
-        , [Maybe CoreSyn.CoreBndr]
-        , [Maybe CoreSyn.CoreExpr]
         , HscTypes.HscEnv
-        ) -- ^ ( The loaded modules, the TopEntity, the InitState, the TestInput
-          --   , The Environment corresponding of the loaded modules
-          --   )
-loadModules libdir filenames topEntLoc initSLoc testLoc =
+        , [EntitySpec]
+        ) -- ^ ( The loaded modules, the resulting ghc environment, the entities to build)
+loadModules libdir filenames finder =
   GHC.defaultErrorHandler DynFlags.defaultDynFlags $ do
     GHC.runGhc (Just libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags
       cores <- mapM GHC.compileToCoreModule filenames
       env <- GHC.getSession
-      top_entity <- mapM topEntLoc cores
-      init_state <- mapM initSLoc cores
-      test_input <- mapM testLoc cores
-      return (cores, top_entity, init_state, test_input, env)
+      specs <- case finder of
+        Nothing -> return []
+        Just f -> concatM $ mapM f cores
+      return (cores, env, specs)
 
 findBind ::
-  GHC.GhcMonad m =>
+  Monad m =>
   (Var.Var -> m Bool)
   -> HscTypes.CoreModule
   -> m (Maybe CoreSyn.CoreBndr)
@@ -81,7 +108,7 @@ findBind criteria core = do
     bndrs -> return $ Just $ fst $ head bndrs
 
 findExpr ::
-  GHC.GhcMonad m =>
+  Monad m =>
   (Var.Var -> m Bool)
   -> HscTypes.CoreModule
   -> m (Maybe CoreSyn.CoreExpr)
@@ -93,7 +120,7 @@ findExpr criteria core = do
 
 -- | Find a binder in module according to a certain criteria
 findBinder :: 
-  GHC.GhcMonad m =>
+  Monad m =>
   (Var.Var -> m Bool)     -- ^ The criteria to filter the binders on
   -> HscTypes.CoreModule  -- ^ The module to be inspected
   -> m [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ The binders to meet the criteria
@@ -119,8 +146,21 @@ hasCLasHAnnotation clashAnn var = do
 
 -- | Determine if a binder has a certain name
 hasVarName ::   
-  GHC.GhcMonad m =>
+  Monad m =>
   String        -- ^ The name the binder has to have
   -> Var.Var    -- ^ The Binder
   -> m Bool     -- ^ Indicate if the binder has the name
 hasVarName lookfor bind = return $ lookfor == (Name.occNameString $ Name.nameOccName $ Name.getName bind)
+
+-- | Make a complete spec out of a three conditions
+findSpec ::
+  (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool)
+  -> Finder
+
+findSpec topc statec testc mod = do
+  top <- findBind topc mod
+  state <- findExpr statec mod
+  test <- findExpr testc mod
+  case top of
+    Just t -> return [(t, state, test)]
+    Nothing -> error $ "Could not find top entity requested"

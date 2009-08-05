@@ -28,6 +28,7 @@ import qualified Language.VHDL.Ppr as Ppr
 import CLasH.Normalize
 import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
+import CLasH.Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.GhcTools
 import CLasH.VHDL
@@ -44,11 +45,11 @@ makeVHDLStrings ::
   -> Bool       -- ^ Is it stateful? (in case InitState is empty)
   -> IO ()
 makeVHDLStrings libdir filenames topentity initstate testinput stateful = do
-  makeVHDL libdir filenames findTopEntity findInitState findTestInput stateful
+  makeVHDL libdir filenames finder stateful
     where
-      findTopEntity = findBind (hasVarName topentity)
-      findInitState = findBind (hasVarName initstate)
-      findTestInput = findExpr (hasVarName testinput)
+      finder = findSpec (hasVarName topentity)
+                        (hasVarName initstate)
+                        (hasVarName testinput)
 
 -- | Turn Haskell to VHDL, Using the Annotations for Top Entity, Initial State
 --   and Test Inputs found in the Files. 
@@ -58,29 +59,27 @@ makeVHDLAnnotations ::
   -> Bool       -- ^ Is it stateful? (in case InitState is not specified)
   -> IO ()
 makeVHDLAnnotations libdir filenames stateful = do
-  makeVHDL libdir filenames findTopEntity findInitState findTestInput stateful
+  makeVHDL libdir filenames finder stateful
     where
-      findTopEntity = findBind (hasCLasHAnnotation isTopEntity)
-      findInitState = findBind (hasCLasHAnnotation isInitState)
-      findTestInput = findExpr (hasCLasHAnnotation isTestInput)
+      finder = findSpec (hasCLasHAnnotation isTopEntity)
+                        (hasCLasHAnnotation isInitState)
+                        (hasCLasHAnnotation isTestInput)
 
 -- | Turn Haskell to VHDL, using the given finder functions to find the Top
 --   Entity, Initial State and Test Inputs in the Haskell Files.
 makeVHDL ::
   FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The Filenames
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The Top Entity Finder
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreBndr)) -- ^ The Init State Finder
-  -> (HscTypes.CoreModule -> GHC.Ghc (Maybe CoreSyn.CoreExpr)) -- ^ The Test Input Finder
+  -> Finder
   -> Bool       -- ^ Indicates if it is meant to be stateful
   -> IO ()
-makeVHDL libdir filenames topEntFinder initStateFinder testInputFinder stateful = do
+makeVHDL libdir filenames finder stateful = do
   -- Load the modules
-  (cores, top, init, test, env) <- loadModules libdir filenames topEntFinder initStateFinder testInputFinder
+  (cores, env, specs) <- loadModules libdir filenames (Just finder)
   -- Translate to VHDL
-  vhdl <- moduleToVHDL env cores top init test stateful
-  -- Write VHDL to file
-  let top_entity = Maybe.fromJust $ head top
+  vhdl <- moduleToVHDL env cores specs stateful
+  -- Write VHDL to file. Just use the first entity for the name
+  let top_entity = (\(t, _, _) -> t) $ head specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM (writeVHDL dir) vhdl
@@ -92,23 +91,26 @@ makeVHDL libdir filenames topEntFinder initStateFinder testInputFinder stateful 
 moduleToVHDL ::
   HscTypes.HscEnv             -- ^ The GHC Environment
   -> [HscTypes.CoreModule]    -- ^ The Core Modules
-  -> [Maybe CoreSyn.CoreBndr] -- ^ The TopEntity
-  -> [Maybe CoreSyn.CoreBndr] -- ^ The InitState
-  -> [Maybe CoreSyn.CoreExpr] -- ^ The TestInput
+  -> [EntitySpec]             -- ^ The entities to generate
   -> Bool                     -- ^ Is it stateful (in case InitState is not specified)
   -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDL env cores topbinds' init test stateful = do
-  let topbinds = Maybe.catMaybes topbinds'
-  let initialState = Maybe.catMaybes init
-  let testInput = Maybe.catMaybes test
+moduleToVHDL env cores specs stateful = do
   vhdl <- runTranslatorSession env $ do
     let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings 
-    test_binds <- Monad.zipWithM (createTestbench Nothing) testInput topbinds
+    test_binds <- catMaybesM $ Monad.mapM mkTest specs
+    let topbinds = map (\(top, _, _) -> top) specs
     createDesignFiles (topbinds ++ test_binds)
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   return vhdl
+  where
+    mkTest :: EntitySpec -> TranslatorSession (Maybe CoreSyn.CoreBndr)
+    -- Create a testbench for any entry that has test input
+    mkTest (_, _, Nothing) = return Nothing
+    mkTest (top, _, Just input) = do
+      bndr <- createTestbench Nothing input top
+      return $ Just bndr
 
 -- Run the given translator session. Generates a new UniqSupply for that
 -- session.
