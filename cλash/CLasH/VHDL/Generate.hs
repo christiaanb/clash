@@ -51,9 +51,8 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       res' <- mkMap res
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
-      let ent_decl' = createEntityAST vhdl_id args' res'
-      let AST.EntityDec entity_id _ = ent_decl' 
-      let signature = Entity entity_id args' res' ent_decl'
+      let ent_decl = createEntityAST vhdl_id args' res'
+      let signature = Entity vhdl_id args' res' ent_decl
       return signature
   where
     mkMap ::
