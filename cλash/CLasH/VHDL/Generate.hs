@@ -146,12 +146,17 @@ genFromInteger' (Left res) f lits = do {
         ; (tycon, args) = Type.splitTyConApp ty
         ; name = Name.getOccString (TyCon.tyConName tycon)
         } ;
-  ; len <- case name of
-    "SizedInt" -> MonadState.lift vsType $ tfp_to_int (sized_int_len_ty ty)
-    "SizedWord" -> MonadState.lift vsType $ tfp_to_int (sized_word_len_ty ty)
-  ; let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId
-  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname)) 
-            [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+  ; case name of
+    "RangedWord" -> return $ AST.PrimLit (show (last lits))
+    otherwise -> do {
+      ; len <- case name of
+        "SizedInt" -> MonadState.lift vsType $ tfp_to_int (sized_int_len_ty ty)
+        "SizedWord" -> MonadState.lift vsType $ tfp_to_int (sized_word_len_ty ty)
+        "RangedWord" -> MonadState.lift vsType $ tfp_to_int (ranged_word_bound_ty ty)
+      ; let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId
+      ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname))
+                [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+      }
   }
 
 genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
@@ -689,7 +694,8 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (replaceId, (AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet],[]))
   , (lastId, (AST.SubProgBody lastSpec    []                  [lastExpr],[]))
   , (initId, (AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet],[]))
-  , (takeId, (AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet],[]))
+  , (minimumId, (AST.SubProgBody minimumSpec [] [minimumExpr],[]))
+  , (takeId, (AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet],[minimumId]))
   , (dropId, (AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet],[]))
   , (plusgtId, (AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet],[]))
   , (emptyId, (AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr],[]))
@@ -712,12 +718,14 @@ genUnconsVectorFuns elemTM vectorTM  =
     vec1Par = AST.unsafeVHDLBasicId "vec1"
     vec2Par = AST.unsafeVHDLBasicId "vec2"
     nPar    = AST.unsafeVHDLBasicId "n"
+    leftPar = AST.unsafeVHDLBasicId "nLeft"
+    rightPar = AST.unsafeVHDLBasicId "nRight"
     iId     = AST.unsafeVHDLBasicId "i"
     iPar    = iId
     aPar    = AST.unsafeVHDLBasicId "a"
     fPar = AST.unsafeVHDLBasicId "f"
     sPar = AST.unsafeVHDLBasicId "s"
-    resId   = AST.unsafeVHDLBasicId "res"
+    resId   = AST.unsafeVHDLBasicId "res"    
     exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
                                AST.IfaceVarDec ixPar  naturalTM] elemTM
     exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed 
@@ -775,21 +783,32 @@ genUnconsVectorFuns elemTM vectorTM  =
                                   AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "2"))
     initRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    minimumSpec = AST.Function (mkVHDLExtId minimumId) [AST.IfaceVarDec leftPar   naturalTM,
+                                   AST.IfaceVarDec rightPar naturalTM ] naturalTM
+    minimumExpr = AST.IfSm ((AST.PrimName $ AST.NSimple leftPar) AST.:<: (AST.PrimName $ AST.NSimple rightPar))
+                        [AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple leftPar)]
+                        []
+                        (Just $ AST.Else [minimumExprRet])
+      where minimumExprRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple rightPar)
     takeSpec = AST.Function (mkVHDLExtId takeId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec vecPar vectorTM ] vectorTM
-       -- variable res : fsvec_x (0 to n-1);
+       -- variable res : fsvec_x (0 to (minimum (n,vec'length))-1);
+    minLength = AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId minimumId))  
+                              [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple nPar)
+                              ,Nothing AST.:=>: AST.ADExpr (AST.PrimName (AST.NAttribute $ 
+                                AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))]
     takeVar = 
          AST.VarDec resId 
                 (AST.SubtypeIn vectorTM
                   (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
                    [AST.ToRange (AST.PrimLit "0")
-                               ((AST.PrimName (AST.NSimple nPar)) AST.:-:
+                               (minLength AST.:-:
                                 (AST.PrimLit "1"))   ]))
                 Nothing
        -- res AST.:= vec(0 to n-1)
     takeExpr = AST.NSimple resId AST.:= 
-                    (vecSlice (AST.PrimLit "1") 
-                              (AST.PrimName (AST.NSimple $ nPar) AST.:-: AST.PrimLit "1"))
+                    (vecSlice (AST.PrimLit "0") 
+                              (minLength AST.:-: AST.PrimLit "1"))
     takeRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     dropSpec = AST.Function (mkVHDLExtId dropId) [AST.IfaceVarDec nPar   naturalTM,
                                    AST.IfaceVarDec vecPar vectorTM ] vectorTM 
@@ -1045,7 +1064,7 @@ genUnconsVectorFuns elemTM vectorTM  =
 -- builder function.
 globalNameTable :: NameTable
 globalNameTable = Map.fromList
-  [ (exId             , (2, genFCall False          ) )
+  [ (exId             , (2, genFCall True          ) )
   , (replaceId        , (3, genFCall False          ) )
   , (headId           , (1, genFCall True           ) )
   , (lastId           , (1, genFCall True           ) )
@@ -1092,4 +1111,5 @@ globalNameTable = Map.fromList
   , (resizeId         , (1, genResize               ) )
   , (sizedIntId       , (1, genSizedInt             ) )
   , (tfvecId          , (1, genTFVec                ) )
+  , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

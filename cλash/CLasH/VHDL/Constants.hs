@@ -125,6 +125,9 @@ initId = "init"
 tailId :: String
 tailId = "tail"
 
+-- | minimum ftp function identifier
+minimumId :: String
+minimumId = "minimum"
 
 -- | take function identifier
 takeId :: String
