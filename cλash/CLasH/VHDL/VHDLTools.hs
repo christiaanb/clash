@@ -282,7 +282,7 @@ vhdl_ty msg ty = do
 -- Returns either an error message or the resulting type.
 vhdl_ty_either :: Type.Type -> TypeSession (Either String AST.TypeMark)
 vhdl_ty_either ty = do
-  typemap <- getA vsTypes
+  typemap <- getA tsTypes
   htype_either <- mkHType ty
   case htype_either of
     -- No errors
@@ -302,8 +302,8 @@ vhdl_ty_either ty = do
           case newty_maybe of
             Right (ty_id, ty_def) -> do
               -- TODO: Check name uniqueness
-              modA vsTypes (Map.insert htype (ty_id, ty_def))
-              modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
+              modA tsTypes (Map.insert htype (ty_id, ty_def))
+              modA tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)]) 
               return (Right ty_id)
             Left err -> return $ Left $
               "VHDLTools.vhdl_ty: Unsupported Haskell type: " ++ pprString ty ++ "\n"
@@ -354,7 +354,7 @@ mk_tycon_ty ty tycon args =
           let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
           let ty_def = AST.TDR $ AST.RecordTypeDef elems
           let tupshow = mkTupleShow elem_tys ty_id
-          modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, tupshow)
+          modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, tupshow)
           return $ Right (ty_id, Left ty_def)
         -- There were errors in element types
         (errors, _) -> return $ Left $
@@ -377,8 +377,8 @@ mk_vector_ty ::
       -- ^ An error message or The typemark created.
 
 mk_vector_ty ty = do
-  types_map <- getA vsTypes
-  env <- getA vsHscEnv
+  types_map <- getA tsTypes
+  env <- getA tsHscEnv
   let (nvec_l, nvec_el) = Type.splitAppTy ty
   let (nvec, leng) = Type.splitAppTy nvec_l
   let vec_ty = Type.mkAppTy nvec nvec_el
@@ -398,10 +398,10 @@ mk_vector_ty ty = do
         Nothing -> do
           let vec_id = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId el_ty_tm)
           let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] el_ty_tm
-          modA vsTypes (Map.insert (StdType $ OrdType vec_ty) (vec_id, (Left vec_def)))
-          modA vsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))])
+          modA tsTypes (Map.insert (StdType $ OrdType vec_ty) (vec_id, (Left vec_def)))
+          modA tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))])
           let vecShowFuns = mkVectorShow el_ty_tm vec_id
-          mapM_ (\(id, subprog) -> modA vsTypeFuns $ Map.insert (OrdType vec_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
+          mapM_ (\(id, subprog) -> modA tsTypeFuns $ Map.insert (OrdType vec_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Right (ty_id, Right ty_def))
     -- Could not create element type
@@ -429,7 +429,7 @@ mk_unsigned_ty ty = do
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
   let unsignedshow = mkIntegerShow ty_id
-  modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, unsignedshow)
+  modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, unsignedshow)
   return (Right (ty_id, Right ty_def))
   
 mk_signed_ty ::
@@ -441,7 +441,7 @@ mk_signed_ty ty = do
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn signedTM (Just range)
   let signedshow = mkIntegerShow ty_id
-  modA vsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, signedshow)
+  modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, signedshow)
   return (Right (ty_id, Right ty_def))
 
 -- Finds the field labels for VHDL type generated for the given Core type,
@@ -452,7 +452,7 @@ getFieldLabels ty = do
   let error_msg = "\nVHDLTools.getFieldLabels: Can not get field labels, because: " ++ pprString ty ++ "can not be generated." 
   vhdl_ty error_msg ty
   -- Get the types map, lookup and unpack the VHDL TypeDef
-  types <- getA vsTypes
+  types <- getA tsTypes
   -- Assume the type for which we want labels is really translatable
   Right htype <- mkHType ty
   case Map.lookup htype types of
@@ -537,7 +537,7 @@ isReprType ty = do
 
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
-  hscenv <- getA vsHscEnv
+  hscenv <- getA tsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
   case Type.splitTyConApp_maybe norm_ty of
     Just (tycon, args) -> do
@@ -547,21 +547,21 @@ tfp_to_int ty = do
           len <- tfp_to_int' ty
           return len
         otherwise -> do
-          modA vsTfpInts (Map.insert (OrdType norm_ty) (-1))
+          modA tsTfpInts (Map.insert (OrdType norm_ty) (-1))
           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 
 tfp_to_int' :: Type.Type -> TypeSession Int
 tfp_to_int' ty = do
-  lens <- getA vsTfpInts
-  hscenv <- getA vsHscEnv
+  lens <- getA tsTfpInts
+  hscenv <- getA tsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
   let existing_len = Map.lookup (OrdType norm_ty) lens
   case existing_len of
     Just len -> return len
     Nothing -> do
       let new_len = eval_tfp_int hscenv ty
-      modA vsTfpInts (Map.insert (OrdType norm_ty) (new_len))
+      modA tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
       return new_len
       
 mkTupleShow :: 
@@ -698,11 +698,11 @@ genExprPCall2 entid arg1 arg2 =
         AST.ProcCall (AST.NSimple entid) $
          map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg1,arg2]
 
-mkSigDec :: CoreSyn.CoreBndr -> VHDLSession (Maybe AST.SigDec)
+mkSigDec :: CoreSyn.CoreBndr -> TranslatorSession (Maybe AST.SigDec)
 mkSigDec bndr =
   if True then do --isInternalSigUse use || isStateSigUse use then do
     let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString bndr 
-    type_mark <- MonadState.lift vsType $ vhdl_ty error_msg (Var.varType bndr)
+    type_mark <- MonadState.lift tsType $ vhdl_ty error_msg (Var.varType bndr)
     return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
   else
     return Nothing

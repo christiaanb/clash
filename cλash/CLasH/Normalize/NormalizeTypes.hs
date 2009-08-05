@@ -21,25 +21,25 @@ import CLasH.Utils.Core.CoreShow
 import CLasH.Utils.Pretty
 import CLasH.Translator.TranslatorTypes
 
--- Wrap a writer around a TransformSession, to run a single transformation
+-- Wrap a writer around a TranslatorSession, to run a single transformation
 -- over a single expression and track if the expression was changed.
-type TransformMonad = Writer.WriterT Monoid.Any TransformSession
+type TransformMonad = Writer.WriterT Monoid.Any TranslatorSession
 
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = CoreExpr -> TransformMonad CoreExpr
 
 -- Finds the value of a global binding, if available
-getGlobalBind :: CoreBndr -> TransformSession (Maybe CoreExpr)
+getGlobalBind :: CoreBndr -> TranslatorSession (Maybe CoreExpr)
 getGlobalBind bndr = do
   bindings <- getA tsBindings
   return $ Map.lookup bndr bindings 
 
 -- Adds a new global binding with the given value
-addGlobalBind :: CoreBndr -> CoreExpr -> TransformSession ()
+addGlobalBind :: CoreBndr -> CoreExpr -> TranslatorSession ()
 addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)
 
 -- Returns a list of all global binders
-getGlobalBinders :: TransformSession [CoreBndr]
+getGlobalBinders :: TranslatorSession [CoreBndr]
 getGlobalBinders = do
   bindings <- getA tsBindings
   return $ Map.keys bindings

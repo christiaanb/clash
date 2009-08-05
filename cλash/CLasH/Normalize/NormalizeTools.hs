@@ -47,7 +47,7 @@ import qualified CLasH.VHDL.VHDLTools as VHDLTools
 mkInternalVar :: String -> Type.Type -> TransformMonad Var.Var
 mkInternalVar str ty = Trans.lift (mkInternalVar' str ty)
   
-mkInternalVar' :: String -> Type.Type -> TransformSession Var.Var
+mkInternalVar' :: String -> Type.Type -> TranslatorSession Var.Var
 mkInternalVar' str ty = do
   uniq <- mkUnique'
   let occname = OccName.mkVarOcc (str ++ show uniq)
@@ -61,7 +61,7 @@ mkInternalVar' str ty = do
 mkTypeVar :: String -> Type.Kind -> TransformMonad Var.Var
 mkTypeVar str kind = Trans.lift (mkTypeVar' str kind)
   
-mkTypeVar' :: String -> Type.Kind -> TransformSession Var.Var
+mkTypeVar' :: String -> Type.Kind -> TranslatorSession Var.Var
 mkTypeVar' str kind = do
   uniq <- mkUnique'
   let occname = OccName.mkVarOcc (str ++ show uniq)
@@ -74,7 +74,7 @@ mkTypeVar' str kind = do
 mkBinderFor :: CoreExpr -> String -> TransformMonad Var.Var
 mkBinderFor expr string = Trans.lift (mkBinderFor' expr string)
 
-mkBinderFor' :: CoreExpr -> String -> TransformSession Var.Var
+mkBinderFor' :: CoreExpr -> String -> TranslatorSession Var.Var
 mkBinderFor' (Type ty) string = mkTypeVar' string (Type.typeKind ty)
 mkBinderFor' expr string = mkInternalVar' string (CoreUtils.exprType expr)
 
@@ -192,7 +192,7 @@ subnotappargs trans (App a b) = do
 subnotappargs trans expr = subeverywhere (notappargs trans) expr
 
 -- Runs each of the transforms repeatedly inside the State monad.
-dotransforms :: [Transform] -> CoreExpr -> TransformSession CoreExpr
+dotransforms :: [Transform] -> CoreExpr -> TranslatorSession CoreExpr
 dotransforms transs expr = do
   (expr', changed) <- Writer.runWriterT $ Monad.foldM (flip ($)) expr transs
   if Monoid.getAny changed then dotransforms transs expr' else return expr'
@@ -233,7 +233,7 @@ change val = do
 mkUnique :: TransformMonad Unique.Unique
 mkUnique = Trans.lift $ mkUnique'
 
-mkUnique' :: TransformSession Unique.Unique    
+mkUnique' :: TranslatorSession Unique.Unique    
 mkUnique' = do
   us <- getA tsUniqSupply 
   let (us', us'') = UniqSupply.splitUniqSupply us
@@ -264,7 +264,7 @@ isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool
 isRepr (Type ty) = return False
 isRepr expr = Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType (CoreUtils.exprType expr)
 
-is_local_var :: CoreSyn.CoreExpr -> TransformSession Bool
+is_local_var :: CoreSyn.CoreExpr -> TranslatorSession Bool
 is_local_var (CoreSyn.Var v) = do
   bndrs <- getGlobalBinders
   return $ not $ v `elem` bndrs

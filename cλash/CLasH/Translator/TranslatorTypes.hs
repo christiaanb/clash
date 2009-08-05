@@ -62,13 +62,6 @@ data TypeState = TypeState {
 -- Derive accessors
 $( Data.Accessor.Template.deriveAccessors ''TypeState )
 
--- Compatibility with old VHDLSession
-vsTypes = tsTypes
-vsTypeDecls = tsTypeDecls
-vsTypeFuns = tsTypeFuns
-vsTfpInts = tsTfpInts
-vsHscEnv = tsHscEnv
-
 -- Define a session
 type TypeSession = State.State TypeState
 -- A global state for the translator
@@ -85,13 +78,6 @@ data TranslatorState = TranslatorState {
 $( Data.Accessor.Template.deriveAccessors ''TranslatorState )
 
 type TranslatorSession = State.State TranslatorState
-
--- Compatibility for the old VHDLSesssion
-vsType = tsType
-type VHDLSession = TranslatorSession
-
--- Compatibility for the old TransformSession
-type TransformSession = TranslatorSession
 
 -- Does the given binder reference a top level binder in the current
 -- module(s)?
