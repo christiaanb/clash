@@ -27,19 +27,3 @@ type TransformMonad = Writer.WriterT Monoid.Any TranslatorSession
 
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = CoreExpr -> TransformMonad CoreExpr
-
--- Finds the value of a global binding, if available
-getGlobalBind :: CoreBndr -> TranslatorSession (Maybe CoreExpr)
-getGlobalBind bndr = do
-  bindings <- getA tsBindings
-  return $ Map.lookup bndr bindings 
-
--- Adds a new global binding with the given value
-addGlobalBind :: CoreBndr -> CoreExpr -> TranslatorSession ()
-addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)
-
--- Returns a list of all global binders
-getGlobalBinders :: TranslatorSession [CoreBndr]
-getGlobalBinders = do
-  bindings <- getA tsBindings
-  return $ Map.keys bindings

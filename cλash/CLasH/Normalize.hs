@@ -39,6 +39,7 @@ import CLasH.Normalize.NormalizeTools
 import CLasH.VHDL.VHDLTypes
 import qualified CLasH.Utils as Utils
 import CLasH.Utils.Core.CoreTools
+import CLasH.Utils.Core.BinderTools
 import CLasH.Utils.Pretty
 
 --------------------------------
@@ -51,7 +52,7 @@ import CLasH.Utils.Pretty
 eta, etatop :: Transform
 eta expr | is_fun expr && not (is_lam expr) = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
-  id <- mkInternalVar "param" arg_ty
+  id <- Trans.lift $ mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta e = return e
@@ -112,7 +113,7 @@ letsimpl expr@(Let (Rec binds) res) = do
     then do
       -- If the result is not a local var already (to prevent loops with
       -- ourselves), extract it.
-      id <- mkInternalVar "foo" (CoreUtils.exprType res)
+      id <- Trans.lift $ mkInternalVar "foo" (CoreUtils.exprType res)
       let bind = (id, res)
       change $ Let (Rec (bind:binds)) (Var id)
     else
@@ -188,7 +189,7 @@ scrutsimpl expr@(Case scrut b ty alts) = do
   repr <- isRepr scrut
   if repr
     then do
-      id <- mkInternalVar "scrut" (CoreUtils.exprType scrut)
+      id <- Trans.lift $ mkInternalVar "scrut" (CoreUtils.exprType scrut)
       change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
     else
       return expr
@@ -262,7 +263,7 @@ casesimpl expr@(Case scrut b ty alts) = do
             -- Create on new binder that will actually capture a value in this
             -- case statement, and return it.
             let bty = (Id.idType b)
-            id <- mkInternalVar "sel" bty
+            id <- Trans.lift $ mkInternalVar "sel" bty
             let binders = take i wildbndrs ++ [id] ++ drop (i+1) wildbndrs
             let caseexpr = Case scrut b bty [(con, binders, Var id)]
             return (wildbndrs!!i, Just (b, caseexpr))
@@ -282,7 +283,7 @@ casesimpl expr@(Case scrut b ty alts) = do
         -- prevent loops with inlinenonrep).
         if (not uses_bndrs) && (not local_var) && repr
           then do
-            id <- mkInternalVar "caseval" (CoreUtils.exprType expr)
+            id <- Trans.lift $ mkInternalVar "caseval" (CoreUtils.exprType expr)
             -- We don't flag a change here, since casevalsimpl will do that above
             -- based on Just we return here.
             return $ (Just (id, expr), Var id)
@@ -322,7 +323,7 @@ appsimpl expr@(App f arg) = do
   local_var <- Trans.lift $ is_local_var arg
   if repr && not local_var
     then do -- Extract representable arguments
-      id <- mkInternalVar "arg" (CoreUtils.exprType arg)
+      id <- Trans.lift $ mkInternalVar "arg" (CoreUtils.exprType arg)
       change $ Let (Rec [(id, arg)]) (App f (Var id))
     else -- Leave non-representable arguments unchanged
       return expr
@@ -358,7 +359,7 @@ argprop expr@(App _ _) | is_var fexpr = do
           -- the old body applied to some arguments.
           let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
           -- Create a new function with the same name but a new body
-          newf <- mkFunction f newbody
+          newf <- Trans.lift $ mkFunction f newbody
           -- Replace the original application with one of the new function to the
           -- new arguments.
           change $ MkCore.mkCoreApps (Var newf) newargs
@@ -404,7 +405,7 @@ argprop expr@(App _ _) | is_var fexpr = do
           -- Representable types will not be propagated, and arguments with free
           -- type variables will be propagated later.
           -- TODO: preserve original naming?
-          id <- mkBinderFor arg "param"
+          id <- Trans.lift $ mkBinderFor arg "param"
           -- Just pass the original argument to the new function, which binds it
           -- to a new id and just pass that new id to the old function body.
           return ([arg], [id], mkReferenceTo id) 
@@ -451,7 +452,7 @@ funextract expr@(App _ _) | is_var fexpr = do
       -- by the argument expression.
       let free_vars = VarSet.varSetElems $ CoreFVs.exprFreeVars arg
       let body = MkCore.mkCoreLams free_vars arg
-      id <- mkBinderFor body "fun"
+      id <- Trans.lift $ mkBinderFor body "fun"
       Trans.lift $ addGlobalBind id body
       -- Replace the argument with a reference to the new function, applied to
       -- all vars it uses.

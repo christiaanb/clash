@@ -79,11 +79,31 @@ $( Data.Accessor.Template.deriveAccessors ''TranslatorState )
 
 type TranslatorSession = State.State TranslatorState
 
+-----------------------------------------------------------------------------
+-- Some accessors
+-----------------------------------------------------------------------------
+
 -- Does the given binder reference a top level binder in the current
 -- module(s)?
 isTopLevelBinder :: CoreSyn.CoreBndr -> TranslatorSession Bool
 isTopLevelBinder bndr = do
   bindings <- getA tsBindings
   return $ Map.member bndr bindings
+
+-- Finds the value of a global binding, if available
+getGlobalBind :: CoreSyn.CoreBndr -> TranslatorSession (Maybe CoreSyn.CoreExpr)
+getGlobalBind bndr = do
+  bindings <- getA tsBindings
+  return $ Map.lookup bndr bindings 
+
+-- Adds a new global binding with the given value
+addGlobalBind :: CoreSyn.CoreBndr -> CoreSyn.CoreExpr -> TranslatorSession ()
+addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)
+
+-- Returns a list of all global binders
+getGlobalBinders :: TranslatorSession [CoreSyn.CoreBndr]
+getGlobalBinders = do
+  bindings <- getA tsBindings
+  return $ Map.keys bindings
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
