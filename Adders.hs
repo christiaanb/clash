@@ -9,8 +9,9 @@ import Prelude hiding (
   null, length, head, tail, last, init, take, drop, (++), map, foldl, foldr,
   zipWith, zip, unzip, concat, reverse, iterate )
 
-import Language.Haskell.Syntax
+-- import Language.Haskell.Syntax
 import Types
+import Types.Data.Num.Decimal.Literals
 import Data.Param.TFVec
 import Data.RangedWord
 import Data.SizedInt
@@ -23,11 +24,11 @@ mainIO f = Sim.simulateIO (Sim.stateless f) ()
 stateless :: (i -> o) -> (i -> () -> ((), o))
 stateless f = \i s -> (s, f i)
 
-show_add f = do print ("Sum:   " P.++ (displaysigs s)); print ("Carry: " P.++ (displaysig c))
-  where
-    a = [High, High, High, High]
-    b = [Low, Low, Low, High]
-    (s, c) = f (a, b)
+-- show_add f = do print ("Sum:   " P.++ (displaysigs s)); print ("Carry: " P.++ (displaysig c))
+--   where
+--     a = [High, High, High, High]
+--     b = [Low, Low, Low, High]
+--     (s, c) = f (a, b)
 
 mux2 :: Bit -> (Bit, Bit) -> Bit
 mux2 Low (a, b) = a
@@ -178,8 +179,8 @@ highordtest = \x ->
 
 xand a b = hwand a b
 
-functiontest :: TFVec D3 (TFVec D4 Bit) -> TFVec D12 Bit
-functiontest = \v -> let r = concat v in r
+functiontest :: TFVec D12 Bit -> TFVec D6 Bit
+functiontest = \v -> let r = take d6 v in r
 
 functiontest2 :: SizedInt D8 -> SizedInt D7
 functiontest2 = \a -> let r = Data.SizedInt.resize a in r
@@ -201,24 +202,24 @@ highordtest2 = \a b ->
                 \c d -> op' d c
 -- Four bit adder, using the continous adder below
 -- [a] -> [b] -> ([s], cout)
-con_adder_4 as bs = 
- ([s3, s2, s1, s0], c)
- where
-   ((s0, _):(s1, _):(s2, _):(s3, c):_) = con_adder (P.zip ((P.reverse as) P.++ lows) ((P.reverse bs) P.++ lows))
+-- con_adder_4 as bs = 
+--  ([s3, s2, s1, s0], c)
+--  where
+--    ((s0, _):(s1, _):(s2, _):(s3, c):_) = con_adder (P.zip ((P.reverse as) P.++ lows) ((P.reverse bs) P.++ lows))
 
 -- Continuous sequential version
 -- Stream a -> Stream b -> Stream (sum, cout)
-con_adder :: Stream (Bit, Bit) -> Stream (Bit, Bit)
+-- con_adder :: Stream (Bit, Bit) -> Stream (Bit, Bit)
 
 -- Forward to con_adder_int, but supply an initial state
-con_adder pin =
- con_adder_int pin Low
+-- con_adder pin =
+--  con_adder_int pin Low
 
 -- Stream a -> Stream b -> state -> Stream (s, c)
-con_adder_int :: Stream (Bit, Bit) -> Bit -> Stream (Bit, Bit)
-con_adder_int ((a,b):rest) cin =
- (s, cout) : con_adder_int rest cout
- where
-   (s, cout) = full_adder (a, b, cin)
+-- con_adder_int :: Stream (Bit, Bit) -> Bit -> Stream (Bit, Bit)
+-- con_adder_int ((a,b):rest) cin =
+--  (s, cout) : con_adder_int rest cout
+--  where
+--    (s, cout) = full_adder (a, b, cin)
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:
