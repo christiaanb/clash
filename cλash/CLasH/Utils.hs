@@ -1,13 +1,10 @@
-module CLasH.Utils
-  ( listBindings
-  , listBind
-  , makeCached
-  ) where
+module CLasH.Utils where
 
 -- Standard Imports
 import qualified Maybe
 import Data.Accessor
 import qualified Data.Map as Map
+import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
 
 -- GHC API
@@ -69,3 +66,8 @@ makeCached key accessor create = do
       value <- create
       modA accessor (Map.insert key value)
       return value
+
+unzipM :: (Monad m) =>
+  m [(a, b)]
+  -> m ([a], [b])
+unzipM = Monad.liftM unzip
