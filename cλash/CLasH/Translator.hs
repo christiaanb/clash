@@ -31,6 +31,7 @@ import CLasH.Translator.Annotations
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.GhcTools
 import CLasH.VHDL
+import CLasH.VHDL.Testbench
 
 -- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
 --   State and Test Inputs.
@@ -104,8 +105,8 @@ moduleToVHDL env cores topbinds' init test stateful = do
     let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings 
-    --let testexprs = case testInput of [] -> [] ; [x] -> reduceCoreListToHsList x
-    createDesignFiles topbinds 
+    test_binds <- Monad.zipWithM (createTestbench Nothing) testInput topbinds
+    createDesignFiles (topbinds ++ test_binds)
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   return vhdl
 
