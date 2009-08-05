@@ -4,7 +4,7 @@
 -- top level function "normalize", and defines the actual transformation passes that
 -- are performed.
 --
-module CLasH.Normalize (getNormalized) where
+module CLasH.Normalize (getNormalized, normalizeExpr) where
 
 -- Standard modules
 import Debug.Trace
@@ -488,12 +488,21 @@ getNormalized bndr = Utils.makeCached bndr tsNormalized $ do
       error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
     else do
       expr <- getBinding bndr
+      normalizeExpr (show bndr) expr
+
+-- | Normalize an expression
+normalizeExpr ::
+  String -- ^ What are we normalizing? For debug output only.
+  -> CoreSyn.CoreExpr -- ^ The expression to normalize 
+  -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
+
+normalizeExpr what expr = do
       -- Introduce an empty Let at the top level, so there will always be
       -- a let in the expression (none of the transformations will remove
       -- the last let).
       let expr' = Let (Rec []) expr
       -- Normalize this expression
-      trace ("Transforming " ++ (show bndr) ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr' ) ++ "\n") $ return ()
+      trace ("Transforming " ++ what ++ "\nBefore:\n\n" ++ showSDoc ( ppr expr' ) ++ "\n") $ return ()
       expr'' <- dotransforms transforms expr'
       trace ("\nAfter:\n\n" ++ showSDoc ( ppr expr')) $ return ()
       return expr''
