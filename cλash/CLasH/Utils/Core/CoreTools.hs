@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 -- | This module provides a number of functions to find out things about Core
 -- programs. This module does not provide the actual plumbing to work with
 -- Core and Haskell (it uses HsTools for this), but only the functions that
@@ -19,6 +20,8 @@ import qualified HscTypes
 import qualified RdrName
 import qualified Name
 import qualified OccName
+import qualified Type
+import qualified TyCon
 import qualified TysWiredIn
 import qualified Bag
 import qualified DynFlags
@@ -222,3 +225,24 @@ reduceCoreListToHsList app@(CoreSyn.App _ _) = out
           otherwise -> []
 
 reduceCoreListToHsList _ = []
+
+-- | Is the given type a State type?
+isStateType :: Type.Type -> Bool
+-- Resolve any type synonyms remaining
+isStateType ty | Just ty' <- Type.tcView ty = isStateType ty'
+isStateType ty  = Maybe.isJust $ do
+  -- Split the type. Don't use normal splitAppTy, since that looks through
+  -- newtypes, and we want to see the State newtype.
+  (typef, _) <- Type.repSplitAppTy_maybe ty
+  -- See if the applied type is a type constructor
+  (tycon, _) <- Type.splitTyConApp_maybe typef
+  if TyCon.isNewTyCon tycon && Name.getOccString tycon == "State"
+    then
+      Just ()
+    else
+      Nothing
+
+-- | Does the given expression have a State type?
+hasStateType :: CoreSyn.CoreExpr -> Bool
+hasStateType (CoreSyn.Type _) = False
+hasStateType expr = (isStateType . CoreUtils.exprType) expr
