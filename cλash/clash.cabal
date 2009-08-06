@@ -33,11 +33,13 @@ Library
                     CLasH.VHDL
                     CLasH.VHDL.Constants
                     CLasH.VHDL.Generate
+                    CLasH.VHDL.Testbench
                     CLasH.VHDL.VHDLTools
                     CLasH.VHDL.VHDLTypes
                     CLasH.Utils.GhcTools
                     CLasH.Utils.HsTools
                     CLasH.Utils.Pretty
+                    CLasH.Utils.Core.BinderTools
                     CLasH.Utils.Core.CoreShow
                     CLasH.Utils.Core.CoreTools
   
