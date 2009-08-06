@@ -39,7 +39,7 @@ type Finder =
 -----------------------------------------------------------------------------
 
 -- A orderable equivalent of CoreSyn's Type for use as a map key
-newtype OrdType = OrdType { getType :: Type.Type }
+newtype OrdType = OrdType Type.Type
 instance Eq OrdType where
   (OrdType a) == (OrdType b) = Type.tcEqType a b
 instance Ord OrdType where
