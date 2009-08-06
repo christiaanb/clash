@@ -204,11 +204,19 @@ genExprArgs wrap dst func args = do
 
 -- | Turn the all lefts into VHDL Expressions.
 argsToVHDLExprs :: [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.Expr]
-argsToVHDLExprs = mapM argToVHDLExpr
+argsToVHDLExprs = catMaybesM . (mapM argToVHDLExpr)
 
-argToVHDLExpr :: Either CoreSyn.CoreExpr AST.Expr -> TranslatorSession AST.Expr
-argToVHDLExpr (Left expr) = MonadState.lift tsType $ varToVHDLExpr (exprToVar expr)
-argToVHDLExpr (Right expr) = return expr
+argToVHDLExpr :: Either CoreSyn.CoreExpr AST.Expr -> TranslatorSession (Maybe AST.Expr)
+argToVHDLExpr (Left expr) = MonadState.lift tsType $ do
+  let errmsg = "Generate.argToVHDLExpr: Using non-representable type? Should not happen!"
+  ty_maybe <- vhdl_ty errmsg expr
+  case ty_maybe of
+    Just _ -> do
+      vhdl_expr <- varToVHDLExpr $ exprToVar expr
+      return $ Just vhdl_expr
+    Nothing -> return $ Nothing
+
+argToVHDLExpr (Right expr) = return $ Just expr
 
 -- A function to wrap a builder-like function that generates no component
 -- instantiations
