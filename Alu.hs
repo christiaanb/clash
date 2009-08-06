@@ -3,11 +3,19 @@ import Bits
 import qualified Sim
 import Data.SizedWord
 import Types
+import Types.Data.Num
+import CLasH.Translator.Annotations
+import qualified Prelude as P
+
+fst (a, b) = a
+snd (a, b) = b
 
 main = Sim.simulate exec program initial_state
 mainIO = Sim.simulateIO exec initial_state
 
 dontcare = Low
+
+newtype State s = State s deriving (P.Show)
 
 program = [
             -- (addr, we, op)
@@ -19,36 +27,34 @@ program = [
           ]
 
 --initial_state = (Regs Low High, Low, Low)
-initial_state = ((0, 1), 0, 0)
+initial_state = State (State (0, 1), 0, 0)
 
 type Word = SizedWord D4
 -- Register bank
 type RegAddr = Bit
-type RegisterBankState = (Word, Word)
+type RegisterBankState = State (Word, Word)
 --data RegisterBankState = Regs { r0, r1 :: Bit} deriving (Show)
 
 register_bank :: 
-  (RegAddr, Bit, Word) -> -- (addr, we, d)
-  RegisterBankState -> -- s
-  (RegisterBankState, Word) -- (s', o)
+  RegAddr -- ^ Address
+  -> Bit -- ^ Write Enable
+  -> Word -- ^ Data
+  -> RegisterBankState -> -- State
+  (RegisterBankState, Word) -- (State', Output)
 
-register_bank (Low, Low, _) s = -- Read r0
-  --(s, r0 s)
-  (s, fst s)
-
-register_bank (High, Low, _) s = -- Read r1
-  --(s, r1 s)
-  (s, snd s)
-
-register_bank (addr, High, d) s = -- Write
-  (s', 0)
-  where
-    --Regs r0 r1 = s
-    (r0, r1) = s
-    r0' = case addr of Low -> d; High -> r0
-    r1' = case addr of High -> d; Low -> r1
-    --s' = Regs r0' r1'
-    s' = (r0', r1')
+register_bank addr we d (State s) =
+  case we of
+    Low -> -- Read
+      let
+        o = case addr of Low -> fst s; High -> snd s
+      in (State s, o) -- Don't change state
+    High -> -- Write
+      let
+        (r0, r1) = s
+        r0' = case addr of Low -> d; High -> r0
+        r1' = case addr of High -> d; Low -> r1
+        s' = (r0', r1')
+      in (State s', 0) -- Don't output anything useful
 
 -- ALU
 
@@ -58,18 +64,19 @@ alu :: AluOp -> Word -> Word -> Word
 {-# NOINLINE alu #-}
 --alu High a b = a `hwand` b
 --alu Low a b = a `hwor` b
-alu High a b = a + b
-alu Low a b = a - b
+alu High a b = a P.+ b
+alu Low a b = a P.- b
 
-type ExecState = (RegisterBankState, Word, Word)
+type ExecState = State (RegisterBankState, Word, Word)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, Word)
 
+{-# ANN exec TopEntity #-}
 -- Read & Exec
-exec (addr, we, op) s =
-  (s', z')
+exec (addr, we, op) (State s) =
+  (State s', z')
   where
     (reg_s, t, z) = s
-    (reg_s', t') = register_bank (addr, we, z) reg_s
+    (reg_s', t') = register_bank addr we z reg_s
     z' = alu op t' t
     s' = (reg_s', t', z')
 
