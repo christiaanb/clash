@@ -160,7 +160,10 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
 -- A single alt case must be a selector. This means thee scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
 -- is also returned.
-mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt])) =
+mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt])) 
+                -- Don't generate VHDL for substate extraction
+                | hasStateType bndr = return ([], [])
+                | otherwise =
   case alt of
     (CoreSyn.DataAlt dc, bndrs, (CoreSyn.Var sel_bndr)) -> do
       case List.elemIndex sel_bndr bndrs of
