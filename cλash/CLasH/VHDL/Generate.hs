@@ -778,7 +778,7 @@ genApplication dst f args = do
           -- TODO: Using show here isn't really pretty, but we'll need some
           -- unique-ish value...
           let label = "comp_ins_" ++ (either show prettyShow) dst
-          let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
+          portmaps <- mkAssocElems args' ((either varToVHDLName id) dst) signature
           return ([mkComponentInst label entity_id portmaps], [f])
         False -> do
           -- Not a top level binder, so this must be a local variable reference.

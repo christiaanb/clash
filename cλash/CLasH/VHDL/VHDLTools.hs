@@ -85,10 +85,10 @@ mkAssocElems ::
   [AST.Expr]                    -- ^ The argument that are applied to function
   -> AST.VHDLName               -- ^ The binder in which to store the result
   -> Entity                     -- ^ The entity to map against.
-  -> [AST.AssocElem]            -- ^ The resulting port maps
+  -> TranslatorSession [AST.AssocElem] -- ^ The resulting port maps
 mkAssocElems args res entity =
     -- Create the actual AssocElems
-    zipWith mkAssocElem ports sigs
+    return $ zipWith mkAssocElem ports sigs
   where
     -- Turn the ports and signals from a map into a flat list. This works,
     -- since the maps must have an identical form by definition. TODO: Check
