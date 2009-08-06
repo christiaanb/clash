@@ -1,3 +1,4 @@
+{-# LANGUAGE RelaxedPolyRec #-} -- Needed for vhdl_ty_either', for some reason...
 module CLasH.VHDL.VHDLTools where
 
 -- Standard modules
@@ -27,11 +28,13 @@ import qualified TyCon
 import qualified Type
 import qualified DataCon
 import qualified CoreSubst
+import qualified Outputable
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
 import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.Core.CoreTools
+import CLasH.Utils
 import CLasH.Utils.Pretty
 import CLasH.VHDL.Constants
 
@@ -266,7 +269,8 @@ builtin_types =
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
 -- Returns an error value, using the given message, when no type could be
 -- created. Returns Nothing when the type is valid, but empty.
-vhdl_ty :: String -> Type.Type -> TypeSession (Maybe AST.TypeMark)
+vhdl_ty :: (TypedThing t, Outputable.Outputable t) => 
+  String -> t -> TypeSession (Maybe AST.TypeMark)
 vhdl_ty msg ty = do
   tm_either <- vhdl_ty_either ty
   case tm_either of
@@ -275,8 +279,15 @@ vhdl_ty msg ty = do
 
 -- Translate a Haskell type to a VHDL type, generating a new type if needed.
 -- Returns either an error message or the resulting type.
-vhdl_ty_either :: Type.Type -> TypeSession (Either String (Maybe AST.TypeMark))
-vhdl_ty_either ty = do
+vhdl_ty_either :: (TypedThing t, Outputable.Outputable t) => 
+  t -> TypeSession (Either String (Maybe AST.TypeMark))
+vhdl_ty_either tything =
+  case getType tything of
+    Nothing -> return $ Left $ "VHDLTools.vhdl_ty: Typed thing without a type: " ++ pprString tything
+    Just ty -> vhdl_ty_either' ty
+
+vhdl_ty_either' :: Type.Type -> TypeSession (Either String (Maybe AST.TypeMark))
+vhdl_ty_either' ty = do
   typemap <- getA tsTypes
   htype_either <- mkHType ty
   case htype_either of
