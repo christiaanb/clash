@@ -158,6 +158,12 @@ change val = do
   setChanged
   return val
 
+-- Returns the given value and sets the changed flag if the bool given is
+-- True. Note that this will not unset the changed flag if the bool is False.
+changeif :: Bool -> a -> TransformMonad a
+changeif True val = change val
+changeif False val = return val
+
 -- Replace each of the binders given with the coresponding expressions in the
 -- given expression.
 substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
