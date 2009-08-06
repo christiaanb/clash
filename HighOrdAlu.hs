@@ -1,20 +1,9 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, NoImplicitPrelude #-}
 
 module HighOrdAlu where
 
 import qualified Prelude as P
-import Prelude hiding (
-  null, length, head, tail, last, init, take, drop, (++), map, foldl, foldr,
-  zipWith, zip, unzip, concat, reverse, iterate )
-import Bits
--- import Types
-import Types.Data.Num.Ops
-import Types.Data.Num.Decimal.Digits
-import Types.Data.Num.Decimal.Ops
-import Types.Data.Num.Decimal.Literals
-import Data.Param.TFVec
-import Data.RangedWord
-import Data.SizedInt
+import CLasH.HardwareTypes
 import CLasH.Translator.Annotations
 
 constant :: NaturalT n => e -> Op n e

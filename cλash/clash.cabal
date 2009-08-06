@@ -20,9 +20,10 @@ Library
   build-depends:    ghc >= 6.11, pretty, vhdl > 0.1, haskell98, syb,
                     data-accessor, containers, base >= 4, transformers,
                     filepath, template-haskell, data-accessor-template,
-                    prettyclass, directory
+                    prettyclass, directory, th-lift-ng, tfp, tfvec
                     
-  exposed-modules:  CLasH.Translator
+  exposed-modules:  CLasH.HardwareTypes
+                    CLasH.Translator
                     CLasH.Translator.Annotations
                     CLasH.Utils
                     
