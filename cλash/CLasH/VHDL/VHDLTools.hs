@@ -575,13 +575,16 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
     showExpr  = AST.ReturnSm (Just $
                   AST.PrimLit "'('" AST.:&: showMiddle AST.:&: AST.PrimLit "')'")
       where
-        showMiddle = foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "','" AST.:&: e2) $
-          map ((genExprFCall showId).
-                AST.PrimName .
-                AST.NSelected .
-                (AST.NSimple tupPar AST.:.:).
-                tupVHDLSuffix)
-              (take tupSize recordlabels)
+        showMiddle = if null elemTMs then
+            AST.PrimLit "''"
+          else
+            foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "','" AST.:&: e2) $
+              map ((genExprFCall showId).
+                    AST.PrimName .
+                    AST.NSelected .
+                    (AST.NSimple tupPar AST.:.:).
+                    tupVHDLSuffix)
+                  (take tupSize recordlabels)
     recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
     tupSize = length elemTMs
 
