@@ -170,7 +170,7 @@ letremoveunused expr@(Let (Rec binds) res) = do
       bound_exprs = map snd binds
       -- For each bind check if the bind is used by res or any of the bound
       -- expressions
-      dobind (bndr, _) = not $ any (expr_uses_binders [bndr]) (res:bound_exprs)
+      dobind (bndr, _) = any (expr_uses_binders [bndr]) (res:bound_exprs)
 -- Leave all other expressions unchanged
 letremoveunused expr = return expr
 letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
