@@ -158,6 +158,24 @@ letremovetop :: Transform
 letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> Trans.lift $ is_local_var e))
 
 --------------------------------
+-- Unused let binding removal
+--------------------------------
+letremoveunused, letremoveunusedtop :: Transform
+letremoveunused expr@(Let (Rec binds) res) = do
+  -- Filter out all unused binds.
+  let binds' = filter dobind binds
+  -- Only set the changed flag if binds got removed
+  changeif (length binds' /= length binds) (Let (Rec binds') res)
+    where
+      bound_exprs = map snd binds
+      -- For each bind check if the bind is used by res or any of the bound
+      -- expressions
+      dobind (bndr, _) = not $ any (expr_uses_binders [bndr]) (res:bound_exprs)
+-- Leave all other expressions unchanged
+letremoveunused expr = return expr
+letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
+
+--------------------------------
 -- Function inlining
 --------------------------------
 -- Remove a = B bindings, with B :: a -> b, or B :: forall x . T, from let
@@ -473,7 +491,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
