@@ -317,6 +317,8 @@ vhdl_ty_either ty = do
 -- Construct a new VHDL type for the given Haskell type. Returns an error
 -- message or the resulting typemark and typedef.
 construct_vhdl_ty :: Type.Type -> TypeSession (Either String (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn)))
+-- State types don't generate VHDL
+construct_vhdl_ty ty | isStateType ty = return $ Right Nothing
 construct_vhdl_ty ty = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
