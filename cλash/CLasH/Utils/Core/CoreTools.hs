@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
 -- | This module provides a number of functions to find out things about Core
 -- programs. This module does not provide the actual plumbing to work with
 -- Core and Haskell (it uses HsTools for this), but only the functions that
@@ -21,6 +21,7 @@ import qualified RdrName
 import qualified Name
 import qualified OccName
 import qualified Type
+import qualified Id
 import qualified TyCon
 import qualified TysWiredIn
 import qualified Bag
@@ -246,7 +247,24 @@ isStateType ty  = Maybe.isJust $ do
     else
       Nothing
 
--- | Does the given expression have a State type?
-hasStateType :: CoreSyn.CoreExpr -> Bool
-hasStateType (CoreSyn.Type _) = False
-hasStateType expr = (isStateType . CoreUtils.exprType) expr
+-- | Does the given TypedThing have a State type?
+hasStateType :: (TypedThing t) => t -> Bool
+hasStateType expr = case getType expr of
+  Nothing -> False
+  Just ty -> isStateType ty
+
+
+-- | A class of things that (optionally) have a core Type. The type is
+-- optional, since Type expressions don't have a type themselves.
+class TypedThing t where
+  getType :: t -> Maybe Type.Type
+
+instance TypedThing CoreSyn.CoreExpr where
+  getType (CoreSyn.Type _) = Nothing
+  getType expr = Just $ CoreUtils.exprType expr
+
+instance TypedThing CoreSyn.CoreBndr where
+  getType = return . Id.idType
+
+instance TypedThing Type.Type where
+  getType = return . id
