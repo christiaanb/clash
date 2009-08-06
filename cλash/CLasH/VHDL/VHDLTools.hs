@@ -728,3 +728,8 @@ mkSigDec bndr = do
   case type_mark_maybe of
     Just type_mark -> return $ Just (AST.SigDec (varToVHDLId bndr) type_mark Nothing)
     Nothing -> return Nothing
+
+-- | Does the given thing have a non-empty type?
+hasNonEmptyType :: (TypedThing t, Outputable.Outputable t) => 
+  t -> TranslatorSession Bool
+hasNonEmptyType thing = MonadState.lift tsType $ isJustM (vhdl_ty "hasNonEmptyType: Non representable type?" thing)
