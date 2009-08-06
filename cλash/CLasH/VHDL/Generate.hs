@@ -199,11 +199,16 @@ mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let exp
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be expressions.
 genExprArgs wrap dst func args = do
-  args' <- eitherCoreOrExprArgs args
+  args' <- argsToVHDLExprs args
   wrap dst func args'
 
-eitherCoreOrExprArgs :: [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.Expr]
-eitherCoreOrExprArgs args = mapM (Either.either ((MonadState.lift tsType) . varToVHDLExpr . exprToVar) return) args
+-- | Turn the all lefts into VHDL Expressions.
+argsToVHDLExprs :: [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.Expr]
+argsToVHDLExprs = mapM argToVHDLExpr
+
+argToVHDLExpr :: Either CoreSyn.CoreExpr AST.Expr -> TranslatorSession AST.Expr
+argToVHDLExpr (Left expr) = MonadState.lift tsType $ varToVHDLExpr (exprToVar expr)
+argToVHDLExpr (Right expr) = return expr
 
 -- A function to wrap a builder-like function that generates no component
 -- instantiations
@@ -773,7 +778,7 @@ genApplication dst f args = do
           -- Local binder that references a top level binding.  Generate a
           -- component instantiation.
           signature <- getEntity f
-          args' <- eitherCoreOrExprArgs args
+          args' <- argsToVHDLExprs args
           let entity_id = ent_id signature
           -- TODO: Using show here isn't really pretty, but we'll need some
           -- unique-ish value...
@@ -794,7 +799,7 @@ genApplication dst f args = do
           Left bndr -> do
             -- We have the bndr, so we can get at the type
             labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
-            args' <- eitherCoreOrExprArgs args
+            args' <- argsToVHDLExprs args
             return $ (zipWith mkassign labels $ args', [])
             where
               mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
