@@ -8,6 +8,7 @@ module CLasH.HardwareTypes
   , module Data.SizedWord
   , module Prelude
   , Bit(..)
+  , Vector
   , hwand
   , hwor
   , hwxor
@@ -19,13 +20,16 @@ import Prelude hiding (
   null, length, head, tail, last, init, take, drop, (++), map, foldl, foldr,
   zipWith, zip, unzip, concat, reverse, iterate )
 import Types
-import Data.Param.TFVec
+import qualified Data.Param.TFVec as TFVec
+import Data.Param.TFVec hiding (TFVec)
 import Data.RangedWord
 import Data.SizedInt
 import Data.SizedWord 
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
+
+type Vector = TFVec.TFVec
 
 -- The plain Bit type
 data Bit = High | Low
