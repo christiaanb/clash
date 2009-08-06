@@ -166,7 +166,8 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
                 | otherwise =
   case alt of
     (CoreSyn.DataAlt dc, bndrs, (CoreSyn.Var sel_bndr)) -> do
-      case List.elemIndex sel_bndr bndrs of
+      bndrs' <- Monad.filterM hasNonEmptyType bndrs
+      case List.elemIndex sel_bndr bndrs' of
         Just i -> do
           labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
           let label = labels!!i
