@@ -186,6 +186,10 @@ has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isT
 has_free_vars :: CoreSyn.CoreExpr -> Bool
 has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
 
+-- Does the given expression use any of the given binders?
+expr_uses_binders :: [CoreSyn.CoreBndr] -> CoreSyn.CoreExpr -> Bool
+expr_uses_binders bndrs = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))
+
 -- Turns a Var CoreExpr into the Id inside it. Will of course only work for
 -- simple Var CoreExprs, not complexer ones.
 exprToVar :: CoreSyn.CoreExpr -> Var.Id
