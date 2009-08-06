@@ -42,10 +42,9 @@ makeVHDLStrings ::
   -> String     -- ^ The TopEntity
   -> String     -- ^ The InitState
   -> String     -- ^ The TestInput
-  -> Bool       -- ^ Is it stateful? (in case InitState is empty)
   -> IO ()
-makeVHDLStrings libdir filenames topentity initstate testinput stateful = do
-  makeVHDL libdir filenames finder stateful
+makeVHDLStrings libdir filenames topentity initstate testinput = do
+  makeVHDL libdir filenames finder
     where
       finder = findSpec (hasVarName topentity)
                         (hasVarName initstate)
@@ -56,10 +55,9 @@ makeVHDLStrings libdir filenames topentity initstate testinput stateful = do
 makeVHDLAnnotations :: 
   FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The FileNames
-  -> Bool       -- ^ Is it stateful? (in case InitState is not specified)
   -> IO ()
-makeVHDLAnnotations libdir filenames stateful = do
-  makeVHDL libdir filenames finder stateful
+makeVHDLAnnotations libdir filenames = do
+  makeVHDL libdir filenames finder
     where
       finder = findSpec (hasCLasHAnnotation isTopEntity)
                         (hasCLasHAnnotation isInitState)
@@ -71,13 +69,12 @@ makeVHDL ::
   FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The Filenames
   -> Finder
-  -> Bool       -- ^ Indicates if it is meant to be stateful
   -> IO ()
-makeVHDL libdir filenames finder stateful = do
+makeVHDL libdir filenames finder = do
   -- Load the modules
   (cores, env, specs) <- loadModules libdir filenames (Just finder)
   -- Translate to VHDL
-  vhdl <- moduleToVHDL env cores specs stateful
+  vhdl <- moduleToVHDL env cores specs
   -- Write VHDL to file. Just use the first entity for the name
   let top_entity = (\(t, _, _) -> t) $ head specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
@@ -85,16 +82,13 @@ makeVHDL libdir filenames finder stateful = do
   mapM (writeVHDL dir) vhdl
   return ()
 
--- | Translate the binds with the given names from the given core module to
---   VHDL. The Bool in the tuple makes the function stateful (True) or
---   stateless (False).
+-- | Translate the specified entities in the given modules to VHDL.
 moduleToVHDL ::
   HscTypes.HscEnv             -- ^ The GHC Environment
   -> [HscTypes.CoreModule]    -- ^ The Core Modules
   -> [EntitySpec]             -- ^ The entities to generate
-  -> Bool                     -- ^ Is it stateful (in case InitState is not specified)
   -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDL env cores specs stateful = do
+moduleToVHDL env cores specs = do
   vhdl <- runTranslatorSession env $ do
     let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
     -- Store the bindings we loaded
