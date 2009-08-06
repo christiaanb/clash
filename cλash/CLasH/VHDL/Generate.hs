@@ -28,7 +28,7 @@ import CLasH.Translator.TranslatorTypes
 import CLasH.VHDL.Constants
 import CLasH.VHDL.VHDLTypes
 import CLasH.VHDL.VHDLTools
-import qualified CLasH.Utils as Utils
+import CLasH.Utils as Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Pretty
 import qualified CLasH.Normalize as Normalize
@@ -47,10 +47,11 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       -- Strip off lambda's, these will be arguments
       let (args, letexpr) = CoreSyn.collectBinders expr
       -- Generate ports for all non-state types
-      args' <- mapM mkMap (filter (not.hasStateType) args)
+      args' <- catMaybesM $ mapM mkMap (filter (not.hasStateType) args)
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
-      res' <- mkMap res
+      -- TODO: Handle Nothing
+      Just res' <- mkMap res
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
       let ent_decl = createEntityAST vhdl_id args' res'
       let signature = Entity vhdl_id args' res' ent_decl
@@ -59,7 +60,7 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
     mkMap ::
       --[(SignalId, SignalInfo)] 
       CoreSyn.CoreBndr 
-      -> TranslatorSession Port
+      -> TranslatorSession (Maybe Port)
     mkMap = (\bndr ->
       let
         --info = Maybe.fromMaybe
@@ -70,8 +71,10 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
         ty = Var.varType bndr
         error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr 
       in do
-        type_mark <- MonadState.lift tsType $ vhdl_ty error_msg ty
-        return (id, type_mark)
+        type_mark_maybe <- MonadState.lift tsType $ vhdl_ty error_msg ty
+        case type_mark_maybe of 
+          Just type_mark -> return $ Just (id, type_mark)
+          Nothing -> return Nothing
      )
 
 -- | Create the VHDL AST for an entity
@@ -486,7 +489,8 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
-  tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
+  -- TODO: Handle Nothing
+  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("foldlVector" ++ (varToString vec))
   let block_label = mkVHDLExtId ("foldlVector" ++ (varToString res))
@@ -688,7 +692,8 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
   -- -- temporary vector
   let tmp_ty = Var.varType res
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
-  tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
+  -- TODO: Handle Nothing
+  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("iterateVector" ++ (varToString start))
   let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
@@ -849,7 +854,8 @@ genApplication dst f args = do
 vectorFunId :: Type.Type -> String -> TypeSession AST.VHDLId
 vectorFunId el_ty fname = do
   let error_msg = "\nGenerate.vectorFunId: Can not construct vector function for element: " ++ pprString el_ty
-  elemTM <- vhdl_ty error_msg el_ty
+  -- TODO: Handle the Nothing case?
+  Just elemTM <- vhdl_ty error_msg el_ty
   -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)

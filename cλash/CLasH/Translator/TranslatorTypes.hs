@@ -54,8 +54,9 @@ data HType = StdType OrdType |
              BuiltinType String
   deriving (Eq, Ord)
 
--- A map of a Core type to the corresponding type name
-type TypeMap = Map.Map HType (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn)
+-- A map of a Core type to the corresponding type name, or Nothing when the
+-- type would be empty.
+type TypeMap = Map.Map HType (Maybe (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn))
 
 -- A map of a vector Core element type and function name to the coressponding
 -- VHDLId of the function and the function body.
