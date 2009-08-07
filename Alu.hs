@@ -1,9 +1,6 @@
-module Alu  where
-import Bits
+module Alu where
 import qualified Sim
-import Data.SizedWord
-import Types
-import Types.Data.Num
+import CLasH.HardwareTypes hiding (fst,snd)
 import CLasH.Translator.Annotations
 import qualified Prelude as P
 
