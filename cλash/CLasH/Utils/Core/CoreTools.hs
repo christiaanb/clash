@@ -36,6 +36,7 @@ import qualified CoreFVs
 import qualified Literal
 
 -- Local imports
+import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.GhcTools
 import CLasH.Utils.HsTools
 import CLasH.Utils.Pretty
@@ -222,16 +223,36 @@ getLiterals app@(CoreSyn.App _ _) = literals
 
 getLiterals lit@(CoreSyn.Lit _) = [lit]
 
-reduceCoreListToHsList :: CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
-reduceCoreListToHsList app@(CoreSyn.App _ _) = out
+reduceCoreListToHsList :: 
+  [HscTypes.CoreModule] -- ^ The modules where parts of the list are hidden
+  -> CoreSyn.CoreExpr   -- ^ The refence to atleast one of the nodes
+  -> TranslatorSession [CoreSyn.CoreExpr]
+reduceCoreListToHsList cores app@(CoreSyn.App _ _) = do {
+  ; let { (fun, args) = CoreSyn.collectArgs app
+        ; len         = length args 
+        } ;
+  ; case len of
+      3 -> do {
+        ; let topelem = args!!1
+        ; case (args!!2) of
+            (varz@(CoreSyn.Var id)) -> do {
+              ; binds <- mapM (findExpr (isVarName id)) cores
+              ; otherelems <- reduceCoreListToHsList cores (head (Maybe.catMaybes binds))
+              ; return (topelem:otherelems)
+              }
+            (appz@(CoreSyn.App _ _)) -> do {
+              ; otherelems <- reduceCoreListToHsList cores appz
+              ; return (topelem:otherelems)
+              }
+            otherwise -> return [topelem]
+        }
+      otherwise -> return []
+  }
   where
-    (fun, args) = CoreSyn.collectArgs app
-    len = length args
-    out = case len of
-          3 -> ((args!!1) : (reduceCoreListToHsList (args!!2)))
-          otherwise -> []
+    isVarName :: Monad m => Var.Var -> Var.Var -> m Bool
+    isVarName lookfor bind = return $ (Var.varName lookfor) == (Var.varName bind)
 
-reduceCoreListToHsList _ = []
+reduceCoreListToHsList _ _ = return []
 
 -- | Is the given type a State type?
 isStateType :: Type.Type -> Bool

@@ -14,6 +14,7 @@ import qualified Language.VHDL.AST as AST
 
 -- GHC API
 import CoreSyn
+import qualified HscTypes
 import qualified Var
 import qualified TysWiredIn
 
@@ -30,11 +31,12 @@ import CLasH.Utils
 
 createTestbench :: 
   Maybe Int -- ^ Number of cycles to simulate
+  -> [HscTypes.CoreModule] -- ^ Compiled modules
   -> CoreSyn.CoreExpr -- ^ Input stimuli
   -> CoreSyn.CoreBndr -- ^ Top Entity
   -> TranslatorSession CoreBndr -- ^ The id of the generated archictecture
-createTestbench mCycles stimuli top = do
-  let stimuli' = reduceCoreListToHsList stimuli
+createTestbench mCycles cores stimuli top = do
+  stimuli' <- reduceCoreListToHsList cores stimuli
   -- Create a binder for the testbench. We use the unit type (), since the
   -- testbench has no outputs and no inputs.
   bndr <- mkInternalVar "testbench" TysWiredIn.unitTy

@@ -103,7 +103,7 @@ moduleToVHDL env cores specs = do
     -- Create a testbench for any entry that has test input
     mkTest (_, _, Nothing) = return Nothing
     mkTest (top, _, Just input) = do
-      bndr <- createTestbench Nothing input top
+      bndr <- createTestbench Nothing cores input top
       return $ Just bndr
 
 -- Run the given translator session. Generates a new UniqSupply for that
