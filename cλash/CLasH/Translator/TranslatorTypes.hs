@@ -27,7 +27,7 @@ import CLasH.VHDL.VHDLTypes
 -- | A specification of an entity we can generate VHDL for. Consists of the
 --   binder of the top level entity, an optional initial state and an optional
 --   test input.
-type EntitySpec = (CoreSyn.CoreBndr, Maybe CoreSyn.CoreExpr, Maybe CoreSyn.CoreExpr)
+type EntitySpec = (Maybe CoreSyn.CoreBndr, Maybe CoreSyn.CoreExpr, Maybe CoreSyn.CoreExpr)
 
 -- | A function that knows which parts of a module to compile
 type Finder =

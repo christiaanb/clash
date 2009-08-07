@@ -76,7 +76,7 @@ makeVHDL libdir filenames finder = do
   -- Translate to VHDL
   vhdl <- moduleToVHDL env cores specs
   -- Write VHDL to file. Just use the first entity for the name
-  let top_entity = (\(t, _, _) -> t) $ head specs
+  let top_entity = head $ Maybe.catMaybes $ map (\(t, _, _) -> t) specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM (writeVHDL dir) vhdl
@@ -94,15 +94,18 @@ moduleToVHDL env cores specs = do
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings 
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
-    let topbinds = map (\(top, _, _) -> top) specs
-    createDesignFiles (topbinds ++ test_binds)
+    let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
+    case topbinds of
+      []  -> error $ "Could not find top entity requested"
+      tops -> createDesignFiles (tops ++ test_binds)
   mapM (putStr . render . Ppr.ppr . snd) vhdl
   return vhdl
   where
     mkTest :: EntitySpec -> TranslatorSession (Maybe CoreSyn.CoreBndr)
     -- Create a testbench for any entry that has test input
     mkTest (_, _, Nothing) = return Nothing
-    mkTest (top, _, Just input) = do
+    mkTest (Nothing, _, _) = return Nothing
+    mkTest (Just top, _, Just input) = do
       bndr <- createTestbench Nothing cores input top
       return $ Just bndr
 

@@ -161,6 +161,7 @@ findSpec topc statec testc mod = do
   top <- findBind topc mod
   state <- findExpr statec mod
   test <- findExpr testc mod
-  case top of
-    Just t -> return [(t, state, test)]
-    Nothing -> error $ "Could not find top entity requested"
+  return [(top, state, test)]
+  -- case top of
+  --   Just t -> return [(t, state, test)]
+  --   Nothing -> return error $ "Could not find top entity requested"
