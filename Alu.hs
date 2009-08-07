@@ -12,8 +12,6 @@ mainIO = Sim.simulateIO exec initial_state
 
 dontcare = Low
 
-newtype State s = State s deriving (P.Show)
-
 program = [
             -- (addr, we, op)
             (High, Low, High), -- z = r1 and t (0) ; t = r1 (1)

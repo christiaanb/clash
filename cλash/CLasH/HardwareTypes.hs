@@ -8,6 +8,7 @@ module CLasH.HardwareTypes
   , module Data.SizedWord
   , module Prelude
   , Bit(..)
+  , State(..)
   , Vector
   , hwand
   , hwor
@@ -28,6 +29,8 @@ import Data.SizedWord
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
+
+newtype State s = State s deriving (P.Show)
 
 type Vector = TFVec.TFVec
 
