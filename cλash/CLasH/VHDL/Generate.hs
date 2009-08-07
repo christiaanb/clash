@@ -838,8 +838,30 @@ genApplication dst f args = do
               if length args == arg_count then
                 builder dst f args
               else
-                error $ "\nGenerate.genApplication(VanillaGlobal): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> error $ ("\nGenerate.genApplication(VanillaGlobal): Using function from another module that is not a known builtin: " ++ (pprString f))
+                error $ "\nGenerate.genApplication(VanillaId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+            Nothing -> do
+              top <- isTopLevelBinder f
+              case top of
+                True -> do
+                  -- Local binder that references a top level binding.  Generate a
+                  -- component instantiation.
+                  signature <- getEntity f
+                  args' <- argsToVHDLExprs args
+                  let entity_id = ent_id signature
+                  -- TODO: Using show here isn't really pretty, but we'll need some
+                  -- unique-ish value...
+                  let label = "comp_ins_" ++ (either show prettyShow) dst
+                  portmaps <- mkAssocElems args' ((either varToVHDLName id) dst) signature
+                  return ([mkComponentInst label entity_id portmaps], [f])
+                False -> do
+                  -- Not a top level binder, so this must be a local variable reference.
+                  -- It should have a representable type (and thus, no arguments) and a
+                  -- signal should be generated for it. Just generate an unconditional
+                  -- assignment here.
+                  -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
+                  -- f' <- MonadState.lift tsType $ varToVHDLExpr f
+                  --                   return $ ([mkUncondAssign dst f'], [])
+                  error $ ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f))
         IdInfo.ClassOpId cls -> do
           -- FIXME: Not looking for what instance this class op is called for
           -- Is quite stupid of course.
@@ -904,7 +926,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (takeId, (AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet],[minimumId]))
   , (dropId, (AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet],[]))
   , (plusgtId, (AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet],[]))
-  , (emptyId, (AST.SubProgBody emptySpec   [AST.SPCD emptyVar] [emptyExpr],[]))
+  , (emptyId, (AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr],[]))
   , (singletonId, (AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet],[]))
   , (copynId, (AST.SubProgBody copynSpec    [AST.SPVD copynVar]      [copynExpr],[]))
   , (selId, (AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet],[]))
@@ -1052,9 +1074,11 @@ genUnconsVectorFuns elemTM vectorTM  =
     plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     emptySpec = AST.Function (mkVHDLExtId emptyId) [] vectorTM
     emptyVar = 
-          AST.ConstDec resId 
-              (AST.SubtypeIn vectorTM Nothing)
-              (Just $ AST.PrimLit "\"\"")
+          AST.VarDec resId
+            (AST.SubtypeIn vectorTM
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "-1")]))
+             Nothing
     emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
     singletonSpec = AST.Function (mkVHDLExtId singletonId) [AST.IfaceVarDec aPar elemTM ] 
                                          vectorTM
@@ -1329,6 +1353,7 @@ globalNameTable = Map.fromList
   , (fromIntegerId    , (1, genFromInteger          ) )
   , (resizeId         , (1, genResize               ) )
   , (sizedIntId       , (1, genSizedInt             ) )
+  , (smallIntegerId   , (1, genFromInteger          ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

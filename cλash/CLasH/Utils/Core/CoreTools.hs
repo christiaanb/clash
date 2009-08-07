@@ -220,6 +220,8 @@ getLiterals app@(CoreSyn.App _ _) = literals
     (CoreSyn.Var f, args) = CoreSyn.collectArgs app
     literals = filter (is_lit) args
 
+getLiterals lit@(CoreSyn.Lit _) = [lit]
+
 reduceCoreListToHsList :: CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
 reduceCoreListToHsList app@(CoreSyn.App _ _) = out
   where

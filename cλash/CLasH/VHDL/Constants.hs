@@ -266,6 +266,9 @@ toUnsignedId = "to_unsigned"
 resizeId :: String
 resizeId = "resize"
 
+smallIntegerId :: String
+smallIntegerId = "smallInteger"
+
 sizedIntId :: String
 sizedIntId = "SizedInt"
 
