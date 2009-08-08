@@ -97,10 +97,10 @@ createStimuliAssigns ::
   Maybe Int -- ^ Number of cycles to simulate
   -> [CoreSyn.CoreExpr] -- ^ Input stimuli
   -> AST.VHDLId -- ^ Input signal
-  -> TranslatorSession ( [AST.ConcSm] -- ^ Resulting statemetns
-                       , [AST.SigDec] -- ^ Needed signals
-                       , Int -- ^ The number of cycles to simulate
-                       , [CoreSyn.CoreBndr]) -- ^ Any entities used
+  -> TranslatorSession ( [AST.ConcSm]
+                       , [AST.SigDec]
+                       , Int
+                       , [CoreSyn.CoreBndr]) -- ^ (Resulting statements, Needed signals, The number of cycles to simulate, Any entities used)
 createStimuliAssigns mCycles [] _ = return ([], [], Maybe.maybe 0 id mCycles, [])
 
 createStimuliAssigns mCycles stimuli signal = do
@@ -118,9 +118,9 @@ createStimuliAssigns mCycles stimuli signal = do
 createStimulans ::
   CoreSyn.CoreExpr -- ^ The stimulans
   -> Int -- ^ The cycle for this stimulans
-  -> TranslatorSession ( AST.ConcSm -- ^ The statement
-                       , Var.Var -- ^ the variable it assigns to (assumed to be available!)
-                       , [CoreSyn.CoreBndr]) -- ^ Any entities used by this stimulans
+  -> TranslatorSession ( AST.ConcSm
+                       , Var.Var 
+                       , [CoreSyn.CoreBndr]) -- ^ (The statement, the variable it assigns to (assumed to be available!), Any entities used by this stimulans)
 
 createStimulans expr cycl = do 
   -- There must be a let at top level 
