@@ -46,7 +46,7 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       expr <- Normalize.getNormalized fname
       -- Strip off lambda's, these will be arguments
       let (args, letexpr) = CoreSyn.collectBinders expr
-      -- Generate ports for all non-state types
+      -- Generate ports for all non-empty types
       args' <- catMaybesM $ mapM mkMap args
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
