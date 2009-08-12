@@ -200,6 +200,36 @@ letremoveunused expr = return expr
 letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 
 --------------------------------
+-- Identical let binding merging
+--------------------------------
+-- Merge two bindings in a let if they are identical 
+-- TODO: We would very much like to use GHC's CSE module for this, but that
+-- doesn't track if something changed or not, so we can't use it properly.
+letmerge, letmergetop :: Transform
+letmerge expr@(Let (Rec binds) res) = do
+  binds' <- domerge binds
+  return (Let (Rec binds') res)
+  where
+    domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
+    domerge [] = return []
+    domerge (e:es) = do 
+      es' <- mapM (mergebinds e) es
+      es'' <- domerge es'
+      return (e:es'')
+
+    -- Uses the second bind to simplify the second bind, if applicable.
+    mergebinds :: (CoreBndr, CoreExpr) -> (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
+    mergebinds (b1, e1) (b2, e2)
+      -- Identical expressions? Replace the second binding with a reference to
+      -- the first binder.
+      | CoreUtils.cheapEqExpr e1 e2 = change $ (b2, Var b1)
+      -- Different expressions? Don't change
+      | otherwise = return (b2, e2)
+-- Leave all other expressions unchanged
+letmerge expr = return expr
+letmergetop = everywhere ("letmerge", letmerge)
+    
+--------------------------------
 -- Function inlining
 --------------------------------
 -- Remove a = B bindings, with B :: a -> b, or B :: forall x . T, from let
@@ -515,7 +545,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
