@@ -90,18 +90,16 @@ mkAssocElems ::
   -> Entity                     -- ^ The entity to map against.
   -> TranslatorSession [AST.AssocElem] -- ^ The resulting port maps
 mkAssocElems args res entity =
-    -- Create the actual AssocElems
-    return $ zipWith mkAssocElem ports sigs
+    return $ arg_maps ++ (Maybe.maybeToList res_map_maybe)
   where
-    -- Turn the ports and signals from a map into a flat list. This works,
-    -- since the maps must have an identical form by definition. TODO: Check
-    -- the similar form?
     arg_ports = ent_args entity
-    res_port  = ent_res entity
-    -- Extract the id part from the (id, type) tuple
-    ports     = map fst (res_port : arg_ports)
-    -- Translate signal numbers into names
-    sigs      = (vhdlNameToVHDLExpr res : args)
+    res_port_maybe = ent_res entity
+    -- Create an expression of res to map against the output port
+    res_expr = vhdlNameToVHDLExpr res
+    -- Map each of the input ports
+    arg_maps = zipWith mkAssocElem (map fst arg_ports) args
+    -- Map the output port, if present
+    res_map_maybe = fmap (\port -> mkAssocElem (fst port) res_expr) res_port_maybe
 
 -- | Create an VHDL port -> signal association
 mkAssocElem :: AST.VHDLId -> AST.Expr -> AST.AssocElem

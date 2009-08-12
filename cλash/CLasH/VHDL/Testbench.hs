@@ -70,12 +70,17 @@ createTestbenchArch mCycles stimuli top testent= do
       iIface  = ent_args signature
       oIface  = ent_res signature
       iIds    = map fst iIface
-      oId     = fst oIface
+  let (oId, oDec, oProc) = case oIface of
+        Just (id, ty) -> ( id
+                         , [AST.SigDec id ty Nothing]
+                         , [createOutputProc [id]])
+        -- No output port? Just use undefined for the output id, since it won't be
+        -- used by mkAssocElems when there is no output port.
+        Nothing -> (undefined, [], [])
   let iDecs   = map (\(vId, tm) -> AST.SigDec vId tm Nothing) iIface
   let finalIDecs = iDecs ++
                     [AST.SigDec clockId std_logicTM (Just $ AST.PrimLit "'0'"),
                      AST.SigDec resetId std_logicTM (Just $ AST.PrimLit "'0'")]
-  let oDecs   = AST.SigDec (fst oIface) (snd oIface) Nothing
   portmaps <- mkAssocElems (map idToVHDLExpr iIds) (AST.NSimple oId) signature
   let mIns    = mkComponentInst "totest" entId portmaps
   (stimuliAssigns, stimuliDecs, cycles, used) <- createStimuliAssigns mCycles stimuli (head iIds)
@@ -84,13 +89,12 @@ createTestbenchArch mCycles stimuli top testent= do
                                     (AST.Wform [AST.WformElem (AST.PrimLit "'1'") (Just $ AST.PrimLit "3 ns")])
                                     Nothing)) : stimuliAssigns
   let clkProc     = createClkProc
-  let outputProc  = createOutputProc [oId]
   let arch = AST.ArchBody
               (AST.unsafeVHDLBasicId "test")
               (AST.NSimple $ ent_id testent)
-              (map AST.BDISD (finalIDecs ++ stimuliDecs ++ [oDecs]))
+              (map AST.BDISD (finalIDecs ++ stimuliDecs ++ oDec))
               (mIns :
-                ( (AST.CSPSm clkProc) : (AST.CSPSm outputProc) : finalAssigns ) )
+                ( (AST.CSPSm clkProc) : (fmap AST.CSPSm oProc) ++ finalAssigns ) )
   return (arch, top : used)
 
 createStimuliAssigns ::

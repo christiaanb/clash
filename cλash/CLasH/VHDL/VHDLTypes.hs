@@ -27,7 +27,7 @@ type Port = (AST.VHDLId, AST.TypeMark)
 data Entity = Entity { 
   ent_id     :: AST.VHDLId, -- ^ The id of the entity
   ent_args   :: [Port], -- ^ A port for each non-empty function argument
-  ent_res    :: Port, -- ^ The output port
+  ent_res    :: Maybe Port, -- ^ The output port
   ent_dec    :: AST.EntityDec -- ^ The complete entity declaration
 } deriving (Show);
 

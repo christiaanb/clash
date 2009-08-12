@@ -51,7 +51,7 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       -- There must be a let at top level 
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       -- TODO: Handle Nothing
-      Just res' <- mkMap res
+      res' <- mkMap res
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
       let ent_decl = createEntityAST vhdl_id args' res'
       let signature = Entity vhdl_id args' res' ent_decl
@@ -81,7 +81,7 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
 createEntityAST ::
   AST.VHDLId                   -- ^ The name of the function
   -> [Port]                    -- ^ The entity's arguments
-  -> Port                      -- ^ The entity's result
+  -> Maybe Port                -- ^ The entity's result
   -> AST.EntityDec             -- ^ The entity with the ent_decl filled in as well
 
 createEntityAST vhdl_id args res =
@@ -89,15 +89,16 @@ createEntityAST vhdl_id args res =
   where
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
     ports = map (mkIfaceSigDec AST.In) args
-              ++ [mkIfaceSigDec AST.Out res]
+              ++ (Maybe.maybeToList res_port)
               ++ [clk_port]
     -- Add a clk port if we have state
     clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
+    res_port = fmap (mkIfaceSigDec AST.Out) res
 
 -- | Create a port declaration
 mkIfaceSigDec ::
   AST.Mode                         -- ^ The mode for the port (In / Out)
-  -> (AST.VHDLId, AST.TypeMark)    -- ^ The id and type for the port
+  -> Port                          -- ^ The id and type for the port
   -> AST.IfaceSigDec               -- ^ The resulting port declaration
 
 mkIfaceSigDec mode (id, ty) = AST.IfaceSigDec id mode ty
