@@ -121,19 +121,59 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   -- Create signal declarations for all binders in the let expression, except
   -- for the output port (that will already have an output port declared in
   -- the entity).
-  sig_dec_maybes <- mapM (mkSigDec' . fst) (filter ((/=res).fst) binds)
+  sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
   let sig_decs = Maybe.catMaybes $ sig_dec_maybes
-
-  (statementss, used_entitiess) <- Monad.mapAndUnzipM mkConcSm binds
-  let statements = concat statementss
+  -- Process each bind, resulting in info about state variables and concurrent
+  -- statements.
+  (state_vars, sms) <- Monad.mapAndUnzipM dobind binds
+  let (in_state_maybes, out_state_maybes) = unzip state_vars
+  let (statementss, used_entitiess) = unzip sms
+  -- Create a state proc, if needed
+  let state_proc = case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes) of
+        ([in_state], [out_state]) -> [AST.CSPSm $ mkStateProcSm (in_state, out_state)]
+        ([], []) -> []
+        (ins, outs) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
+  -- Join the create statements and the (optional) state_proc
+  let statements = concat statementss ++ state_proc
+  -- Create the architecture
+  let arch = AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) statements
   let used_entities = concat used_entitiess
-  let arch = AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) (statements ++ procs')
   return (arch, used_entities)
   where
-    procs = [] --map mkStateProcSm [] -- (makeStatePairs flatfunc)
-    procs' = map AST.CSPSm procs
-    -- mkSigDec only uses tsTypes from the state
-    mkSigDec' = mkSigDec
+    dobind :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The bind to process
+              -> TranslatorSession ((Maybe CoreSyn.CoreBndr, Maybe CoreSyn.CoreBndr), ([AST.ConcSm], [CoreSyn.CoreBndr]))
+              -- ^ ((Input state variable, output state variable), (statements, used entities))
+    -- newtype unpacking is just a cast
+    dobind (bndr, (CoreSyn.Cast expr coercion)) 
+      | hasStateType expr
+      = return ((Just bndr, Nothing), ([], []))
+    -- With simplCore, newtype packing is just a cast
+    dobind (bndr, expr@(CoreSyn.Cast (CoreSyn.Var state) coercion)) 
+      | hasStateType expr
+      = return ((Nothing, Just state), ([], []))
+    -- Without simplCore, newtype packing uses a data constructor
+    dobind (bndr, (CoreSyn.App (CoreSyn.App (CoreSyn.Var con) (CoreSyn.Type _)) (CoreSyn.Var state))) 
+      | isStateCon con
+      = return ((Nothing, Just state), ([], []))
+    -- Anything else is handled by mkConcSm
+    dobind bind = do
+      sms <- mkConcSm bind
+      return ((Nothing, Nothing), sms)
+
+mkStateProcSm :: 
+  (CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current and new state variables
+  -> AST.ProcSm -- ^ The resulting statement
+mkStateProcSm (old, new) =
+  AST.ProcSm label [clk] [statement]
+  where
+    label       = mkVHDLBasicId $ "state"
+    clk         = mkVHDLBasicId "clock"
+    rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
+    wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
+    assign      = AST.SigAssign (varToVHDLName old) wform
+    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
+    statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
+
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
