@@ -23,12 +23,14 @@ import qualified OccName
 import qualified Type
 import qualified Id
 import qualified TyCon
+import qualified DataCon
 import qualified TysWiredIn
 import qualified Bag
 import qualified DynFlags
 import qualified SrcLoc
 import qualified CoreSyn
 import qualified Var
+import qualified IdInfo
 import qualified VarSet
 import qualified Unique
 import qualified CoreUtils
@@ -253,6 +255,22 @@ reduceCoreListToHsList cores app@(CoreSyn.App _ _) = do {
     isVarName lookfor bind = return $ (Var.varName lookfor) == (Var.varName bind)
 
 reduceCoreListToHsList _ _ = return []
+
+-- Is the given var the State data constructor?
+isStateCon :: Var.Var -> Bool
+isStateCon var = do
+  -- See if it is a DataConWrapId (not DataConWorkId, since State is a
+  -- newtype).
+  case Id.idDetails var of
+    IdInfo.DataConWrapId dc -> 
+      -- See if the datacon is the State datacon from the State type.
+      let tycon = DataCon.dataConTyCon dc
+          tyname = Name.getOccString tycon
+          dcname = Name.getOccString dc
+      in case (tyname, dcname) of
+        ("State", "State") -> True
+        _ -> False
+    _ -> False
 
 -- | Is the given type a State type?
 isStateType :: Type.Type -> Bool
