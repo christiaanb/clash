@@ -1,3 +1,4 @@
+-- 
 -- Functions to create a VHDL testbench from a list of test input.
 --
 module CLasH.VHDL.Testbench where
@@ -81,7 +82,7 @@ createTestbenchArch mCycles stimuli top testent= do
   let finalIDecs = iDecs ++
                     [AST.SigDec clockId std_logicTM (Just $ AST.PrimLit "'0'"),
                      AST.SigDec resetId std_logicTM (Just $ AST.PrimLit "'0'")]
-  portmaps <- mkAssocElems (map idToVHDLExpr iIds) (AST.NSimple oId) signature
+  let portmaps = mkAssocElems (map idToVHDLExpr iIds) (AST.NSimple oId) signature
   let mIns    = mkComponentInst "totest" entId portmaps
   (stimuliAssigns, stimuliDecs, cycles, used) <- createStimuliAssigns mCycles stimuli (head iIds)
   let finalAssigns = (AST.CSSASm (AST.NSimple resetId AST.:<==:

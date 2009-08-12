@@ -88,9 +88,9 @@ mkAssocElems ::
   [AST.Expr]                    -- ^ The argument that are applied to function
   -> AST.VHDLName               -- ^ The binder in which to store the result
   -> Entity                     -- ^ The entity to map against.
-  -> TranslatorSession [AST.AssocElem] -- ^ The resulting port maps
+  -> [AST.AssocElem]            -- ^ The resulting port maps
 mkAssocElems args res entity =
-    return $ arg_maps ++ (Maybe.maybeToList res_map_maybe)
+    arg_maps ++ (Maybe.maybeToList res_map_maybe)
   where
     arg_ports = ent_args entity
     res_port_maybe = ent_res entity
