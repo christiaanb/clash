@@ -30,6 +30,7 @@ type RegAddr = Bit
 type RegisterBankState = State (Word, Word)
 --data RegisterBankState = Regs { r0, r1 :: Bit} deriving (Show)
 
+{-# NOINLINE register_bank #-}
 register_bank :: 
   RegAddr -- ^ Address
   -> Bit -- ^ Write Enable
