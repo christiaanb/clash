@@ -37,19 +37,21 @@ register_bank ::
   -> RegisterBankState -> -- State
   (RegisterBankState, Word) -- (State', Output)
 
-register_bank addr we d (State s) =
-  case we of
-    Low -> -- Read
-      let
-        o = case addr of Low -> fst s; High -> snd s
-      in (State s, o) -- Don't change state
-    High -> -- Write
-      let
-        (r0, r1) = s
-        r0' = case addr of Low -> d; High -> r0
-        r1' = case addr of High -> d; Low -> r1
-        s' = (r0', r1')
-      in (State s', 0) -- Don't output anything useful
+register_bank addr we d (State s) = (State s', o)
+  where
+    s' = case we of
+      Low -> s -- Read
+      High -> -- Write
+        let
+          (r0, r1) = s
+          r0' = case addr of Low -> d; High -> r0
+          r1' = case addr of High -> d; Low -> r1
+        in (r0', r1')
+    o = case we of
+      -- Read
+      Low -> case addr of Low -> fst s; High -> snd s
+      -- Write
+      High -> 0 -- Don't output anything useful
 
 -- ALU
 
