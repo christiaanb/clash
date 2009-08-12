@@ -137,7 +137,7 @@ letsimpl expr@(Let (Rec binds) res) = do
     then do
       -- If the result is not a local var already (to prevent loops with
       -- ourselves), extract it.
-      id <- Trans.lift $ mkInternalVar "foo" (CoreUtils.exprType res)
+      id <- Trans.lift $ mkBinderFor res "foo"
       let bind = (id, res)
       change $ Let (Rec (bind:binds)) (Var id)
     else
@@ -261,7 +261,7 @@ scrutsimpl expr@(Case scrut b ty alts) = do
   repr <- isRepr scrut
   if repr
     then do
-      id <- Trans.lift $ mkInternalVar "scrut" (CoreUtils.exprType scrut)
+      id <- Trans.lift $ mkBinderFor scrut "scrut"
       change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
     else
       return expr
@@ -355,7 +355,7 @@ casesimpl expr@(Case scrut b ty alts) = do
         -- prevent loops with inlinenonrep).
         if (not uses_bndrs) && (not local_var) && repr
           then do
-            id <- Trans.lift $ mkInternalVar "caseval" (CoreUtils.exprType expr)
+            id <- Trans.lift $ mkBinderFor expr "caseval"
             -- We don't flag a change here, since casevalsimpl will do that above
             -- based on Just we return here.
             return $ (Just (id, expr), Var id)
@@ -395,7 +395,7 @@ appsimpl expr@(App f arg) = do
   local_var <- Trans.lift $ is_local_var arg
   if repr && not local_var
     then do -- Extract representable arguments
-      id <- Trans.lift $ mkInternalVar "arg" (CoreUtils.exprType arg)
+      id <- Trans.lift $ mkBinderFor arg "arg"
       change $ Let (Rec [(id, arg)]) (App f (Var id))
     else -- Leave non-representable arguments unchanged
       return expr
