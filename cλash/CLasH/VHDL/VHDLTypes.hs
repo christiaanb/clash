@@ -25,9 +25,9 @@ type Port = (AST.VHDLId, AST.TypeMark)
 -- info on how to map a haskell value (argument / result) on to the entity's
 -- ports.
 data Entity = Entity { 
-  ent_id     :: AST.VHDLId,           -- The id of the entity
-  ent_args   :: [Port],      -- A mapping of each function argument to port names
-  ent_res    :: Port,         -- A mapping of the function result to port names
+  ent_id     :: AST.VHDLId, -- ^ The id of the entity
+  ent_args   :: [Port], -- ^ A port for each non-empty function argument
+  ent_res    :: Port, -- ^ The output port
   ent_dec    :: AST.EntityDec -- ^ The complete entity declaration
 } deriving (Show);
 
