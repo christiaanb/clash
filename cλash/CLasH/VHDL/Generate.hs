@@ -842,7 +842,7 @@ genApplication dst f args = do
           -- assignment here.
           f' <- MonadState.lift tsType $ varToVHDLExpr f
           return $ ([mkUncondAssign dst f'], [])
-    True | not stateful -> 
+    True ->
       case Var.idDetails f of
         IdInfo.DataConWorkId dc -> case dst of
           -- It's a datacon. Create a record from its arguments.
@@ -914,16 +914,6 @@ genApplication dst f args = do
                 error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
             Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
         details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
-    -- If we can't generate a component instantiation, and the destination is
-    -- a state type, don't generate anything.
-    _ -> return ([], [])
-  where
-    -- Is our destination a state value?
-    stateful = case dst of
-      -- When our destination is a VHDL name, it won't have had a state type
-      Right _ -> False
-      -- Otherwise check its type
-      Left bndr -> hasStateType bndr
 
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
