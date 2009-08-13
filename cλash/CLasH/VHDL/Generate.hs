@@ -44,12 +44,10 @@ getEntity ::
 
 getEntity fname = Utils.makeCached fname tsEntities $ do
       expr <- Normalize.getNormalized fname
-      -- Strip off lambda's, these will be arguments
-      let (args, letexpr) = CoreSyn.collectBinders expr
+      -- Split the normalized expression
+      let (args, binds, res) = Normalize.splitNormalized expr
       -- Generate ports for all non-empty types
       args' <- catMaybesM $ mapM mkMap args
-      -- There must be a let at top level 
-      let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       -- TODO: Handle Nothing
       res' <- mkMap res
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
@@ -111,12 +109,12 @@ getArchitecture ::
 
 getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   expr <- Normalize.getNormalized fname
+  -- Split the normalized expression
+  let (args, binds, res) = Normalize.splitNormalized expr
+  
+  -- Get the entity for this function
   signature <- getEntity fname
   let entity_id = ent_id signature
-  -- Strip off lambda's, these will be arguments
-  let (args, letexpr) = CoreSyn.collectBinders expr
-  -- There must be a let at top level 
-  let (CoreSyn.Let (CoreSyn.Rec binds) (CoreSyn.Var res)) = letexpr
 
   -- Create signal declarations for all binders in the let expression, except
   -- for the output port (that will already have an output port declared in
