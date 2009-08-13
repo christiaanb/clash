@@ -863,7 +863,7 @@ genApplication dst f args = do
           let entity_id = ent_id signature
           -- TODO: Using show here isn't really pretty, but we'll need some
           -- unique-ish value...
-          let label = "comp_ins_" ++ (either show prettyShow) dst
+          let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
           let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
           return ([mkComponentInst label entity_id portmaps], [f])
         False -> do

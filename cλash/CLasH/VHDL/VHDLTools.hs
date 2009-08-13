@@ -5,6 +5,7 @@ module CLasH.VHDL.VHDLTools where
 import qualified Maybe
 import qualified Data.Either as Either
 import qualified Data.List as List
+import qualified Data.Char as Char
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
@@ -183,7 +184,10 @@ dataconToVHDLExpr dc = AST.PrimLit lit
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId var = mkVHDLExtId $ (varToString var ++ varToStringUniq var)
+varToVHDLId var = mkVHDLExtId $ (varToString var ++ varToStringUniq var ++ (show $ lowers $ varToStringUniq var))
+  where
+    lowers :: String -> Int
+    lowers xs = length [x | x <- xs, Char.isLower x]
 
 -- Creates a VHDL Name from a binder
 varToVHDLName ::
