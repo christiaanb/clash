@@ -50,6 +50,7 @@ type InputState     = State ( Vector (AdderDepth :+: D1) ReducerSignal
 type FpAdderState   = State (Vector AdderDepth ReducerSignal)
 
 type OutputState    = State ( MemState DataInt
+                            , MemState DataInt
                             , RAM ArrayIndex
                             , RAM Bit
                       )
@@ -193,22 +194,22 @@ wrenable: write enable flag
 Output:
 data_out: value of 'mem' at location 'rdaddr'
 -}
+{-# NOINLINE blockRAM #-}
 blockRAM :: (MemState a) -> 
             ( a
             , Discr
             , Discr
-            , Discr
             , Bit
             ) -> 
-            (MemState a, (a, a) )
-blockRAM (State mem) (data_in, rdaddr1, rdaddr2, wraddr, wrenable) = 
-  ((State mem'), (data_out1,data_out2))
+            ((MemState a), a )
+blockRAM (State mem) (data_in, rdaddr, wraddr, wrenable) = 
+  ((State mem'), data_out)
   where
-    data_out1               = mem!rdaddr1 
-    data_out2               = mem!rdaddr2
+    data_out  = mem!rdaddr
     -- Only write data_in to memory if write is enabled
-    mem'  | wrenable == Low = mem
-          | otherwise       = replace mem wraddr data_in
+    mem' = case wrenable of
+      Low   ->  mem
+      High  ->  replace mem wraddr data_in
 
 {-
 Output logic - Determines when values are released from blockram to the output
@@ -241,9 +242,9 @@ outputter ::  OutputState ->
               , Bit
               ) -> 
               (OutputState, (ReducerSignal, OutputSignal))                 
-outputter (State (mem,  lut, valid))
+outputter (State (mem1, mem2, lut, valid))
   (discr, index, new_discr, data_in, rdaddr, wraddr, wrenable) = 
-  ((State (mem', lut', valid')), (data_out, output))
+  ((State (mem1', mem2', lut', valid')), (data_out, output))
   where
     -- Lut is updated when new discriminator/index combination enters system        
     lut'    | new_discr /= Low  = replace lut discr index
@@ -255,20 +256,24 @@ outputter (State (mem,  lut, valid))
     -- Location becomes invalid when it is fed back into the pipeline
     valid'  | wrenable == Low   = replace valid'' rdaddr Low
             | otherwise         = replace valid'' wraddr High
-    (mem', mem_out)             = blockRAM mem ( data_in
+    (mem1', mem_out1)           = blockRAM mem1 ( data_in
                                                 , rdaddr
-                                                , discr
                                                 , wraddr
                                                 , wrenable
                                                 )
-    data_out                    = ( ( (fst mem_out)
+    (mem2', mem_out2)           = blockRAM mem2 ( data_in
+                                            , discr
+                                            , wraddr
+                                            , wrenable
+                                            )
+    data_out                    = ( ( (mem_out1)
                                     , rdaddr
                                     )
                                   , (valid!rdaddr)
                                   )
     -- Reduced row is released when new discriminator enters system
     -- And the position at the discriminator holds a valid value
-    output                      = ( ( (snd mem_out)
+    output                      = ( ( (mem_out2)
                                     , (lut!discr)
                                     )
                                   , (new_discr `hwand` (valid!discr))
@@ -478,6 +483,7 @@ initstate = State
     )
   , State (copy ((0::DataInt,0::Discr),Low))
   , State ( State (copy (0::DataInt))
+          , State (copy (0::DataInt))
           , (copy (0::ArrayIndex))
           , (copy Low)
           )

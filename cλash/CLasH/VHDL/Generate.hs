@@ -52,7 +52,9 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       -- TODO: Handle Nothing
       res' <- mkMap res
-      let vhdl_id = mkVHDLBasicId $ varToString fname ++ "_" ++ varToStringUniq fname
+      count <- getA tsEntityCounter 
+      let vhdl_id = mkVHDLBasicId $ varToString fname ++ "Component_" ++ show count
+      putA tsEntityCounter (count + 1)
       let ent_decl = createEntityAST vhdl_id args' res'
       let signature = Entity vhdl_id args' res' ent_decl
       return signature

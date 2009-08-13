@@ -120,7 +120,7 @@ runTranslatorSession env session = do
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   let init_typestate = TypeState Map.empty [] Map.empty Map.empty env
-  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty Map.empty Map.empty
+  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty
   return $ State.evalState session init_state
 
 -- | Prepares the directory for writing VHDL files. This means creating the

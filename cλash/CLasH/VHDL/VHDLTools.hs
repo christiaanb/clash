@@ -183,7 +183,7 @@ dataconToVHDLExpr dc = AST.PrimLit lit
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId = mkVHDLExtId . varToString
+varToVHDLId var = mkVHDLExtId $ (varToString var ++ varToStringUniq var)
 
 -- Creates a VHDL Name from a binder
 varToVHDLName ::

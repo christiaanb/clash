@@ -86,6 +86,7 @@ data TranslatorState = TranslatorState {
   , tsType_ :: TypeState
   , tsBindings_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   , tsNormalized_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  , tsEntityCounter_ :: Integer
   , tsEntities_ :: Map.Map CoreSyn.CoreBndr Entity
   , tsArchitectures_ :: Map.Map CoreSyn.CoreBndr (Architecture, [CoreSyn.CoreBndr])
 }
