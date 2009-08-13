@@ -645,6 +645,34 @@ genZip' (Left res) f args@[arg1, arg2] = do {
     -- Return the generate functions
   ; return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
   }
+  
+-- | Generate a generate statement for the builtin function "fst"
+genFst :: BuiltinBuilder
+genFst = genNoInsts $ genVarArgs genFst'
+genFst' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
+genFst' (Left res) f args@[arg] = do {
+  ; labels <- MonadState.lift tsType $ getFieldLabels (Var.varType arg)
+  ; let { argexpr'    = varToVHDLName arg
+        ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (labels!!0)
+        ; assign      = mkUncondAssign (Left res) argexprA
+        } ;
+    -- Return the generate functions
+  ; return [assign]
+  }
+  
+-- | Generate a generate statement for the builtin function "snd"
+genSnd :: BuiltinBuilder
+genSnd = genNoInsts $ genVarArgs genSnd'
+genSnd' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
+genSnd' (Left res) f args@[arg] = do {
+  ; labels <- MonadState.lift tsType $ getFieldLabels (Var.varType arg)
+  ; let { argexpr'    = varToVHDLName arg
+        ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (labels!!1)
+        ; assign      = mkUncondAssign (Left res) argexprB
+        } ;
+    -- Return the generate functions
+  ; return [assign]
+  }
     
 -- | Generate a generate statement for the builtin function "unzip"
 genUnzip :: BuiltinBuilder
@@ -1376,7 +1404,10 @@ globalNameTable = Map.fromList
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )
   , (hwnotId          , (1, genOperator1 AST.Not    ) )
-  , (equalsId         , (2, genOperator2 (AST.:=:)  ) )
+  , (equalityId       , (2, genOperator2 (AST.:=:)  ) )
+  , (inEqualityId     , (2, genOperator2 (AST.:/=:) ) )
+  , (boolOrId         , (2, genOperator2 AST.Or     ) )
+  , (boolAndId        , (2, genOperator2 AST.And    ) )
   , (plusId           , (2, genOperator2 (AST.:+:)  ) )
   , (timesId          , (2, genOperator2 (AST.:*:)  ) )
   , (negateId         , (1, genNegation             ) )
@@ -1386,6 +1417,8 @@ globalNameTable = Map.fromList
   , (resizeId         , (1, genResize               ) )
   , (sizedIntId       , (1, genSizedInt             ) )
   , (smallIntegerId   , (1, genFromInteger          ) )
+  , (fstId            , (1, genFst                  ) )
+  , (sndId            , (1, genSnd                  ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
   ]
