@@ -43,6 +43,9 @@ import CLasH.Utils.GhcTools
 import CLasH.Utils.HsTools
 import CLasH.Utils.Pretty
 
+-- | A single binding, used as a shortcut to simplify type signatures.
+type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
+
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int.
 eval_tfp_int :: HscTypes.HscEnv -> Type.Type -> Int

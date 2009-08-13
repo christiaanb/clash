@@ -129,7 +129,10 @@ createStimulans ::
 
 createStimulans expr cycl = do 
   -- There must be a let at top level 
-  (CoreSyn.Let (CoreSyn.Rec binds) (Var res)) <- normalizeExpr ("test input #" ++ show cycl) expr
+  expr <- normalizeExpr ("test input #" ++ show cycl) expr
+  -- Split the normalized expression. It can't have a function type, so match
+  -- an empty list of argument binders
+  let ([], binds, res) = splitNormalized expr
   (stimulansbindss, useds) <- unzipM $ Monad.mapM mkConcSm binds
   sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
   let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)

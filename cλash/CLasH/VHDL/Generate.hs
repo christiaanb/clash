@@ -44,12 +44,10 @@ getEntity ::
 
 getEntity fname = Utils.makeCached fname tsEntities $ do
       expr <- Normalize.getNormalized fname
-      -- Strip off lambda's, these will be arguments
-      let (args, letexpr) = CoreSyn.collectBinders expr
+      -- Split the normalized expression
+      let (args, binds, res) = Normalize.splitNormalized expr
       -- Generate ports for all non-empty types
       args' <- catMaybesM $ mapM mkMap args
-      -- There must be a let at top level 
-      let (CoreSyn.Let binds (CoreSyn.Var res)) = letexpr
       -- TODO: Handle Nothing
       res' <- mkMap res
       count <- getA tsEntityCounter 
@@ -113,12 +111,12 @@ getArchitecture ::
 
 getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   expr <- Normalize.getNormalized fname
+  -- Split the normalized expression
+  let (args, binds, res) = Normalize.splitNormalized expr
+  
+  -- Get the entity for this function
   signature <- getEntity fname
   let entity_id = ent_id signature
-  -- Strip off lambda's, these will be arguments
-  let (args, letexpr) = CoreSyn.collectBinders expr
-  -- There must be a let at top level 
-  let (CoreSyn.Let (CoreSyn.Rec binds) (CoreSyn.Var res)) = letexpr
 
   -- Create signal declarations for all binders in the let expression, except
   -- for the output port (that will already have an output port declared in
@@ -131,9 +129,9 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   let (in_state_maybes, out_state_maybes) = unzip state_vars
   let (statementss, used_entitiess) = unzip sms
   -- Create a state proc, if needed
-  let state_proc = case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes) of
-        ([in_state], [out_state]) -> [AST.CSPSm $ mkStateProcSm (in_state, out_state)]
-        ([], []) -> []
+  state_proc <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes) of
+        ([in_state], [out_state]) -> mkStateProcSm (in_state, out_state)
+        ([], []) -> return []
         (ins, outs) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
   -- Join the create statements and the (optional) state_proc
   let statements = concat statementss ++ state_proc
@@ -164,9 +162,12 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
 
 mkStateProcSm :: 
   (CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current and new state variables
-  -> AST.ProcSm -- ^ The resulting statement
-mkStateProcSm (old, new) =
-  AST.ProcSm label [clk] [statement]
+  -> TranslatorSession [AST.ConcSm] -- ^ The resulting statements
+mkStateProcSm (old, new) = do
+  nonempty <- hasNonEmptyType old 
+  if nonempty 
+    then return [AST.CSPSm $ AST.ProcSm label [clk] [statement]]
+    else return []
   where
     label       = mkVHDLBasicId $ "state"
     clk         = mkVHDLBasicId "clock"
