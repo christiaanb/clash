@@ -1376,6 +1376,7 @@ globalNameTable = Map.fromList
   , (hwandId          , (2, genOperator2 AST.And    ) )
   , (hworId           , (2, genOperator2 AST.Or     ) )
   , (hwnotId          , (1, genOperator1 AST.Not    ) )
+  , (equalsId         , (2, genOperator2 (AST.:=:)  ) )
   , (plusId           , (2, genOperator2 (AST.:+:)  ) )
   , (timesId          , (2, genOperator2 (AST.:*:)  ) )
   , (negateId         , (1, genNegation             ) )

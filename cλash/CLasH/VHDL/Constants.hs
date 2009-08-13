@@ -229,6 +229,10 @@ hwandId = "hwand"
 lengthTId :: String
 lengthTId = "lengthT"
 
+-- Equality Operations
+equalsId :: String
+equalsId = "=="
+
 -- Numeric Operations
 
 -- | plus operation identifier
