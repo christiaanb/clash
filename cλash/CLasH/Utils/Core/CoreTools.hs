@@ -36,6 +36,7 @@ import qualified Unique
 import qualified CoreUtils
 import qualified CoreFVs
 import qualified Literal
+import qualified MkCore
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -297,6 +298,27 @@ hasStateType expr = case getType expr of
   Nothing -> False
   Just ty -> isStateType ty
 
+
+-- | Flattens nested non-recursive lets into a single list of bindings. The
+-- expression passed does not have to be a let expression, if it isn't an
+-- empty list of bindings is returned.
+flattenLets ::
+  CoreSyn.CoreExpr -- ^ The expression to flatten.
+  -> ([Binding], CoreSyn.CoreExpr) -- ^ The bindings and resulting expression.
+flattenLets (CoreSyn.Let (CoreSyn.NonRec bndr expr) res) =
+  ((bndr, expr):bindings, res')
+  where
+    -- Recursively flatten the contained expression
+    (bindings, res') = flattenLets res
+flattenLets expr = ([], expr)
+
+-- | Create bunch of nested non-recursive let expressions from the given
+-- bindings. The first binding is bound at the highest level (and thus
+-- available in all other bindings).
+mkNonRecLets :: [Binding] -> CoreSyn.CoreExpr -> CoreSyn.CoreExpr
+mkNonRecLets bindings expr = MkCore.mkCoreLets binds expr
+  where
+    binds = map (uncurry CoreSyn.NonRec) bindings
 
 -- | A class of things that (optionally) have a core Type. The type is
 -- optional, since Type expressions don't have a type themselves.

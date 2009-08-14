@@ -9,6 +9,7 @@ module CLasH.Normalize (getNormalized, normalizeExpr, splitNormalized) where
 -- Standard modules
 import Debug.Trace
 import qualified Maybe
+import qualified List
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
@@ -106,7 +107,7 @@ castsimpl expr@(Cast val ty) = do
       -- Generate a binder for the expression
       id <- Trans.lift $ mkBinderFor val "castval"
       -- Extract the expression
-      change $ Let (Rec [(id, val)]) (Cast (Var id) ty)
+      change $ Let (NonRec id val) (Cast (Var id) ty)
     else
       return expr
 -- Leave all other expressions unchanged
@@ -114,23 +115,70 @@ castsimpl expr = return expr
 -- Perform this transform everywhere
 castsimpltop = everywhere ("castsimpl", castsimpl)
 
+
 --------------------------------
--- let recursification
+-- Lambda simplication
 --------------------------------
-letrec, letrectop :: Transform
-letrec (Let (NonRec b expr) res) = change $ Let (Rec [(b, expr)]) res
+-- Ensure that a lambda always evaluates to a let expressions or a simple
+-- variable reference.
+lambdasimpl, lambdasimpltop :: Transform
+-- Don't simplify a lambda that evaluates to let, since this is already
+-- normal form (and would cause infinite loops).
+lambdasimpl expr@(Lam _ (Let _ _)) = return expr
+-- Put the of a lambda in its own binding, but not when the expression is
+-- already a local variable, or not representable (to prevent loops with
+-- inlinenonrep).
+lambdasimpl expr@(Lam bndr res) = do
+  repr <- isRepr res
+  local_var <- Trans.lift $ is_local_var res
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor res "res"
+      change $ Lam bndr (Let (NonRec id res) (Var id))
+    else
+      -- If the result is already a local var or not representable, don't
+      -- extract it.
+      return expr
+
 -- Leave all other expressions unchanged
-letrec expr = return expr
+lambdasimpl expr = return expr
 -- Perform this transform everywhere
-letrectop = everywhere ("letrec", letrec)
+lambdasimpltop = everywhere ("lambdasimpl", lambdasimpl)
+
+--------------------------------
+-- let derecursification
+--------------------------------
+letderec, letderectop :: Transform
+letderec expr@(Let (Rec binds) res) = case liftable of
+  -- Nothing is liftable, just return
+  [] -> return expr
+  -- Something can be lifted, generate a new let expression
+  _ -> change $ mkNonRecLets liftable (Let (Rec nonliftable) res)
+  where
+    -- Make a list of all the binders bound in this recursive let
+    bndrs = map fst binds
+    -- See which bindings are liftable
+    (liftable, nonliftable) = List.partition canlift binds
+    -- Any expression that does not use any of the binders in this recursive let
+    -- can be lifted into a nonrec let. It can't use its own binder either,
+    -- since that would mean the binding is self-recursive and should be in a
+    -- single bind recursive let.
+    canlift (bndr, e) = not $ expr_uses_binders bndrs e
+-- Leave all other expressions unchanged
+letderec expr = return expr
+-- Perform this transform everywhere
+letderectop = everywhere ("letderec", letderec)
 
 --------------------------------
 -- let simplification
 --------------------------------
 letsimpl, letsimpltop :: Transform
+-- Don't simplify a let that evaluates to another let, since this is already
+-- normal form (and would cause infinite loops with letflat below).
+letsimpl expr@(Let _ (Let _ _)) = return expr
 -- Put the "in ..." value of a let in its own binding, but not when the
 -- expression is already a local variable, or not representable (to prevent loops with inlinenonrep).
-letsimpl expr@(Let (Rec binds) res) = do
+letsimpl expr@(Let binds res) = do
   repr <- isRepr res
   local_var <- Trans.lift $ is_local_var res
   if not local_var && repr
@@ -138,8 +186,7 @@ letsimpl expr@(Let (Rec binds) res) = do
       -- If the result is not a local var already (to prevent loops with
       -- ourselves), extract it.
       id <- Trans.lift $ mkBinderFor res "foo"
-      let bind = (id, res)
-      change $ Let (Rec (bind:binds)) (Var id)
+      change $ Let binds (Let (NonRec id  res) (Var id))
     else
       -- If the result is already a local var, don't extract it.
       return expr
@@ -152,45 +199,48 @@ letsimpltop = everywhere ("letsimpl", letsimpl)
 --------------------------------
 -- let flattening
 --------------------------------
+-- Takes a let that binds another let, and turns that into two nested lets.
+-- e.g., from:
+-- let b = (let b' = expr' in res') in res
+-- to:
+-- let b' = expr' in (let b = res' in res)
 letflat, letflattop :: Transform
-letflat (Let (Rec binds) expr) = do
-  -- Turn each binding into a list of bindings (possibly containing just one
-  -- element, of course)
-  bindss <- Monad.mapM flatbind binds
-  -- Concat all the bindings
-  let binds' = concat bindss
-  -- Return the new let. We don't use change here, since possibly nothing has
-  -- changed. If anything has changed, flatbind has already flagged that
-  -- change.
-  return $ Let (Rec binds') expr
-  where
-    -- Turns a binding of a let into a multiple bindings, or any other binding
-    -- into a list with just that binding
-    flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
-    flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
-    flatbind (b, expr) = return [(b, expr)]
+letflat (Let (NonRec b (Let (NonRec b' expr')  res')) res) = 
+  change $ Let (NonRec b' expr') (Let (NonRec b res') res)
 -- Leave all other expressions unchanged
 letflat expr = return expr
 -- Perform this transform everywhere
 letflattop = everywhere ("letflat", letflat)
 
 --------------------------------
+-- empty let removal
+--------------------------------
+-- Remove empty (recursive) lets
+letremove, letremovetop :: Transform
+letremove (Let (Rec []) res) = change $ res
+-- Leave all other expressions unchanged
+letremove expr = return expr
+-- Perform this transform everywhere
+letremovetop = everywhere ("letremove", letremove)
+
+--------------------------------
 -- Simple let binding removal
 --------------------------------
 -- Remove a = b bindings from let expressions everywhere
-letremovetop :: Transform
-letremovetop = everywhere ("letremove", inlinebind (\(b, e) -> Trans.lift $ is_local_var e))
+letremovesimpletop :: Transform
+letremovesimpletop = everywhere ("letremovesimple", inlinebind (\(b, e) -> Trans.lift $ is_local_var e))
 
 --------------------------------
 -- Unused let binding removal
 --------------------------------
 letremoveunused, letremoveunusedtop :: Transform
-letremoveunused expr@(Let (Rec binds) res) = do
+letremoveunused expr@(Let _ _) = do
   -- Filter out all unused binds.
   let binds' = filter dobind binds
   -- Only set the changed flag if binds got removed
-  changeif (length binds' /= length binds) (Let (Rec binds') res)
+  changeif (length binds' /= length binds) (mkNonRecLets binds' res)
     where
+      (binds, res) = flattenLets expr
       bound_exprs = map snd binds
       -- For each bind check if the bind is used by res or any of the bound
       -- expressions
@@ -206,9 +256,10 @@ letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 -- TODO: We would very much like to use GHC's CSE module for this, but that
 -- doesn't track if something changed or not, so we can't use it properly.
 letmerge, letmergetop :: Transform
-letmerge expr@(Let (Rec binds) res) = do
+letmerge expr@(Let _ _) = do
+  let (binds, res) = flattenLets expr
   binds' <- domerge binds
-  return (Let (Rec binds') res)
+  return $ mkNonRecLets binds' res
   where
     domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
     domerge [] = return []
@@ -262,7 +313,7 @@ scrutsimpl expr@(Case scrut b ty alts) = do
   if repr
     then do
       id <- Trans.lift $ mkBinderFor scrut "scrut"
-      change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
+      change $ Let (NonRec id scrut) (Case (Var id) b ty alts)
     else
       return expr
 -- Leave all other expressions unchanged
@@ -288,7 +339,7 @@ casesimpl expr@(Case scrut b ty alts) = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
   -- Replace the case with a let with bindings and a case
-  let newlet = (Let (Rec bindings) (Case scrut b ty alts'))
+  let newlet = mkNonRecLets bindings (Case scrut b ty alts')
   -- If there are no non-wild binders, or this case is already a simple
   -- selector (i.e., a single alt with exactly one binding), already a simple
   -- selector altan no bindings (i.e., no wild binders in the original case),
@@ -396,7 +447,7 @@ appsimpl expr@(App f arg) = do
   if repr && not local_var
     then do -- Extract representable arguments
       id <- Trans.lift $ mkBinderFor arg "arg"
-      change $ Let (Rec [(id, arg)]) (App f (Var id))
+      change $ Let (NonRec id arg) (App f (Var id))
     else -- Leave non-representable arguments unchanged
       return expr
 -- Leave all other expressions unchanged
@@ -545,7 +596,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovetop, letrectop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop, lambdasimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
@@ -569,15 +620,11 @@ normalizeExpr ::
   -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
 
 normalizeExpr what expr = do
-      -- Introduce an empty Let at the top level, so there will always be
-      -- a let in the expression (none of the transformations will remove
-      -- the last let).
-      let expr' = Let (Rec []) expr
       -- Normalize this expression
-      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr' ) ++ "\n") $ return ()
-      expr'' <- dotransforms transforms expr'
-      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr'')) $ return ()
-      return expr''
+      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
+      expr' <- dotransforms transforms expr
+      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
+      return expr'
 
 -- | Get the value that is bound to the given binder at top level. Fails when
 --   there is no such binding.
@@ -602,18 +649,3 @@ splitNormalized expr = (args, binds, res)
     res = case resexpr of 
       (Var x) -> x
       _ -> error $ "Normalize.splitNormalized: Not in normal form: " ++ pprString expr ++ "\n"
-
--- | Flattens nested lets into a single list of bindings. The expression
---   passed does not have to be a let expression, if it isn't an empty list of
---   bindings is returned.
-flattenLets ::
-  CoreExpr -- ^ The expression to flatten.
-  -> ([Binding], CoreExpr) -- ^ The bindings and resulting expression.
-flattenLets (Let binds expr) = 
-  (bindings ++ bindings', expr')
-  where
-    -- Recursively flatten the contained expression
-    (bindings', expr') =flattenLets expr
-    -- Flatten our own bindings to remove the Rec / NonRec constructors
-    bindings = CoreSyn.flattenBinds [binds]
-flattenLets expr = ([], expr)
