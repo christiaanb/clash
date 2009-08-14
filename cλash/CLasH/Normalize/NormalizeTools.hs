@@ -128,22 +128,15 @@ dotransforms transs expr = do
 
 -- Inline all let bindings that satisfy the given condition
 inlinebind :: ((CoreBndr, CoreExpr) -> TransformMonad Bool) -> Transform
-inlinebind condition expr@(Let (Rec binds) res) = do
-    -- Find all bindings that adhere to the condition
-    res_eithers <- mapM docond binds
-    case Either.partitionEithers res_eithers of
-      -- No replaces? No change
-      ([], _) -> return expr
-      (replace, others) -> do
-        -- Substitute the to be replaced binders with their expression
-        let newexpr = substitute replace (Let (Rec others) res)
-        change newexpr
-  where 
-    docond :: (CoreBndr, CoreExpr) -> TransformMonad (Either (CoreBndr, CoreExpr) (CoreBndr, CoreExpr))
-    docond b = do
-      res <- condition b
-      return $ case res of True -> Left b; False -> Right b
-
+inlinebind condition expr@(Let (NonRec bndr expr') res) = do
+    applies <- condition (bndr, expr')
+    if applies
+      then
+        -- Substitute the binding in res and return that
+        change $ substitute [(bndr, expr')] res
+      else
+        -- Don't change this let
+        return expr
 -- Leave all other expressions unchanged
 inlinebind _ expr = return expr
 
