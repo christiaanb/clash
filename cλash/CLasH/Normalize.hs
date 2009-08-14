@@ -308,7 +308,7 @@ casesimpl expr@(Case scrut b ty alts) = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
   -- Replace the case with a let with bindings and a case
-  let newlet = (Let (Rec bindings) (Case scrut b ty alts'))
+  let newlet = mkNonRecLets bindings (Case scrut b ty alts')
   -- If there are no non-wild binders, or this case is already a simple
   -- selector (i.e., a single alt with exactly one binding), already a simple
   -- selector altan no bindings (i.e., no wild binders in the original case),
