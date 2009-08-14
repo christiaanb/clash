@@ -89,7 +89,7 @@ loadModules libdir filenames finder =
     GHC.runGhc (Just libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags
-      cores <- mapM GHC.compileToCoreSimplified filenames
+      cores <- mapM GHC.compileToCoreModule filenames
       env <- GHC.getSession
       specs <- case finder of
         Nothing -> return []

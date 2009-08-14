@@ -62,8 +62,8 @@ alu :: AluOp -> Word -> Word -> Word
 {-# NOINLINE alu #-}
 --alu High a b = a `hwand` b
 --alu Low a b = a `hwor` b
-alu High a b = a P.+ b
-alu Low a b = a P.- b
+alu High a b = a + b
+alu Low a b = a - b
 
 type ExecState = State (RegisterBankState, Word, Word)
 exec :: (RegAddr, Bit, AluOp) -> ExecState -> (ExecState, Word)

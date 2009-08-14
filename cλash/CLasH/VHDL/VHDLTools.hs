@@ -5,6 +5,7 @@ module CLasH.VHDL.VHDLTools where
 import qualified Maybe
 import qualified Data.Either as Either
 import qualified Data.List as List
+import qualified Data.Char as Char
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
@@ -183,7 +184,10 @@ dataconToVHDLExpr dc = AST.PrimLit lit
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId = mkVHDLExtId . varToString
+varToVHDLId var = mkVHDLExtId $ (varToString var ++ varToStringUniq var ++ (show $ lowers $ varToStringUniq var))
+  where
+    lowers :: String -> Int
+    lowers xs = length [x | x <- xs, Char.isLower x]
 
 -- Creates a VHDL Name from a binder
 varToVHDLName ::
@@ -445,8 +449,6 @@ mk_unsigned_ty ty = do
   let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
-  let unsignedshow = mkIntegerShow ty_id
-  modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, unsignedshow)
   return (Right $ Just (ty_id, Right ty_def))
   
 mk_signed_ty ::
@@ -457,8 +459,6 @@ mk_signed_ty ty = do
   let ty_id = mkVHDLExtId $ "signed_" ++ show (size - 1)
   let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
   let ty_def = AST.SubtypeIn signedTM (Just range)
-  let signedshow = mkIntegerShow ty_id
-  modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, signedshow)
   return (Right $ Just (ty_id, Right ty_def))
 
 -- Finds the field labels for VHDL type generated for the given Core type,
@@ -676,26 +676,19 @@ mkVectorShow elemTM vectorTM =
                                genExprFCall doShowId (AST.PrimName $ AST.NSimple vecPar) AST.:&:
                                AST.PrimLit "'>'" )
 
-mkIntegerShow ::
-  AST.TypeMark -- ^ The specific signed
-  -> AST.SubProgBody
-mkIntegerShow signedTM = AST.SubProgBody showSpec [] [showExpr]
-  where
-    signedPar = AST.unsafeVHDLBasicId "sint"
-    showSpec = AST.Function showId [AST.IfaceVarDec signedPar signedTM] stringTM
-    showExpr = AST.ReturnSm (Just $
-                AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
-                  (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [signToInt]) Nothing )
-      where
-        signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ signedPar)
-
 mkBuiltInShow :: [AST.SubProgBody]
 mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
                 , AST.SubProgBody showBoolSpec [] [showBoolExpr]
+                , AST.SubProgBody showSingedSpec [] [showSignedExpr]
+                , AST.SubProgBody showUnsignedSpec [] [showUnsignedExpr]
+                , AST.SubProgBody showNaturalSpec [] [showNaturalExpr]
                 ]
   where
-    bitPar    = AST.unsafeVHDLBasicId "s"
-    boolPar    = AST.unsafeVHDLBasicId "b"
+    bitPar      = AST.unsafeVHDLBasicId "s"
+    boolPar     = AST.unsafeVHDLBasicId "b"
+    signedPar   = AST.unsafeVHDLBasicId "sint"
+    unsignedPar = AST.unsafeVHDLBasicId "uint"
+    naturalPar  = AST.unsafeVHDLBasicId "nat"
     showBitSpec = AST.Function showId [AST.IfaceVarDec bitPar std_logicTM] stringTM
     -- if s = '1' then return "'1'" else return "'0'"
     showBitExpr = AST.IfSm (AST.PrimName (AST.NSimple bitPar) AST.:=: AST.PrimLit "'1'")
@@ -708,6 +701,23 @@ mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
                         [AST.ReturnSm (Just $ AST.PrimLit "\"True\"")]
                         []
                         (Just $ AST.Else [AST.ReturnSm (Just $ AST.PrimLit "\"False\"")])
+    showSingedSpec = AST.Function showId [AST.IfaceVarDec signedPar signedTM] stringTM
+    showSignedExpr =  AST.ReturnSm (Just $
+                        AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
+                        (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [signToInt]) Nothing )
+                      where
+                        signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ signedPar)
+    showUnsignedSpec =  AST.Function showId [AST.IfaceVarDec unsignedPar unsignedTM] stringTM
+    showUnsignedExpr =  AST.ReturnSm (Just $
+                          AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
+                          (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [unsignToInt]) Nothing )
+                        where
+                          unsignToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ unsignedPar)
+    showNaturalSpec = AST.Function showId [AST.IfaceVarDec naturalPar naturalTM] stringTM
+    showNaturalExpr = AST.ReturnSm (Just $
+                        AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId)
+                        (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [AST.PrimName $ AST.NSimple $ naturalPar]) Nothing )
+                      
   
 genExprFCall :: AST.VHDLId -> AST.Expr -> AST.Expr
 genExprFCall fName args = 

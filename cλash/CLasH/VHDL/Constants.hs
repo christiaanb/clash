@@ -229,6 +229,25 @@ hwandId = "hwand"
 lengthTId :: String
 lengthTId = "lengthT"
 
+fstId :: String
+fstId = "fst"
+
+sndId :: String
+sndId = "snd"
+
+-- Equality Operations
+equalityId :: String
+equalityId = "=="
+
+inEqualityId :: String
+inEqualityId = "/="
+
+boolOrId :: String
+boolOrId = "||"
+
+boolAndId :: String
+boolAndId = "&&"
+
 -- Numeric Operations
 
 -- | plus operation identifier
