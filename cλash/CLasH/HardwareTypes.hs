@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DeriveDataTypeable #-}
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, FlexibleContexts, TypeFamilies, TypeOperators #-}
 
 module CLasH.HardwareTypes
   ( module Types
@@ -14,6 +14,9 @@ module CLasH.HardwareTypes
   , hwor
   , hwxor
   , hwnot
+  , RAM
+  , MemState
+  , blockRAM
   ) where
 
 import qualified Prelude as P
@@ -58,3 +61,26 @@ _ `hwxor` _      = Low
 
 hwnot High = Low
 hwnot Low  = High
+
+type RAM s a          = Vector (s :+: D1) a
+
+type MemState s a      = State (RAM s a)
+
+blockRAM :: 
+  (NaturalT s
+  ,PositiveT (s :+: D1)
+  ,((s :+: D1) :>: s) ~ True ) =>
+  (MemState s a) -> 
+  a ->
+  RangedWord s ->
+  RangedWord s ->
+  Bit -> 
+  ((MemState s a), a )
+blockRAM (State mem) data_in rdaddr wraddr wrenable = 
+  ((State mem'), data_out)
+  where
+    data_out  = mem!rdaddr
+    -- Only write data_in to memory if write is enabled
+    mem' = case wrenable of
+      Low   ->  mem
+      High  ->  replace mem wraddr data_in

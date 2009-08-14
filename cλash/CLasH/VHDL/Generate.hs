@@ -839,6 +839,40 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
       -- Return the conditional generate part
       return $ (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
+genBlockRAM :: BuiltinBuilder
+genBlockRAM = genNoInsts $ genExprArgs genBlockRAM'
+
+genBlockRAM' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession [AST.ConcSm]
+genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
+  -- Get the ram type
+  let (tup,data_out) = Type.splitAppTy (Var.varType res)
+  let (tup',ramvec) = Type.splitAppTy tup
+  let Just realram = Type.coreView ramvec
+  let Just (tycon, types) = Type.splitTyConApp_maybe realram
+  Just ram_vhdl_ty <- MonadState.lift tsType $ vhdl_ty "wtf" (head types)
+  -- Make the intermediate vector
+  let ram_dec = AST.BDISD $ AST.SigDec ram_id ram_vhdl_ty Nothing
+  -- Get the data_out name
+  reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
+  let resname' = varToVHDLName res
+  let resname = mkSelectedName resname' (reslabels!!0)
+  let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr
+  let assign = mkUncondAssign (Right resname) argexpr
+  let block_label = mkVHDLExtId ("blockRAM" ++ (varToString res))
+  let block = AST.BlockSm block_label [] (AST.PMapAspect []) [ram_dec] [assign, mkUpdateProcSm]
+  return [AST.CSBSm block]
+  where
+    ram_id = mkVHDLBasicId "ram"
+    mkUpdateProcSm :: AST.ConcSm
+    mkUpdateProcSm = AST.CSPSm $ AST.ProcSm proclabel [clockId] [statement]
+      where
+        proclabel   = mkVHDLBasicId "updateRAM"
+        rising_edge = mkVHDLBasicId "rising_edge"
+        ramloc      = mkIndexedName (AST.NSimple ram_id) wraddr
+        wform       = AST.Wform [AST.WformElem data_in Nothing]
+        ramassign      = AST.SigAssign ramloc wform
+        rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
+        statement   = AST.IfSm (AST.And rising_edge_clk (wrenable AST.:=: AST.PrimLit "'1'")) [ramassign] [] Nothing
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
@@ -1422,6 +1456,7 @@ globalNameTable = Map.fromList
   , (smallIntegerId   , (1, genFromInteger          ) )
   , (fstId            , (1, genFst                  ) )
   , (sndId            , (1, genSnd                  ) )
+  , (blockRAMId       , (5, genBlockRAM             ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

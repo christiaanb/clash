@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, TemplateHaskell #-}
+{-# LANGUAGE TypeOperators, TemplateHaskell, FlexibleContexts, TypeFamilies #-}
 module Reducer where
 
 import System.Random
@@ -18,8 +18,6 @@ type DataInt        = SizedWord DataSize
 type ArrayIndex     = SizedWord IndexSize
 type Discr          = RangedWord DiscrRange
 
-type RAM a          = Vector (DiscrRange :+: D1) a
-
 type ReducerState   = State ( DiscrState
                       , InputState
                       , FpAdderState
@@ -30,8 +28,6 @@ type ReducerSignal  = ( ( DataInt
                         )
                       , Bit
                       )
-
-type MemState a      = State (RAM a)
                       
 type OutputSignal   = ( (DataInt
                         , ArrayIndex
@@ -49,10 +45,10 @@ type InputState     = State ( Vector (AdderDepth :+: D1) ReducerSignal
 
 type FpAdderState   = State (Vector AdderDepth ReducerSignal)
 
-type OutputState    = State ( MemState DataInt
-                            , MemState DataInt
-                            , RAM ArrayIndex
-                            , RAM Bit
+type OutputState    = State ( MemState DiscrRange DataInt
+                            , MemState DiscrRange DataInt
+                            , RAM DiscrRange ArrayIndex
+                            , RAM DiscrRange Bit
                       )
 {-
 Discriminator adds a discriminator to each input value
@@ -177,39 +173,6 @@ fpAdder (State state) (input1, input2, grant, mem_out) = (State state', output)
               | otherwise         = High
     -- Shift addition of the two operants into the pipeline
     state'    = (((operant1 + operant2),discr),valid) +> (init state)
-    
-
-{- 
-first attempt at BlockRAM
-
-State:
-mem: content of the RAM
-
-Input:
-data_in: input value to be written to 'mem' at location 'wraddr'
-rdaddr: read address
-wraddr: write address
-wrenable: write enable flag
-
-Output:
-data_out: value of 'mem' at location 'rdaddr'
--}
-{-# NOINLINE blockRAM #-}
-blockRAM :: (MemState a) -> 
-            ( a
-            , Discr
-            , Discr
-            , Bit
-            ) -> 
-            ((MemState a), a )
-blockRAM (State mem) (data_in, rdaddr, wraddr, wrenable) = 
-  ((State mem'), data_out)
-  where
-    data_out  = mem!rdaddr
-    -- Only write data_in to memory if write is enabled
-    mem' = case wrenable of
-      Low   ->  mem
-      High  ->  replace mem wraddr data_in
 
 {-
 Output logic - Determines when values are released from blockram to the output
@@ -256,16 +219,8 @@ outputter (State (mem1, mem2, lut, valid))
     -- Location becomes invalid when it is fed back into the pipeline
     valid'  | wrenable == Low   = replace valid'' rdaddr Low
             | otherwise         = replace valid'' wraddr High
-    (mem1', mem_out1)           = blockRAM mem1 ( data_in
-                                                , rdaddr
-                                                , wraddr
-                                                , wrenable
-                                                )
-    (mem2', mem_out2)           = blockRAM mem2 ( data_in
-                                            , discr
-                                            , wraddr
-                                            , wrenable
-                                            )
+    (mem1', mem_out1)           = blockRAM mem1 data_in rdaddr wraddr wrenable
+    (mem2', mem_out2)           = blockRAM mem2 data_in discr wraddr wrenable
     data_out                    = ( ( (mem_out1)
                                     , rdaddr
                                     )

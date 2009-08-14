@@ -294,6 +294,9 @@ sizedIntId = "SizedInt"
 tfvecId :: String
 tfvecId = "TFVec"
 
+blockRAMId :: String
+blockRAMId = "blockRAM"
+
 -- | output file identifier (from std.textio)
 showIdString :: String
 showIdString = "show"
