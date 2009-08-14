@@ -587,15 +587,11 @@ normalizeExpr ::
   -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
 
 normalizeExpr what expr = do
-      -- Introduce an empty Let at the top level, so there will always be
-      -- a let in the expression (none of the transformations will remove
-      -- the last let).
-      let expr' = Let (Rec []) expr
       -- Normalize this expression
-      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr' ) ++ "\n") $ return ()
-      expr'' <- dotransforms transforms expr'
-      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr'')) $ return ()
-      return expr''
+      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
+      expr' <- dotransforms transforms expr
+      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
+      return expr'
 
 -- | Get the value that is bound to the given binder at top level. Fails when
 --   there is no such binding.
