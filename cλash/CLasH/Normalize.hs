@@ -115,6 +115,36 @@ castsimpl expr = return expr
 -- Perform this transform everywhere
 castsimpltop = everywhere ("castsimpl", castsimpl)
 
+
+--------------------------------
+-- Lambda simplication
+--------------------------------
+-- Ensure that a lambda always evaluates to a let expressions or a simple
+-- variable reference.
+lambdasimpl, lambdasimpltop :: Transform
+-- Don't simplify a lambda that evaluates to let, since this is already
+-- normal form (and would cause infinite loops).
+lambdasimpl expr@(Lam _ (Let _ _)) = return expr
+-- Put the of a lambda in its own binding, but not when the expression is
+-- already a local variable, or not representable (to prevent loops with
+-- inlinenonrep).
+lambdasimpl expr@(Lam bndr res) = do
+  repr <- isRepr res
+  local_var <- Trans.lift $ is_local_var res
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor res "res"
+      change $ Lam bndr (Let (NonRec id res) (Var id))
+    else
+      -- If the result is already a local var or not representable, don't
+      -- extract it.
+      return expr
+
+-- Leave all other expressions unchanged
+lambdasimpl expr = return expr
+-- Perform this transform everywhere
+lambdasimpltop = everywhere ("lambdasimpl", lambdasimpl)
+
 --------------------------------
 -- let derecursification
 --------------------------------
@@ -566,7 +596,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop, lambdasimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
