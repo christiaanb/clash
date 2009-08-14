@@ -228,9 +228,10 @@ letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 -- TODO: We would very much like to use GHC's CSE module for this, but that
 -- doesn't track if something changed or not, so we can't use it properly.
 letmerge, letmergetop :: Transform
-letmerge expr@(Let (Rec binds) res) = do
+letmerge expr@(Let _ _) = do
+  let (binds, res) = flattenLets expr
   binds' <- domerge binds
-  return (Let (Rec binds') res)
+  return $ MkCore.mkCoreLets (map (uncurry NonRec) binds') res
   where
     domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
     domerge [] = return []
