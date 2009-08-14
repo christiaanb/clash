@@ -1018,7 +1018,7 @@ genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> [(String, (AST.SubProgBody, [String]))]
 genUnconsVectorFuns elemTM vectorTM  = 
   [ (exId, (AST.SubProgBody exSpec      []                  [exExpr],[]))
-  , (replaceId, (AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr,replaceRet],[]))
+  , (replaceId, (AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr1,replaceExpr2,replaceRet],[]))
   , (lastId, (AST.SubProgBody lastSpec    []                  [lastExpr],[]))
   , (initId, (AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet],[]))
   , (minimumId, (AST.SubProgBody minimumSpec [] [minimumExpr],[]))
@@ -1073,13 +1073,8 @@ genUnconsVectorFuns elemTM vectorTM  =
                                 (AST.PrimLit "1"))   ]))
                 Nothing
        --  res AST.:= vec(0 to i-1) & a & vec(i+1 to length'vec-1)
-    replaceExpr = AST.NSimple resId AST.:=
-           (vecSlice (AST.PrimLit "0") (AST.PrimName (AST.NSimple iPar) AST.:-: AST.PrimLit "1") AST.:&:
-            AST.PrimName (AST.NSimple aPar) AST.:&: 
-             vecSlice (AST.PrimName (AST.NSimple iPar) AST.:+: AST.PrimLit "1")
-                      ((AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing)) 
-                                                              AST.:-: AST.PrimLit "1"))
+    replaceExpr1 = AST.NSimple resId AST.:= AST.PrimName (AST.NSimple vecPar)
+    replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [AST.PrimName $ AST.NSimple iPar]) AST.:= AST.PrimName (AST.NSimple aPar)
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     vecSlice init last =  AST.PrimName (AST.NSlice 
                                         (AST.SliceName 
