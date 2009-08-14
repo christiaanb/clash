@@ -362,7 +362,7 @@ casesimpl expr@(Case scrut b ty alts) = do
     (exprbinding_maybe, expr') <- doexpr expr uses_bndrs
     -- Create a new alternative
     let newalt = (con, newbndrs, expr')
-    let bindings = Maybe.catMaybes (exprbinding_maybe : bindings_maybe)
+    let bindings = Maybe.catMaybes (bindings_maybe ++ [exprbinding_maybe])
     return (bindings, newalt)
     where
       -- Make wild alternatives for each binder
