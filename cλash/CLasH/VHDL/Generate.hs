@@ -187,7 +187,10 @@ mkConcSm ::
 
 
 -- Ignore Cast expressions, they should not longer have any meaning as long as
--- the type works out.
+-- the type works out. Throw away state repacking
+mkConcSm (bndr, to@(CoreSyn.Cast from ty))
+  | hasStateType to && hasStateType from
+  = return ([],[])
 mkConcSm (bndr, CoreSyn.Cast expr ty) = mkConcSm (bndr, expr)
 
 -- Simple a = b assignments are just like applications, but without arguments.
