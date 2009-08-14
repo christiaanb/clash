@@ -298,19 +298,17 @@ hasStateType expr = case getType expr of
   Just ty -> isStateType ty
 
 
--- | Flattens nested lets into a single list of bindings. The expression
---   passed does not have to be a let expression, if it isn't an empty list of
---   bindings is returned.
+-- | Flattens nested non-recursive lets into a single list of bindings. The
+-- expression passed does not have to be a let expression, if it isn't an
+-- empty list of bindings is returned.
 flattenLets ::
   CoreSyn.CoreExpr -- ^ The expression to flatten.
   -> ([Binding], CoreSyn.CoreExpr) -- ^ The bindings and resulting expression.
-flattenLets (CoreSyn.Let binds expr) = 
-  (bindings ++ bindings', expr')
+flattenLets (CoreSyn.Let (CoreSyn.NonRec bndr expr) res) =
+  ((bndr, expr):bindings, res')
   where
     -- Recursively flatten the contained expression
-    (bindings', expr') =flattenLets expr
-    -- Flatten our own bindings to remove the Rec / NonRec constructors
-    bindings = CoreSyn.flattenBinds [binds]
+    (bindings, res') = flattenLets res
 flattenLets expr = ([], expr)
 
 -- | A class of things that (optionally) have a core Type. The type is
