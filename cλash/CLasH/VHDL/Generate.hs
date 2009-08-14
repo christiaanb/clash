@@ -144,12 +144,12 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
               -> TranslatorSession ((Maybe CoreSyn.CoreBndr, Maybe CoreSyn.CoreBndr), ([AST.ConcSm], [CoreSyn.CoreBndr]))
               -- ^ ((Input state variable, output state variable), (statements, used entities))
     -- newtype unpacking is just a cast
-    dobind (bndr, (CoreSyn.Cast expr coercion)) 
-      | hasStateType expr
+    dobind (bndr, unpacked@(CoreSyn.Cast packed coercion)) 
+      | hasStateType packed && not (hasStateType unpacked)
       = return ((Just bndr, Nothing), ([], []))
     -- With simplCore, newtype packing is just a cast
-    dobind (bndr, expr@(CoreSyn.Cast (CoreSyn.Var state) coercion)) 
-      | hasStateType expr
+    dobind (bndr, packed@(CoreSyn.Cast unpacked@(CoreSyn.Var state) coercion)) 
+      | hasStateType packed && not (hasStateType unpacked)
       = return ((Nothing, Just state), ([], []))
     -- Without simplCore, newtype packing uses a data constructor
     dobind (bndr, (CoreSyn.App (CoreSyn.App (CoreSyn.Var con) (CoreSyn.Type _)) (CoreSyn.Var state))) 
