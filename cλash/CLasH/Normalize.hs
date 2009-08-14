@@ -148,7 +148,7 @@ letderectop = everywhere ("letderec", letderec)
 letsimpl, letsimpltop :: Transform
 -- Put the "in ..." value of a let in its own binding, but not when the
 -- expression is already a local variable, or not representable (to prevent loops with inlinenonrep).
-letsimpl expr@(Let (Rec binds) res) = do
+letsimpl expr@(Let binds res) = do
   repr <- isRepr res
   local_var <- Trans.lift $ is_local_var res
   if not local_var && repr
@@ -156,8 +156,7 @@ letsimpl expr@(Let (Rec binds) res) = do
       -- If the result is not a local var already (to prevent loops with
       -- ourselves), extract it.
       id <- Trans.lift $ mkBinderFor res "foo"
-      let bind = (id, res)
-      change $ Let (Rec (bind:binds)) (Var id)
+      change $ Let binds (Let (NonRec id  res) (Var id))
     else
       -- If the result is already a local var, don't extract it.
       return expr
