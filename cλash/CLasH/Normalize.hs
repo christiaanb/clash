@@ -123,15 +123,12 @@ letderec expr@(Let (Rec binds) res) = case liftable of
   -- Nothing is liftable, just return
   [] -> return expr
   -- Something can be lifted, generate a new let expression
-  _ -> change $ MkCore.mkCoreLets newbinds res
+  _ -> change $ mkNonRecLets liftable (Let (Rec nonliftable) res)
   where
     -- Make a list of all the binders bound in this recursive let
     bndrs = map fst binds
     -- See which bindings are liftable
     (liftable, nonliftable) = List.partition canlift binds
-    -- Create nonrec bindings for each liftable binding and a single recursive
-    -- binding for all others
-    newbinds = (map (uncurry NonRec) liftable) ++ [Rec nonliftable]
     -- Any expression that does not use any of the binders in this recursive let
     -- can be lifted into a nonrec let. It can't use its own binder either,
     -- since that would mean the binding is self-recursive and should be in a
@@ -231,7 +228,7 @@ letmerge, letmergetop :: Transform
 letmerge expr@(Let _ _) = do
   let (binds, res) = flattenLets expr
   binds' <- domerge binds
-  return $ MkCore.mkCoreLets (map (uncurry NonRec) binds') res
+  return $ mkNonRecLets binds' res
   where
     domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
     domerge [] = return []

@@ -36,6 +36,7 @@ import qualified Unique
 import qualified CoreUtils
 import qualified CoreFVs
 import qualified Literal
+import qualified MkCore
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -310,6 +311,14 @@ flattenLets (CoreSyn.Let (CoreSyn.NonRec bndr expr) res) =
     -- Recursively flatten the contained expression
     (bindings, res') = flattenLets res
 flattenLets expr = ([], expr)
+
+-- | Create bunch of nested non-recursive let expressions from the given
+-- bindings. The first binding is bound at the highest level (and thus
+-- available in all other bindings).
+mkNonRecLets :: [Binding] -> CoreSyn.CoreExpr -> CoreSyn.CoreExpr
+mkNonRecLets bindings expr = MkCore.mkCoreLets binds expr
+  where
+    binds = map (uncurry CoreSyn.NonRec) bindings
 
 -- | A class of things that (optionally) have a core Type. The type is
 -- optional, since Type expressions don't have a type themselves.
