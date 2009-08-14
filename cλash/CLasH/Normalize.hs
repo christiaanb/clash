@@ -204,12 +204,13 @@ letremovesimpletop = everywhere ("letremovesimple", inlinebind (\(b, e) -> Trans
 -- Unused let binding removal
 --------------------------------
 letremoveunused, letremoveunusedtop :: Transform
-letremoveunused expr@(Let (Rec binds) res) = do
+letremoveunused expr@(Let _ _) = do
   -- Filter out all unused binds.
   let binds' = filter dobind binds
   -- Only set the changed flag if binds got removed
-  changeif (length binds' /= length binds) (Let (Rec binds') res)
+  changeif (length binds' /= length binds) (mkNonRecLets binds' res)
     where
+      (binds, res) = flattenLets expr
       bound_exprs = map snd binds
       -- For each bind check if the bind is used by res or any of the bound
       -- expressions
