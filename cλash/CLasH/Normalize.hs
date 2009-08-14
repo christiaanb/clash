@@ -146,6 +146,9 @@ letderectop = everywhere ("letderec", letderec)
 -- let simplification
 --------------------------------
 letsimpl, letsimpltop :: Transform
+-- Don't simplify a let that evaluates to another let, since this is already
+-- normal form (and would cause infinite loops with letflat below).
+letsimpl expr@(Let _ (Let _ _)) = return expr
 -- Put the "in ..." value of a let in its own binding, but not when the
 -- expression is already a local variable, or not representable (to prevent loops with inlinenonrep).
 letsimpl expr@(Let binds res) = do
