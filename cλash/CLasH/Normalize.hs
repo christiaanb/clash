@@ -107,7 +107,7 @@ castsimpl expr@(Cast val ty) = do
       -- Generate a binder for the expression
       id <- Trans.lift $ mkBinderFor val "castval"
       -- Extract the expression
-      change $ Let (Rec [(id, val)]) (Cast (Var id) ty)
+      change $ Let (NonRec id val) (Cast (Var id) ty)
     else
       return expr
 -- Leave all other expressions unchanged
@@ -280,7 +280,7 @@ scrutsimpl expr@(Case scrut b ty alts) = do
   if repr
     then do
       id <- Trans.lift $ mkBinderFor scrut "scrut"
-      change $ Let (Rec [(id, scrut)]) (Case (Var id) b ty alts)
+      change $ Let (NonRec id scrut) (Case (Var id) b ty alts)
     else
       return expr
 -- Leave all other expressions unchanged
@@ -414,7 +414,7 @@ appsimpl expr@(App f arg) = do
   if repr && not local_var
     then do -- Extract representable arguments
       id <- Trans.lift $ mkBinderFor arg "arg"
-      change $ Let (Rec [(id, arg)]) (App f (Var id))
+      change $ Let (NonRec id arg) (App f (Var id))
     else -- Leave non-representable arguments unchanged
       return expr
 -- Leave all other expressions unchanged
