@@ -220,6 +220,7 @@ letflat (Let (Rec binds) expr) = do
     -- into a list with just that binding
     flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
     flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
+    flatbind (b, Let (NonRec b' expr') expr) = change [(b, expr), (b', expr')]
     flatbind (b, expr) = return [(b, expr)]
 -- Leave all other expressions unchanged
 letflat expr = return expr
