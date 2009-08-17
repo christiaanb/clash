@@ -638,6 +638,22 @@ funextract expr = return expr
 funextracttop = everywhere ("funextract", funextract)
 
 --------------------------------
+-- Ensure that a function that just returns another function (or rather,
+-- another top-level binder) is still properly normalized. This is a temporary
+-- solution, we should probably integrate this pass with lambdasimpl and
+-- letsimpl instead.
+--------------------------------
+simplrestop expr@(Lam _ _) = return expr
+simplrestop expr@(Let _ _) = return expr
+simplrestop expr = do
+  local_var <- Trans.lift $ is_local_var expr
+  if local_var
+    then
+      return expr
+    else do
+      id <- Trans.lift $ mkBinderFor expr "res" 
+      change $ Let (NonRec id expr) (Var id)
+--------------------------------
 -- End of transformations
 --------------------------------
 
@@ -645,7 +661,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop]
+transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
