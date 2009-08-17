@@ -205,8 +205,23 @@ letsimpltop = everywhere ("letsimpl", letsimpl)
 -- to:
 -- let b' = expr' in (let b = res' in res)
 letflat, letflattop :: Transform
-letflat (Let (NonRec b (Let (NonRec b' expr')  res')) res) = 
-  change $ Let (NonRec b' expr') (Let (NonRec b res') res)
+-- Turn a nonrec let that binds a let into two nested lets.
+letflat (Let (NonRec b (Let binds  res')) res) = 
+  change $ Let binds (Let (NonRec b res') res)
+letflat (Let (Rec binds) expr) = do
+  -- Flatten each binding.
+  binds' <- Utils.concatM $ Monad.mapM flatbind binds
+  -- Return the new let. We don't use change here, since possibly nothing has
+  -- changed. If anything has changed, flatbind has already flagged that
+  -- change.
+  return $ Let (Rec binds') expr
+  where
+    -- Turns a binding of a let into a multiple bindings, or any other binding
+    -- into a list with just that binding
+    flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
+    flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
+    flatbind (b, Let (NonRec b' expr') expr) = change [(b, expr), (b', expr')]
+    flatbind (b, expr) = return [(b, expr)]
 -- Leave all other expressions unchanged
 letflat expr = return expr
 -- Perform this transform everywhere
@@ -234,13 +249,17 @@ letremovesimpletop = everywhere ("letremovesimple", inlinebind (\(b, e) -> Trans
 -- Unused let binding removal
 --------------------------------
 letremoveunused, letremoveunusedtop :: Transform
-letremoveunused expr@(Let _ _) = do
+letremoveunused expr@(Let (NonRec b bound) res) = do
+  let used = expr_uses_binders [b] res
+  if used
+    then return expr
+    else change res
+letremoveunused expr@(Let (Rec binds) res) = do
   -- Filter out all unused binds.
   let binds' = filter dobind binds
   -- Only set the changed flag if binds got removed
-  changeif (length binds' /= length binds) (mkNonRecLets binds' res)
+  changeif (length binds' /= length binds) (Let (Rec binds') res)
     where
-      (binds, res) = flattenLets expr
       bound_exprs = map snd binds
       -- For each bind check if the bind is used by res or any of the bound
       -- expressions
@@ -249,6 +268,7 @@ letremoveunused expr@(Let _ _) = do
 letremoveunused expr = return expr
 letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 
+{-
 --------------------------------
 -- Identical let binding merging
 --------------------------------
@@ -279,7 +299,8 @@ letmerge expr@(Let _ _) = do
 -- Leave all other expressions unchanged
 letmerge expr = return expr
 letmergetop = everywhere ("letmerge", letmerge)
-    
+-}
+
 --------------------------------
 -- Function inlining
 --------------------------------
@@ -596,7 +617,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop, lambdasimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
