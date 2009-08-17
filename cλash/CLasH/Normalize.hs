@@ -23,6 +23,7 @@ import qualified UniqSupply
 import qualified CoreUtils
 import qualified Type
 import qualified TcType
+import qualified Name
 import qualified Id
 import qualified Var
 import qualified VarSet
@@ -318,6 +319,33 @@ letmergetop = everywhere ("letmerge", letmerge)
 -- of those values eventually becomes primitive.
 inlinenonreptop :: Transform
 inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . isRepr . snd))
+
+inlinetoplevel, inlinetopleveltop :: Transform
+-- Any system name is candidate for inlining. Never inline user-defined
+-- functions, to preserver structure.
+inlinetoplevel expr@(Var f) | (Name.isSystemName . Id.idName) f = do
+  -- See if this is a top level binding for which we have a body
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    Just body -> do
+      -- Get the normalized version
+      norm <- Trans.lift $ getNormalized f
+      if needsInline norm 
+        then
+          change norm
+        else
+          return expr
+    -- No body, this is probably a local variable or builtin or external
+    -- function.
+    Nothing -> return expr
+-- Leave all other expressions unchanged
+inlinetoplevel expr = return expr
+inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
+
+needsInline :: CoreExpr -> Bool
+-- Any function that just evaluates to another function, can be inlined
+--needsInline (Var f) = True
+needsInline _ = False
 
 --------------------------------
 -- Scrutinee simplification
@@ -617,7 +645,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop]
+transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
