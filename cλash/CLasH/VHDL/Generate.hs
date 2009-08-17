@@ -90,9 +90,10 @@ createEntityAST vhdl_id args res =
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
     ports = map (mkIfaceSigDec AST.In) args
               ++ (Maybe.maybeToList res_port)
-              ++ [clk_port]
+              ++ [clk_port,resetn_port]
     -- Add a clk port if we have state
     clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
+    resetn_port = AST.IfaceSigDec resetId AST.In std_logicTM
     res_port = fmap (mkIfaceSigDec AST.Out) res
 
 -- | Create a port declaration
