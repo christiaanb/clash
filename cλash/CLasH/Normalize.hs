@@ -205,8 +205,22 @@ letsimpltop = everywhere ("letsimpl", letsimpl)
 -- to:
 -- let b' = expr' in (let b = res' in res)
 letflat, letflattop :: Transform
-letflat (Let (NonRec b (Let (NonRec b' expr')  res')) res) = 
-  change $ Let (NonRec b' expr') (Let (NonRec b res') res)
+-- Turn a nonrec let that binds a let into two nested lets.
+letflat (Let (NonRec b (Let binds  res')) res) = 
+  change $ Let binds (Let (NonRec b res') res)
+letflat (Let (Rec binds) expr) = do
+  -- Flatten each binding.
+  binds' <- Utils.concatM $ Monad.mapM flatbind binds
+  -- Return the new let. We don't use change here, since possibly nothing has
+  -- changed. If anything has changed, flatbind has already flagged that
+  -- change.
+  return $ Let (Rec binds') expr
+  where
+    -- Turns a binding of a let into a multiple bindings, or any other binding
+    -- into a list with just that binding
+    flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
+    flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
+    flatbind (b, expr) = return [(b, expr)]
 -- Leave all other expressions unchanged
 letflat expr = return expr
 -- Perform this transform everywhere
