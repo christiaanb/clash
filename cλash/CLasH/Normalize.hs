@@ -267,6 +267,7 @@ letremoveunused expr@(Let (Rec binds) res) = do
 letremoveunused expr = return expr
 letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 
+{-
 --------------------------------
 -- Identical let binding merging
 --------------------------------
@@ -297,7 +298,8 @@ letmerge expr@(Let _ _) = do
 -- Leave all other expressions unchanged
 letmerge expr = return expr
 letmergetop = everywhere ("letmerge", letmerge)
-    
+-}
+
 --------------------------------
 -- Function inlining
 --------------------------------
@@ -614,7 +616,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letmergetop, letremoveunusedtop, castsimpltop, lambdasimpltop]
+transforms = [argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
