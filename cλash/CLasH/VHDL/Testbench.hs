@@ -52,7 +52,7 @@ createTestbenchEntity ::
   -> Entity
 createTestbenchEntity bndr = entity
   where
-    vhdl_id = mkVHDLBasicId $ varToString bndr
+    vhdl_id = mkVHDLBasicId "testbench"
     -- Create an AST entity declaration with no ports
     ent_decl = AST.EntityDec vhdl_id []
     -- Create a signature with no input and no output ports
