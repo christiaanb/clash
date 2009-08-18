@@ -239,7 +239,7 @@ mkVHDLExtId s =
   AST.unsafeVHDLExtId $ strip_invalid s
   where 
     -- Allowed characters, taken from ForSyde's mkVHDLExtId
-    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
+    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&'()*+,./:;<=>_|!$%@?[]^`{}~-"
     strip_invalid = filter (`elem` allowed)
 
 -- Create a record field selector that selects the given label from the record
