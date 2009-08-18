@@ -343,9 +343,13 @@ inlinetoplevel expr = return expr
 inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
 
 needsInline :: CoreExpr -> Bool
--- Any function that just evaluates to another function, can be inlined
---needsInline (Var f) = True
-needsInline _ = False
+needsInline expr = case splitNormalized expr of
+  -- Inline any function that only has a single definition, it is probably
+  -- simple enough. This might inline some stuff that it shouldn't though it
+  -- will never inline user-defined functions (inlinetoplevel only tries
+  -- system names) and inlining should never break things.
+  (args, [bind], res) -> True
+  _ -> False
 
 --------------------------------
 -- Scrutinee simplification
