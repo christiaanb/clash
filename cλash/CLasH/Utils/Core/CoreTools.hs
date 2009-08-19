@@ -361,8 +361,8 @@ genUniques' subst (CoreSyn.App f arg) = do
   f' <- genUniques' subst f
   arg' <- genUniques' subst arg
   return (CoreSyn.App f' arg')
-genUniques' subst (CoreSyn.Lam bndr res) | CoreSyn.isTyVar bndr =
-  error $ "Cloning type variables not supported!"
+-- Don't change type abstractions
+genUniques' subst expr@(CoreSyn.Lam bndr res) | CoreSyn.isTyVar bndr = return expr
 genUniques' subst (CoreSyn.Lam bndr res) = do
   -- Generate a new unique for the bound variable
   (subst', bndr') <- genUnique subst bndr
