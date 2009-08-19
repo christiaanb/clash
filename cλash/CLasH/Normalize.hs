@@ -324,10 +324,11 @@ inlinetoplevel, inlinetopleveltop :: Transform
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserver structure.
 inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
+  norm <- isNormalizeable f
   -- See if this is a top level binding for which we have a body
   body_maybe <- Trans.lift $ getGlobalBind f
-  case body_maybe of
-    Just body -> do
+  if norm && Maybe.isJust body_maybe
+    then do
       -- Get the normalized version
       norm <- Trans.lift $ getNormalized f
       if needsInline norm 
@@ -335,9 +336,9 @@ inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
           change norm
         else
           return expr
-    -- No body, this is probably a local variable or builtin or external
-    -- function.
-    Nothing -> return expr
+    else
+      -- No body or not normalizeable.
+      return expr
 -- Leave all other expressions unchanged
 inlinetoplevel expr = return expr
 inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
