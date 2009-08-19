@@ -332,8 +332,10 @@ inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
       -- Get the normalized version
       norm <- Trans.lift $ getNormalized f
       if needsInline norm 
-        then
-          change norm
+        then do
+          -- Regenerate all uniques in the to-be-inlined expression
+          norm_uniqued <- Trans.lift $ genUniques norm
+          change norm_uniqued
         else
           return expr
     else
