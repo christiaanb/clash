@@ -46,3 +46,7 @@ concatM = Monad.liftM concat
 
 isJustM :: (Monad m) => m (Maybe a) -> m Bool
 isJustM = Monad.liftM Maybe.isJust
+
+andM, orM :: (Monad m) => m [Bool] -> m Bool
+andM = Monad.liftM and
+orM = Monad.liftM or
