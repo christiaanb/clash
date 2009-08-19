@@ -289,7 +289,8 @@ vhdl_ty_either tything =
     Just ty -> vhdl_ty_either' ty
 
 vhdl_ty_either' :: Type.Type -> TypeSession (Either String (Maybe AST.TypeMark))
-vhdl_ty_either' ty = do
+vhdl_ty_either' ty | ty_has_free_tyvars ty = return $ Left $ "VHDLTools.vhdl_ty_either': Cannot create type: type has free type variables: " ++ pprString ty
+                   | otherwise = do
   typemap <- getA tsTypes
   htype_either <- mkHType ty
   case htype_either of
