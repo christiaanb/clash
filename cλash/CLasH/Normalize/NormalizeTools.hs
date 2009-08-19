@@ -24,11 +24,13 @@ import qualified Name
 import qualified Id
 import qualified CoreSubst
 import qualified CoreUtils
+import qualified Type
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import CLasH.Normalize.NormalizeTypes
 import CLasH.Translator.TranslatorTypes
+import CLasH.Utils
 import CLasH.Utils.Pretty
 import qualified CLasH.Utils.Core.CoreTools as CoreTools
 import CLasH.VHDL.VHDLTypes
@@ -203,3 +205,15 @@ isUserDefined bndr = str `elem` compiler_names
     -- reason these are not marked as system, probably because the name itself
     -- is not made up by the compiler, just this particular binding is.
     compiler_names = ["fromInteger"]
+
+-- Is the given binder normalizable? This means that its type signature can be
+-- represented in hardware, which should (?) guarantee that it can be made
+-- into hardware. Note that if a binder is not normalizable, it might become
+-- so using argument propagation.
+isNormalizeable :: CoreBndr -> TransformMonad Bool 
+isNormalizeable bndr = do
+  let ty = Id.idType bndr
+  let (arg_tys, res_ty) = Type.splitFunTys ty
+  -- This function is normalizable if all its arguments and return value are
+  -- representable.
+  andM $ mapM isRepr (res_ty:arg_tys)
