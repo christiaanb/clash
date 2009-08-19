@@ -90,9 +90,10 @@ createEntityAST vhdl_id args res =
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
     ports = map (mkIfaceSigDec AST.In) args
               ++ (Maybe.maybeToList res_port)
-              ++ [clk_port]
+              ++ [clk_port,resetn_port]
     -- Add a clk port if we have state
     clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
+    resetn_port = AST.IfaceSigDec resetId AST.In std_logicTM
     res_port = fmap (mkIfaceSigDec AST.Out) res
 
 -- | Create a port declaration
@@ -347,12 +348,13 @@ genFCall' switch (Left res) f args = do
 genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 genFromSizedWord :: BuiltinBuilder
-genFromSizedWord = genNoInsts $ genExprArgs $ genExprRes genFromSizedWord'
-genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genFromSizedWord' (Left res) f args = do
-  let fname = varToString f
-  return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
-             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
+genFromSizedWord = genNoInsts $ genExprArgs genFromSizedWord'
+genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession [AST.ConcSm]
+genFromSizedWord' (Left res) f args@[arg] = do
+  return $ [mkUncondAssign (Left res) arg]
+  -- let fname = varToString f
+  -- return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
+  --            map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 genResize :: BuiltinBuilder
@@ -381,17 +383,17 @@ genFromInteger' (Left res) f lits = do {
         ; (tycon, args) = Type.splitTyConApp ty
         ; name = Name.getOccString (TyCon.tyConName tycon)
         } ;
-  ; case name of
-    "RangedWord" -> return $ AST.PrimLit (show (last lits))
-    otherwise -> do {
-      ; len <- case name of
-        "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
-        "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
-        "RangedWord" -> MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
-      ; let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId
-      ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname))
-                [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+  ; len <- case name of
+    "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
+    "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
+    "RangedWord" -> do {
+      ; bound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
+      ; return $ floor (logBase 2 (fromInteger (toInteger (bound)))) + 1
       }
+  ; let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId ; "RangedWord" -> toUnsignedId
+  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname))
+            [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+
   }
 
 genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
@@ -859,7 +861,8 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
   let resname' = varToVHDLName res
   let resname = mkSelectedName resname' (reslabels!!0)
-  let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr
+  let rdaddr_int = genExprFCall (mkVHDLBasicId toIntegerId) rdaddr
+  let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr_int
   let assign = mkUncondAssign (Right resname) argexpr
   let block_label = mkVHDLExtId ("blockRAM" ++ (varToString res))
   let block = AST.BlockSm block_label [] (AST.PMapAspect []) [ram_dec] [assign, mkUpdateProcSm]
@@ -871,7 +874,8 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
       where
         proclabel   = mkVHDLBasicId "updateRAM"
         rising_edge = mkVHDLBasicId "rising_edge"
-        ramloc      = mkIndexedName (AST.NSimple ram_id) wraddr
+        wraddr_int  = genExprFCall (mkVHDLBasicId toIntegerId) wraddr
+        ramloc      = mkIndexedName (AST.NSimple ram_id) wraddr_int
         wform       = AST.Wform [AST.WformElem data_in Nothing]
         ramassign      = AST.SigAssign ramloc wform
         rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
@@ -1054,12 +1058,11 @@ genUnconsVectorFuns elemTM vectorTM  =
     sPar = AST.unsafeVHDLBasicId "s"
     resId   = AST.unsafeVHDLBasicId "res"    
     exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
-                               AST.IfaceVarDec ixPar  naturalTM] elemTM
+                               AST.IfaceVarDec ixPar  unsignedTM] elemTM
     exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed 
-              (AST.IndexedName (AST.NSimple vecPar) [AST.PrimName $ 
-                AST.NSimple ixPar]))
+              (AST.IndexedName (AST.NSimple vecPar) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ ixPar)]))
     replaceSpec = AST.Function (mkVHDLExtId replaceId)  [ AST.IfaceVarDec vecPar vectorTM
-                                          , AST.IfaceVarDec iPar   naturalTM
+                                          , AST.IfaceVarDec iPar   unsignedTM
                                           , AST.IfaceVarDec aPar   elemTM
                                           ] vectorTM 
        -- variable res : fsvec_x (0 to vec'length-1);
@@ -1074,7 +1077,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                 Nothing
        --  res AST.:= vec(0 to i-1) & a & vec(i+1 to length'vec-1)
     replaceExpr1 = AST.NSimple resId AST.:= AST.PrimName (AST.NSimple vecPar)
-    replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [AST.PrimName $ AST.NSimple iPar]) AST.:= AST.PrimName (AST.NSimple aPar)
+    replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ iPar)]) AST.:= AST.PrimName (AST.NSimple aPar)
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     vecSlice init last =  AST.PrimName (AST.NSlice 
                                         (AST.SliceName 

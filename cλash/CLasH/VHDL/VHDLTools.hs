@@ -119,7 +119,8 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
   where
     -- We always have a clock port, so no need to map it anywhere but here
     clk_port = mkAssocElem clockId (idToVHDLExpr clockId)
-    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port]))
+    resetn_port = mkAssocElem resetId (idToVHDLExpr resetId)
+    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port,resetn_port]))
 
 -----------------------------------------------------------------------------
 -- Functions to generate VHDL Exprs
@@ -238,7 +239,7 @@ mkVHDLExtId s =
   AST.unsafeVHDLExtId $ strip_invalid s
   where 
     -- Allowed characters, taken from ForSyde's mkVHDLExtId
-    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&\\'()*+,./:;<=>_|!$%@?[]^`{}~-"
+    allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&'()*+,./:;<=>_|!$%@?[]^`{}~-"
     strip_invalid = filter (`elem` allowed)
 
 -- Create a record field selector that selects the given label from the record
@@ -437,9 +438,10 @@ mk_natural_ty ::
   -> TypeSession (Either String (Maybe (AST.TypeMark, Either AST.TypeDef AST.SubtypeIn)))
       -- ^ An error message or The typemark created.
 mk_natural_ty min_bound max_bound = do
-  let ty_id = mkVHDLExtId $ "nat_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
-  let range = AST.ConstraintRange $ AST.SubTypeRange (AST.PrimLit $ (show min_bound)) (AST.PrimLit $ (show max_bound))
-  let ty_def = AST.SubtypeIn naturalTM (Just range)
+  let bitsize = floor (logBase 2 (fromInteger (toInteger max_bound)))
+  let ty_id = mkVHDLExtId $ "natural_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit $ show min_bound) (AST.PrimLit $ show bitsize)]
+  let ty_def = AST.SubtypeIn unsignedTM (Just range)
   return (Right $ Just (ty_id, Right ty_def))
 
 mk_unsigned_ty ::
@@ -682,14 +684,14 @@ mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
                 , AST.SubProgBody showBoolSpec [] [showBoolExpr]
                 , AST.SubProgBody showSingedSpec [] [showSignedExpr]
                 , AST.SubProgBody showUnsignedSpec [] [showUnsignedExpr]
-                , AST.SubProgBody showNaturalSpec [] [showNaturalExpr]
+                -- , AST.SubProgBody showNaturalSpec [] [showNaturalExpr]
                 ]
   where
     bitPar      = AST.unsafeVHDLBasicId "s"
     boolPar     = AST.unsafeVHDLBasicId "b"
     signedPar   = AST.unsafeVHDLBasicId "sint"
     unsignedPar = AST.unsafeVHDLBasicId "uint"
-    naturalPar  = AST.unsafeVHDLBasicId "nat"
+    -- naturalPar  = AST.unsafeVHDLBasicId "nat"
     showBitSpec = AST.Function showId [AST.IfaceVarDec bitPar std_logicTM] stringTM
     -- if s = '1' then return "'1'" else return "'0'"
     showBitExpr = AST.IfSm (AST.PrimName (AST.NSimple bitPar) AST.:=: AST.PrimLit "'1'")
@@ -714,10 +716,10 @@ mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
                           (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [unsignToInt]) Nothing )
                         where
                           unsignToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ unsignedPar)
-    showNaturalSpec = AST.Function showId [AST.IfaceVarDec naturalPar naturalTM] stringTM
-    showNaturalExpr = AST.ReturnSm (Just $
-                        AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId)
-                        (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [AST.PrimName $ AST.NSimple $ naturalPar]) Nothing )
+    -- showNaturalSpec = AST.Function showId [AST.IfaceVarDec naturalPar naturalTM] stringTM
+    -- showNaturalExpr = AST.ReturnSm (Just $
+    --                     AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId)
+    --                     (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [AST.PrimName $ AST.NSimple $ naturalPar]) Nothing )
                       
   
 genExprFCall :: AST.VHDLId -> AST.Expr -> AST.Expr
