@@ -20,6 +20,8 @@ import Data.Accessor.MonadState as MonadState
 
 -- GHC API
 import CoreSyn
+import qualified Name
+import qualified Id
 import qualified CoreSubst
 import qualified CoreUtils
 import Outputable ( showSDoc, ppr, nest )
@@ -186,3 +188,11 @@ is_local_var (CoreSyn.Var v) = do
   bndrs <- getGlobalBinders
   return $ not $ v `elem` bndrs
 is_local_var _ = return False
+
+-- Is the given binder defined by the user?
+isUserDefined :: CoreSyn.CoreBndr -> Bool
+-- System names are certain to not be user defined
+isUserDefined bndr | Name.isSystemName (Id.idName bndr) = False
+-- Assume everything else is user defined
+isUserDefined bdnr = True
+
