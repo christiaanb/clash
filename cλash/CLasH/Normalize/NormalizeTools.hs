@@ -138,7 +138,7 @@ inlinebind condition expr@(Let (NonRec bndr expr') res) = do
     if applies
       then
         -- Substitute the binding in res and return that
-        change $ substitute [(bndr, expr')] res
+        setChanged >> substitute bndr expr' res
       else
         -- Don't change this let
         return expr
@@ -162,24 +162,28 @@ changeif :: Bool -> a -> TransformMonad a
 changeif True val = change val
 changeif False val = return val
 
--- Replace each of the binders given with the coresponding expressions in the
--- given expression.
-substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> CoreExpr
-substitute [] expr = expr
--- Apply one substitution on the expression, but also on any remaining
--- substitutions. This seems to be the only way to handle substitutions like
--- [(b, c), (a, b)]. This means we reuse a substitution, which is not allowed
--- according to CoreSubst documentation (but it doesn't seem to be a problem).
--- TODO: Find out how this works, exactly.
-substitute ((b, e):subss) expr = substitute subss' expr'
-  where 
-    -- Create the Subst
-    subs = (CoreSubst.extendSubst CoreSubst.emptySubst b e)
-    -- Apply this substitution to the main expression
-    expr' = CoreSubst.substExpr subs expr
-    -- Apply this substitution on all the expressions in the remaining
-    -- substitutions
-    subss' = map (Arrow.second (CoreSubst.substExpr subs)) subss
+-- Creates a transformation that substitutes the given binder with the given
+-- expression (This can be a type variable, replace by a Type expression). All
+-- value binders in the expression are cloned before the replacement, to
+-- guarantee uniqueness.
+substitute :: CoreBndr -> CoreExpr -> Transform
+-- Use CoreSubst to subst a type var in a type
+substitute find (Type repl_ty) (Type ty) = do
+  let subst = CoreSubst.extendTvSubst CoreSubst.emptySubst find repl_ty
+  let ty' = CoreSubst.substTy subst ty 
+  return (Type ty')
+-- Use CoreSubst to subst a type var in the type annotation of a case
+substitute find repl@(Type repl_ty) (Case scrut bndr ty alts) = do
+  let subst = CoreSubst.extendTvSubst CoreSubst.emptySubst find repl_ty
+  let ty' = CoreSubst.substTy subst ty 
+  -- And continue with substituting on all subexpressions of the case
+  subeverywhere (substitute find repl) (Case scrut bndr ty' alts)
+-- If we see the var to find, replace it by a uniqued version of repl
+substitute find repl (Var var) | find == var = do
+  setChanged >> (Trans.lift $ CoreTools.genUniques repl)
+
+-- For all other expressions, just look in subexpressions
+substitute find repl expr = subeverywhere (substitute find repl) expr
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: (CoreTools.TypedThing t) => t -> TransformMonad Bool

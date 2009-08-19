@@ -65,7 +65,7 @@ etatop = notappargs ("eta", eta)
 --------------------------------
 beta, betatop :: Transform
 -- Substitute arg for x in expr
-beta (App (Lam x expr) arg) = change $ substitute [(x, arg)] expr
+beta (App (Lam x expr) arg) = setChanged >> substitute x arg expr
 -- Propagate the application into the let
 beta (App (Let binds expr) arg) = change $ Let binds (App expr arg)
 -- Propagate the application into each of the alternatives
