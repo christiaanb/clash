@@ -193,6 +193,10 @@ is_simple _ = False
 has_free_tyvars :: CoreSyn.CoreExpr -> Bool
 has_free_tyvars = not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars Var.isTyVar)
 
+-- Does the given type have any free type vars?
+ty_has_free_tyvars :: Type.Type -> Bool
+ty_has_free_tyvars = not . VarSet.isEmptyVarSet . Type.tyVarsOfType
+
 -- Does the given CoreExpr have any free local vars?
 has_free_vars :: CoreSyn.CoreExpr -> Bool
 has_free_vars = not . VarSet.isEmptyVarSet . CoreFVs.exprFreeVars
