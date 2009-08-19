@@ -323,7 +323,7 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 inlinetoplevel, inlinetopleveltop :: Transform
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserver structure.
-inlinetoplevel expr@(Var f) | (Name.isSystemName . Id.idName) f = do
+inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
   -- See if this is a top level binding for which we have a body
   body_maybe <- Trans.lift $ getGlobalBind f
   case body_maybe of
