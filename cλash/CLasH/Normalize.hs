@@ -64,8 +64,10 @@ etatop = notappargs ("eta", eta)
 -- β-reduction
 --------------------------------
 beta, betatop :: Transform
--- Substitute arg for x in expr
-beta (App (Lam x expr) arg) = setChanged >> substitute x arg expr
+-- Substitute arg for x in expr. For value lambda's, also clone before
+-- substitution.
+beta (App (Lam x expr) arg) | CoreSyn.isTyVar x = setChanged >> substitute x arg expr
+                            | otherwise      = setChanged >> substitute_clone x arg expr
 -- Propagate the application into the let
 beta (App (Let binds expr) arg) = change $ Let binds (App expr arg)
 -- Propagate the application into each of the alternatives

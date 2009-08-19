@@ -136,9 +136,10 @@ inlinebind :: ((CoreBndr, CoreExpr) -> TransformMonad Bool) -> Transform
 inlinebind condition expr@(Let (NonRec bndr expr') res) = do
     applies <- condition (bndr, expr')
     if applies
-      then
+      then do
         -- Substitute the binding in res and return that
-        setChanged >> substitute bndr expr' res
+        res' <- substitute_clone bndr expr' res
+        change res'
       else
         -- Don't change this let
         return expr
@@ -162,28 +163,26 @@ changeif :: Bool -> a -> TransformMonad a
 changeif True val = change val
 changeif False val = return val
 
--- Creates a transformation that substitutes the given binder with the given
--- expression (This can be a type variable, replace by a Type expression). All
--- value binders in the expression are cloned before the replacement, to
--- guarantee uniqueness.
+-- | Creates a transformation that substitutes the given binder with the given
+-- expression (This can be a type variable, replace by a Type expression).
+-- Does not set the changed flag.
 substitute :: CoreBndr -> CoreExpr -> Transform
--- Use CoreSubst to subst a type var in a type
-substitute find (Type repl_ty) (Type ty) = do
-  let subst = CoreSubst.extendTvSubst CoreSubst.emptySubst find repl_ty
-  let ty' = CoreSubst.substTy subst ty 
-  return (Type ty')
--- Use CoreSubst to subst a type var in the type annotation of a case
-substitute find repl@(Type repl_ty) (Case scrut bndr ty alts) = do
-  let subst = CoreSubst.extendTvSubst CoreSubst.emptySubst find repl_ty
-  let ty' = CoreSubst.substTy subst ty 
-  -- And continue with substituting on all subexpressions of the case
-  subeverywhere (substitute find repl) (Case scrut bndr ty' alts)
+-- Use CoreSubst to subst a type var in an expression
+substitute find repl expr = do
+  let subst = CoreSubst.extendSubst CoreSubst.emptySubst find repl
+  return $ CoreSubst.substExpr subst expr 
+
+-- | Creates a transformation that substitutes the given binder with the given
+-- expression. This does only work for value expressions! All binders in the
+-- expression are cloned before the replacement, to guarantee uniqueness.
+substitute_clone :: CoreBndr -> CoreExpr -> Transform
 -- If we see the var to find, replace it by a uniqued version of repl
-substitute find repl (Var var) | find == var = do
-  setChanged >> (Trans.lift $ CoreTools.genUniques repl)
+substitute_clone find repl (Var var) | find == var = do
+  repl' <- Trans.lift $ CoreTools.genUniques repl
+  change repl'
 
 -- For all other expressions, just look in subexpressions
-substitute find repl expr = subeverywhere (substitute find repl) expr
+substitute_clone find repl expr = subeverywhere (substitute_clone find repl) expr
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: (CoreTools.TypedThing t) => t -> TransformMonad Bool
