@@ -651,7 +651,10 @@ simplrestop expr@(Lam _ _) = return expr
 simplrestop expr@(Let _ _) = return expr
 simplrestop expr = do
   local_var <- Trans.lift $ is_local_var expr
-  if local_var
+  -- Don't extract values that are not representable, to prevent loops with
+  -- inlinenonrep
+  repr <- isRepr expr
+  if local_var || not repr
     then
       return expr
     else do
