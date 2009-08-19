@@ -50,3 +50,10 @@ isJustM = Monad.liftM Maybe.isJust
 andM, orM :: (Monad m) => m [Bool] -> m Bool
 andM = Monad.liftM and
 orM = Monad.liftM or
+
+mapAccumLM :: (Monad m) => (acc -> x -> m (acc, y)) -> acc -> [x] -> m (acc, [y])
+mapAccumLM _ s []        =  return (s, [])
+mapAccumLM f s (x:xs)    =  do
+  (s',  y ) <- f s x
+  (s'', ys) <- mapAccumLM f s' xs
+  return (s'', y:ys)
