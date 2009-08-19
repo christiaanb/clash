@@ -30,6 +30,7 @@ import Outputable ( showSDoc, ppr, nest )
 import CLasH.Normalize.NormalizeTypes
 import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.Pretty
+import qualified CLasH.Utils.Core.CoreTools as CoreTools
 import CLasH.VHDL.VHDLTypes
 import qualified CLasH.VHDL.VHDLTools as VHDLTools
 
@@ -179,9 +180,10 @@ substitute ((b, e):subss) expr = substitute subss' expr'
     subss' = map (Arrow.second (CoreSubst.substExpr subs)) subss
 
 -- Is the given expression representable at runtime, based on the type?
-isRepr :: CoreSyn.CoreExpr -> TransformMonad Bool
-isRepr (Type ty) = return False
-isRepr expr = Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType (CoreUtils.exprType expr)
+isRepr :: (CoreTools.TypedThing t) => t -> TransformMonad Bool
+isRepr tything = case CoreTools.getType tything of
+  Nothing -> return False
+  Just ty -> Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType ty 
 
 is_local_var :: CoreSyn.CoreExpr -> TranslatorSession Bool
 is_local_var (CoreSyn.Var v) = do

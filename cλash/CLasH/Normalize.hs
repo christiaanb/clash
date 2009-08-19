@@ -427,7 +427,7 @@ casesimpl expr@(Case scrut b ty alts) = do
       -- binding containing a case expression.
       dobndr :: CoreBndr -> Int -> TransformMonad (CoreBndr, Maybe (CoreBndr, CoreExpr))
       dobndr b i = do
-        repr <- isRepr (Var b)
+        repr <- isRepr b
         -- Is b wild (e.g., not a free var of expr. Since b is only in scope
         -- in expr, this means that b is unused if expr does not use it.)
         let wild = not (VarSet.elemVarSet b free_vars)
