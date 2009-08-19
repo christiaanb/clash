@@ -37,12 +37,15 @@ import qualified CoreUtils
 import qualified CoreFVs
 import qualified Literal
 import qualified MkCore
+import qualified VarEnv
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.GhcTools
 import CLasH.Utils.HsTools
 import CLasH.Utils.Pretty
+import CLasH.Utils
+import qualified CLasH.Utils.Core.BinderTools as BinderTools
 
 -- | A single binding, used as a shortcut to simplify type signatures.
 type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
@@ -336,3 +339,81 @@ instance TypedThing CoreSyn.CoreBndr where
 
 instance TypedThing Type.Type where
   getType = return . id
+
+-- | Generate new uniques for all binders in the given expression.
+-- Does not support making type variables unique, though this could be
+-- supported if required (by passing a CoreSubst.Subst instead of VarEnv to
+-- genUniques' below).
+genUniques :: CoreSyn.CoreExpr -> TranslatorSession CoreSyn.CoreExpr
+genUniques = genUniques' VarEnv.emptyVarEnv
+
+-- | A helper function to generate uniques, that takes a VarEnv containing the
+--   substitutions already performed.
+genUniques' :: VarEnv.VarEnv CoreSyn.CoreBndr -> CoreSyn.CoreExpr -> TranslatorSession CoreSyn.CoreExpr
+genUniques' subst (CoreSyn.Var f) = do
+  -- Replace the binder with its new value, if applicable.
+  let f' = VarEnv.lookupWithDefaultVarEnv subst f f
+  return (CoreSyn.Var f')
+-- Leave literals untouched
+genUniques' subst (CoreSyn.Lit l) = return $ CoreSyn.Lit l
+genUniques' subst (CoreSyn.App f arg) = do
+  -- Only work on subexpressions
+  f' <- genUniques' subst f
+  arg' <- genUniques' subst arg
+  return (CoreSyn.App f' arg')
+genUniques' subst (CoreSyn.Lam bndr res) | CoreSyn.isTyVar bndr =
+  error $ "Cloning type variables not supported!"
+genUniques' subst (CoreSyn.Lam bndr res) = do
+  -- Generate a new unique for the bound variable
+  (subst', bndr') <- genUnique subst bndr
+  res' <- genUniques' subst' res
+  return (CoreSyn.Lam bndr' res')
+genUniques' subst (CoreSyn.Let (CoreSyn.NonRec bndr bound) res) = do
+  -- Make the binders unique
+  (subst', bndr') <- genUnique subst bndr
+  bound' <- genUniques' subst' bound
+  res' <- genUniques' subst' res
+  return $ CoreSyn.Let (CoreSyn.NonRec bndr' bound') res'
+genUniques' subst (CoreSyn.Let (CoreSyn.Rec binds) res) = do
+  -- Make each of the binders unique
+  (subst', bndrs') <- mapAccumLM genUnique subst (map fst binds)
+  bounds' <- mapM (genUniques' subst') (map snd binds)
+  res' <- genUniques' subst' res
+  let binds' = zip bndrs' bounds'
+  return $ CoreSyn.Let (CoreSyn.Rec binds') res'
+genUniques' subst (CoreSyn.Case scrut bndr ty alts) = do
+  -- Process the scrutinee with the original substitution, since non of the
+  -- binders bound in the Case statement is in scope in the scrutinee.
+  scrut' <- genUniques' subst scrut
+  -- Generate a new binder for the scrutinee
+  (subst', bndr') <- genUnique subst bndr
+  -- Process each of the alts
+  alts' <- mapM (doalt subst') alts
+  return $ CoreSyn.Case scrut' bndr' ty alts'
+  where
+    doalt subst (con, bndrs, expr) = do
+      (subst', bndrs') <- mapAccumLM genUnique subst bndrs
+      expr' <- genUniques' subst' expr
+      -- Note that we don't return subst', since bndrs are only in scope in
+      -- expr.
+      return (con, bndrs', expr')
+genUniques' subst (CoreSyn.Cast expr coercion) = do
+  expr' <- genUniques' subst expr
+  -- Just process the casted expression
+  return $ CoreSyn.Cast expr' coercion
+genUniques' subst (CoreSyn.Note note expr) = do
+  expr' <- genUniques' subst expr
+  -- Just process the annotated expression
+  return $ CoreSyn.Note note expr'
+-- Leave types untouched
+genUniques' subst expr@(CoreSyn.Type _) = return expr
+
+-- Generate a new unique for the given binder, and extend the given
+-- substitution to reflect this.
+genUnique :: VarEnv.VarEnv CoreSyn.CoreBndr -> CoreSyn.CoreBndr -> TranslatorSession (VarEnv.VarEnv CoreSyn.CoreBndr, CoreSyn.CoreBndr)
+genUnique subst bndr = do
+  bndr' <- BinderTools.cloneVar bndr
+  -- Replace all occurences of the old binder with a reference to the new
+  -- binder.
+  let subst' = VarEnv.extendVarEnv subst bndr bndr'
+  return (subst', bndr')
