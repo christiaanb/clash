@@ -10,6 +10,8 @@ module CLasH.HardwareTypes
   , Bit(..)
   , State(..)
   , Vector
+  , resizeInt
+  , resizeWord
   , hwand
   , hwor
   , hwxor
@@ -27,8 +29,10 @@ import Types
 import qualified Data.Param.TFVec as TFVec
 import Data.Param.TFVec hiding (TFVec)
 import Data.RangedWord
-import Data.SizedInt
-import Data.SizedWord 
+import qualified Data.SizedInt as SizedInt
+import Data.SizedInt hiding (resize)
+import qualified Data.SizedWord as SizedWord
+import Data.SizedWord hiding (resize) 
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
@@ -36,6 +40,12 @@ import Data.Typeable
 newtype State s = State s deriving (P.Show)
 
 type Vector = TFVec.TFVec
+
+resizeInt :: (NaturalT nT, NaturalT nT') => SizedInt nT -> SizedInt nT'
+resizeInt = SizedInt.resize
+
+resizeWord :: (NaturalT nT, NaturalT nT') => SizedWord nT -> SizedWord nT'
+resizeWord = SizedWord.resize
 
 -- The plain Bit type
 data Bit = High | Low
