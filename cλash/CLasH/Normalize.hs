@@ -64,8 +64,10 @@ etatop = notappargs ("eta", eta)
 -- β-reduction
 --------------------------------
 beta, betatop :: Transform
--- Substitute arg for x in expr
-beta (App (Lam x expr) arg) = change $ substitute [(x, arg)] expr
+-- Substitute arg for x in expr. For value lambda's, also clone before
+-- substitution.
+beta (App (Lam x expr) arg) | CoreSyn.isTyVar x = setChanged >> substitute x arg expr
+                            | otherwise      = setChanged >> substitute_clone x arg expr
 -- Propagate the application into the let
 beta (App (Let binds expr) arg) = change $ Let binds (App expr arg)
 -- Propagate the application into each of the alternatives
@@ -323,29 +325,36 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 inlinetoplevel, inlinetopleveltop :: Transform
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserver structure.
-inlinetoplevel expr@(Var f) | (Name.isSystemName . Id.idName) f = do
+inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
+  norm <- isNormalizeable f
   -- See if this is a top level binding for which we have a body
   body_maybe <- Trans.lift $ getGlobalBind f
-  case body_maybe of
-    Just body -> do
+  if norm && Maybe.isJust body_maybe
+    then do
       -- Get the normalized version
       norm <- Trans.lift $ getNormalized f
       if needsInline norm 
-        then
-          change norm
+        then do
+          -- Regenerate all uniques in the to-be-inlined expression
+          norm_uniqued <- Trans.lift $ genUniques norm
+          change norm_uniqued
         else
           return expr
-    -- No body, this is probably a local variable or builtin or external
-    -- function.
-    Nothing -> return expr
+    else
+      -- No body or not normalizeable.
+      return expr
 -- Leave all other expressions unchanged
 inlinetoplevel expr = return expr
 inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
 
 needsInline :: CoreExpr -> Bool
--- Any function that just evaluates to another function, can be inlined
---needsInline (Var f) = True
-needsInline _ = False
+needsInline expr = case splitNormalized expr of
+  -- Inline any function that only has a single definition, it is probably
+  -- simple enough. This might inline some stuff that it shouldn't though it
+  -- will never inline user-defined functions (inlinetoplevel only tries
+  -- system names) and inlining should never break things.
+  (args, [bind], res) -> True
+  _ -> False
 
 --------------------------------
 -- Scrutinee simplification
@@ -423,7 +432,7 @@ casesimpl expr@(Case scrut b ty alts) = do
       -- binding containing a case expression.
       dobndr :: CoreBndr -> Int -> TransformMonad (CoreBndr, Maybe (CoreBndr, CoreExpr))
       dobndr b i = do
-        repr <- isRepr (Var b)
+        repr <- isRepr b
         -- Is b wild (e.g., not a free var of expr. Since b is only in scope
         -- in expr, this means that b is unused if expr does not use it.)
         let wild = not (VarSet.elemVarSet b free_vars)
@@ -647,7 +656,10 @@ simplrestop expr@(Lam _ _) = return expr
 simplrestop expr@(Let _ _) = return expr
 simplrestop expr = do
   local_var <- Trans.lift $ is_local_var expr
-  if local_var
+  -- Don't extract values that are not representable, to prevent loops with
+  -- inlinenonrep
+  repr <- isRepr expr
+  if local_var || not repr
     then
       return expr
     else do
@@ -685,9 +697,10 @@ normalizeExpr ::
   -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
 
 normalizeExpr what expr = do
+      expr_uniqued <- genUniques expr
       -- Normalize this expression
-      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr ) ++ "\n") $ return ()
-      expr' <- dotransforms transforms expr
+      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") $ return ()
+      expr' <- dotransforms transforms expr_uniqued
       trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
       return expr'
 
