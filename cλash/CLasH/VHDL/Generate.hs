@@ -167,16 +167,18 @@ mkStateProcSm ::
 mkStateProcSm (old, new) = do
   nonempty <- hasNonEmptyType old 
   if nonempty 
-    then return [AST.CSPSm $ AST.ProcSm label [clk] [statement]]
+    then return [AST.CSPSm $ AST.ProcSm label [clockId,resetId] [statement]]
     else return []
   where
     label       = mkVHDLBasicId $ "state"
-    clk         = mkVHDLBasicId "clock"
     rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
     wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
-    assign      = AST.SigAssign (varToVHDLName old) wform
-    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clk)]
-    statement   = AST.IfSm rising_edge_clk [assign] [] Nothing
+    clk_assign      = AST.SigAssign (varToVHDLName old) wform
+    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
+    resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
+    reset_statement = []
+    clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
+    statement   = AST.IfSm resetn_is_low reset_statement clk_statement Nothing
 
 
 -- | Transforms a core binding into a VHDL concurrent statement
