@@ -87,7 +87,7 @@ createTestbenchArch mCycles stimuli top testent= do
   (stimuliAssigns, stimuliDecs, cycles, used) <- createStimuliAssigns mCycles stimuli (head iIds)
   let finalAssigns = (AST.CSSASm (AST.NSimple resetId AST.:<==:
                       AST.ConWforms []
-                                    (AST.Wform [AST.WformElem (AST.PrimLit "'1'") (Just $ AST.PrimLit "3 ns")])
+                                    (AST.Wform [AST.WformElem (AST.PrimLit "'0'") (Just $ AST.PrimLit "0 ns"), AST.WformElem (AST.PrimLit "'1'") (Just $ AST.PrimLit "3 ns")])
                                     Nothing)) : stimuliAssigns
   let clkProc     = createClkProc
   let arch = AST.ArchBody
