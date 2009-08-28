@@ -207,7 +207,7 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let valargs = get_val_args (Var.varType f) args
   genApplication (Left bndr) f (map Left valargs)
 
--- A single alt case must be a selector. This means thee scrutinee is a simple
+-- A single alt case must be a selector. This means the scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
 -- is also returned.
 mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt])) 
