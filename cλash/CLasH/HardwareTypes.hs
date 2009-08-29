@@ -84,13 +84,14 @@ blockRAM ::
   a ->
   RangedWord s ->
   RangedWord s ->
-  Bit -> 
+  Bool -> 
   ((MemState s a), a )
 blockRAM (State mem) data_in rdaddr wraddr wrenable = 
   ((State mem'), data_out)
   where
     data_out  = mem!rdaddr
     -- Only write data_in to memory if write is enabled
-    mem' = case wrenable of
-      Low   ->  mem
-      High  ->  replace mem wraddr data_in
+    mem' =  if wrenable then
+              replace mem wraddr data_in
+            else
+              mem

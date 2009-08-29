@@ -881,7 +881,7 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
         wform       = AST.Wform [AST.WformElem data_in Nothing]
         ramassign      = AST.SigAssign ramloc wform
         rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
-        statement   = AST.IfSm (AST.And rising_edge_clk (wrenable AST.:=: AST.PrimLit "'1'")) [ramassign] [] Nothing
+        statement   = AST.IfSm (AST.And rising_edge_clk wrenable) [ramassign] [] Nothing
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
