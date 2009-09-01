@@ -324,7 +324,7 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 
 inlinetoplevel, inlinetopleveltop :: Transform
 -- Any system name is candidate for inlining. Never inline user-defined
--- functions, to preserver structure.
+-- functions, to preserve structure.
 inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
   norm <- isNormalizeable f
   -- See if this is a top level binding for which we have a body
