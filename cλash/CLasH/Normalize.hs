@@ -305,20 +305,19 @@ letmergetop = everywhere ("letmerge", letmerge)
 -}
 
 --------------------------------
--- Function inlining
+-- Non-representable binding inlining
 --------------------------------
--- Remove a = B bindings, with B :: a -> b, or B :: forall x . T, from let
--- expressions everywhere. This means that any value that still needs to be
--- applied to something else (polymorphic values need to be applied to a
--- Type) will be inlined, and will eventually be applied to all their
--- arguments.
+-- Remove a = B bindings, with B of a non-representable type, from let
+-- expressions everywhere. This means that any value that we can't generate a
+-- signal for, will be inlined and hopefully turned into something we can
+-- represent.
 --
 -- This is a tricky function, which is prone to create loops in the
 -- transformations. To fix this, we make sure that no transformation will
--- create a new let binding with a function type. These other transformations
--- will just not work on those function-typed values at first, but the other
--- transformations (in particular β-reduction) should make sure that the type
--- of those values eventually becomes primitive.
+-- create a new let binding with a non-representable type. These other
+-- transformations will just not work on those function-typed values at first,
+-- but the other transformations (in particular β-reduction) should make sure
+-- that the type of those values eventually becomes representable.
 inlinenonreptop :: Transform
 inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . isRepr . snd))
 
