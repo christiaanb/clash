@@ -38,6 +38,7 @@ import qualified CoreFVs
 import qualified Literal
 import qualified MkCore
 import qualified VarEnv
+import qualified Literal
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -228,13 +229,21 @@ get_val_args ty args = drop n args
     -- arguments, to get at the value arguments.
     n = length tyvars + length predtypes
 
-getLiterals :: CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
-getLiterals app@(CoreSyn.App _ _) = literals
+getLiterals :: HscTypes.HscEnv -> CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
+getLiterals _ app@(CoreSyn.App _ _) = literals
   where
     (CoreSyn.Var f, args) = CoreSyn.collectArgs app
     literals = filter (is_lit) args
 
-getLiterals lit@(CoreSyn.Lit _) = [lit]
+getLiterals _ lit@(CoreSyn.Lit _) = [lit]
+
+getLiterals hscenv letrec@(CoreSyn.Let (CoreSyn.NonRec letBind (letExpr)) letRes) = [lit]
+  where
+    ty     = Var.varType letBind
+    litInt = eval_tfp_int hscenv ty
+    lit    = CoreSyn.Lit (Literal.mkMachInt (toInteger litInt))
+
+getLiterals _ expr = error $ "\nCoreTools.getLiterals: Not a known Lit: " ++ pprString expr
 
 reduceCoreListToHsList :: 
   [HscTypes.CoreModule] -- ^ The modules where parts of the list are hidden

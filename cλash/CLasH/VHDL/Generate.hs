@@ -292,14 +292,16 @@ genVarArgs wrap dst func args = wrap dst func args'
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be Literals
 genLitArgs ::
-  (dst -> func -> [Literal.Literal] -> res)
-  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
-genLitArgs wrap dst func args = wrap dst func args'
-  where
-    args' = map exprToLit litargs
-    -- FIXME: Check if we were passed an CoreSyn.App
-    litargs = concat (map getLiterals exprargs)
-    (exprargs, []) = Either.partitionEithers args
+  (dst -> func -> [Literal.Literal] -> TranslatorSession [AST.ConcSm])
+  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.ConcSm])
+genLitArgs wrap dst func args = do
+  hscenv <- MonadState.lift tsType $ getA tsHscEnv
+  let (exprargs, []) = Either.partitionEithers args
+  -- FIXME: Check if we were passed an CoreSyn.App
+  let litargs = concat (map (getLiterals hscenv) exprargs)
+  let args' = map exprToLit litargs
+  concsms <- wrap dst func args'
+  return concsms    
 
 -- | A function to wrap a builder-like function that produces an expression
 -- and expects it to be assigned to the destination.
