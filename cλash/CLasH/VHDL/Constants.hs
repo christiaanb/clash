@@ -242,6 +242,18 @@ equalityId = "=="
 inEqualityId :: String
 inEqualityId = "/="
 
+gtId :: String
+gtId = ">"
+
+ltId :: String
+ltId = "<"
+
+gteqId :: String
+gteqId = ">="
+
+lteqId :: String
+lteqId = "<="
+
 boolOrId :: String
 boolOrId = "||"
 
