@@ -234,7 +234,8 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
 -- first is the default case, if there is any.
 mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) b ty [(_, _, CoreSyn.Var false), (con, _, CoreSyn.Var true)])) = do
   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
-  let cond_expr = scrut' AST.:=: (altconToVHDLExpr con)
+  altcon <- MonadState.lift tsType $ altconToVHDLExpr con
+  let cond_expr = scrut' AST.:=: altcon
   true_expr <- MonadState.lift tsType $ varToVHDLExpr true
   false_expr <- MonadState.lift tsType $ varToVHDLExpr false
   return ([mkCondAssign (Left bndr) cond_expr true_expr false_expr], [])

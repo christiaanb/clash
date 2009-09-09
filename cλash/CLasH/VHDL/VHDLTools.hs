@@ -129,7 +129,7 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
 varToVHDLExpr :: Var.Var -> TypeSession AST.Expr
 varToVHDLExpr var = do
   case Id.isDataConWorkId_maybe var of
-    Just dc -> return $ dataconToVHDLExpr dc
+    Just dc -> dataconToVHDLExpr dc
     -- This is a dataconstructor.
     -- Not a datacon, just another signal. Perhaps we should check for
     -- local/global here as well?
@@ -159,23 +159,37 @@ exprToVHDLExpr core = varToVHDLExpr (exprToVar core)
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it
 -- has. Should not be called with a DEFAULT constructor.
-altconToVHDLExpr :: CoreSyn.AltCon -> AST.Expr
+altconToVHDLExpr :: CoreSyn.AltCon -> TypeSession AST.Expr
 altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
 
 altconToVHDLExpr (LitAlt _) = error "\nVHDL.conToVHDLExpr: Literals not support in case alternatives yet"
 altconToVHDLExpr DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
 
 -- Turn a datacon (without arguments!) into a VHDL expression.
-dataconToVHDLExpr :: DataCon.DataCon -> AST.Expr
-dataconToVHDLExpr dc = AST.PrimLit lit
-  where
-    tycon = DataCon.dataConTyCon dc
-    tyname = TyCon.tyConName tycon
-    dcname = DataCon.dataConName dc
-    lit = case Name.getOccString tyname of
-      -- TODO: Do something more robust than string matching
-      "Bit"      -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
-      "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
+dataconToVHDLExpr :: DataCon.DataCon -> TypeSession AST.Expr
+dataconToVHDLExpr dc = do
+  typemap <- getA tsTypes
+  htype_either <- mkHType (DataCon.dataConRepType dc)
+  case htype_either of
+    -- No errors
+    Right htype -> do
+      let existing_ty = (Monad.liftM $ fmap fst) $ Map.lookup htype typemap
+      case existing_ty of
+        Just ty -> do
+          let dcname = DataCon.dataConName dc
+          let lit    = idToVHDLExpr $ mkVHDLExtId $ Name.getOccString dcname
+          return lit
+        Nothing -> do
+          let tycon = DataCon.dataConTyCon dc
+          let tyname = TyCon.tyConName tycon
+          let dcname = DataCon.dataConName dc
+          let lit = case Name.getOccString tyname of
+              -- TODO: Do something more robust than string matching
+                "Bit"  -> case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
+                "Bool" -> case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
+          return $ AST.PrimLit lit
+    -- Error when constructing htype
+    Left err -> error err
 
 -----------------------------------------------------------------------------
 -- Functions dealing with names, variables and ids
@@ -380,7 +394,19 @@ mk_tycon_ty ty tycon args =
         (errors, _) -> return $ Left $
           "VHDLTools.mk_tycon_ty: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
           ++ (concat errors)
-    dcs -> return $ Left $ "VHDLTools.mk_tycon_ty: Only single constructor datatypes supported: " ++ pprString tycon ++ "\n"
+    dcs -> do
+      let arg_tys = concat $ map DataCon.dataConRepArgTys dcs
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      case real_arg_tys of
+        [] -> do
+          let elems = map (mkVHDLExtId . nameToString . DataCon.dataConName) dcs
+          let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
+          let ty_def = AST.TDE $ AST.EnumTypeDef elems
+          let enumShow = mkEnumShow elems ty_id
+          modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, enumShow)
+          return $ Right $ Just (ty_id, Left ty_def)
+        xs -> return $ Left $
+          "VHDLTools.mkTyConHType: Only enum-like constructor datatypes supported: " ++ pprString dcs ++ "\n"
   where
     -- Create a subst that instantiates all types passed to the tycon
     -- TODO: I'm not 100% sure that this is the right way to do this. It seems
@@ -529,7 +555,7 @@ mkTyConHType :: TyCon.TyCon -> [Type.Type] -> TypeSession (Either String HType)
 mkTyConHType tycon args =
   case TyCon.tyConDataCons tycon of
     -- Not an algebraic type
-    [] -> return $ Left $ "VHDLTools.mkHType: Only custom algebraic types are supported: " ++ pprString tycon ++ "\n"
+    [] -> return $ Left $ "VHDLTools.mkTyConHType: Only custom algebraic types are supported: " ++ pprString tycon ++ "\n"
     [dc] -> do
       let arg_tys = DataCon.dataConRepArgTys dc
       let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
@@ -540,9 +566,16 @@ mkTyConHType tycon args =
           return $ Right $ ADTType (nameToString (TyCon.tyConName tycon)) elem_htys
         -- There were errors in element types
         (errors, _) -> return $ Left $
-          "VHDLTools.mkHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
+          "VHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
           ++ (concat errors)
-    dcs -> return $ Left $ "VHDLTools.mkHType: Only single constructor datatypes supported: " ++ pprString tycon ++ "\n"
+    dcs -> do
+      let arg_tys = concat $ map DataCon.dataConRepArgTys dcs
+      let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
+      case real_arg_tys of
+        [] ->
+          return $ Right $ EnumType (nameToString (TyCon.tyConName tycon)) (map (nameToString . DataCon.dataConName) dcs)
+        xs -> return $ Left $
+          "VHDLTools.mkTyConHType: Only enum-like constructor datatypes supported: " ++ pprString dcs ++ "\n"
   where
     tyvars = TyCon.tyConTyVars tycon
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
@@ -608,6 +641,17 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
                   (take tupSize recordlabels)
     recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
     tupSize = length elemTMs
+
+mkEnumShow ::
+  [AST.VHDLId]
+  -> AST.TypeMark
+  -> AST.SubProgBody
+mkEnumShow elemIds enumTM = AST.SubProgBody showSpec [] [showExpr]
+  where
+    enumPar    = AST.unsafeVHDLBasicId "enum"
+    showSpec  = AST.Function showId [AST.IfaceVarDec enumPar enumTM] stringTM
+    showExpr  = AST.ReturnSm (Just $
+                  AST.PrimLit (show $ tail $ init $ AST.fromVHDLId enumTM))
 
 mkVectorShow ::
   AST.TypeMark -- ^ elemtype

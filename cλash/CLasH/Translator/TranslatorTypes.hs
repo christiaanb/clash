@@ -47,6 +47,7 @@ instance Ord OrdType where
 
 data HType = StdType OrdType |
              ADTType String [HType] |
+             EnumType String [String] |
              VecType Int HType |
              SizedWType Int |
              RangedWType Int |
