@@ -118,12 +118,14 @@ createStimuliAssigns mCycles stimuli signal = do
   outps <- mapM (\x -> MonadState.lift tsType (varToVHDLExpr x)) resvars
   let wformelems = zipWith genWformElem [0,10..] outps
   let inassign = AST.CSSASm $ AST.NSimple signal AST.:<==: AST.ConWforms [] (AST.Wform wformelems) Nothing
-  return (stimuli_sms ++ [inassign], sig_decs, inputlen, concat useds)
+  case (concat stimuli_sms) of
+    []        -> return ([inassign], [], inputlen, concat useds)
+    stims     -> return (stims ++ [inassign], sig_decs, inputlen, concat useds)
 
 createStimulans ::
   CoreSyn.CoreExpr -- ^ The stimulans
   -> Int -- ^ The cycle for this stimulans
-  -> TranslatorSession ( AST.ConcSm
+  -> TranslatorSession ( [AST.ConcSm]
                        , Var.Var 
                        , [CoreSyn.CoreBndr]) -- ^ (The statement, the variable it assigns to (assumed to be available!), Any entities used by this stimulans)
 
@@ -137,8 +139,10 @@ createStimulans expr cycl = do
   sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
   let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
   let block_label = mkVHDLExtId ("testcycle_" ++ (show cycl))
-  let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (concat stimulansbindss)  
-  return (AST.CSBSm block, res, concat useds)
+  let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (concat stimulansbindss)
+  case (sig_decs,(concat stimulansbindss)) of
+    ([],[])   ->  return ([], res, concat useds)
+    otherwise ->  return ([AST.CSBSm block], res, concat useds)
  
 -- | generates a clock process with a period of 10ns
 createClkProc :: AST.ProcSm
