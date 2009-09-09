@@ -232,15 +232,21 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
 -- binders in the alts and only variables in the case values and a variable
 -- for a scrutinee. We check the constructor of the second alt, since the
 -- first is the default case, if there is any.
-mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) b ty [(_, _, CoreSyn.Var false), (con, _, CoreSyn.Var true)])) = do
-  scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
-  altcon <- MonadState.lift tsType $ altconToVHDLExpr con
-  let cond_expr = scrut' AST.:=: altcon
-  true_expr <- MonadState.lift tsType $ varToVHDLExpr true
-  false_expr <- MonadState.lift tsType $ varToVHDLExpr false
-  return ([mkCondAssign (Left bndr) cond_expr true_expr false_expr], [])
+-- mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) b ty [(_, _, CoreSyn.Var false), (con, _, CoreSyn.Var true)])) = do
+--   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
+--   altcon <- MonadState.lift tsType $ altconToVHDLExpr con
+--   let cond_expr = scrut' AST.:=: altcon
+--   true_expr <- MonadState.lift tsType $ varToVHDLExpr true
+--   false_expr <- MonadState.lift tsType $ varToVHDLExpr false
+--   return ([mkCondAssign (Left bndr) cond_expr true_expr false_expr], [])
 
-mkConcSm (_, (CoreSyn.Case (CoreSyn.Var _) _ _ alts)) = error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
+mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) _ _ (alt:alts))) = do --error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
+  scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
+  altcons <- MonadState.lift tsType $ mapM (altconToVHDLExpr . (\(con,_,_) -> con)) (alts ++ [alt])
+  let cond_exprs = map (\x -> scrut' AST.:=: x) (init altcons)
+  exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) (alts ++ [alt])
+  return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
+
 mkConcSm (_, CoreSyn.Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 

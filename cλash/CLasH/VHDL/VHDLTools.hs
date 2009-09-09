@@ -73,7 +73,7 @@ mkAssign dst cond false_expr =
     whenelse = case cond of
       Just (cond_expr, true_expr) -> 
         let 
-          true_wform = AST.Wform [AST.WformElem true_expr Nothing] 
+          true_wform = AST.Wform [AST.WformElem true_expr Nothing]
         in
           [AST.WhenElse true_wform cond_expr]
       Nothing -> []
@@ -84,6 +84,31 @@ mkAssign dst cond false_expr =
     assign    = dst_name AST.:<==: (AST.ConWforms whenelse false_wform Nothing)
   in
     AST.CSSASm assign
+
+mkAltsAssign ::
+  Either CoreBndr AST.VHDLName            -- ^ The signal to assign to
+  -> [AST.Expr]       -- ^ The conditions
+  -> [AST.Expr]       -- ^ The expressions
+  -> AST.ConcSm   -- ^ The Alt assigns
+mkAltsAssign dst conds exprs
+        | (length conds) /= ((length exprs) - 1) = error $ "\nVHDLTools.mkAltsAssign: conditions expression mismatch"
+        | otherwise =
+  let
+    whenelses   = zipWith mkWhenElse conds exprs
+    false_wform = AST.Wform [AST.WformElem (last exprs) Nothing]
+    dst_name  = case dst of
+      Left bndr -> AST.NSimple (varToVHDLId bndr)
+      Right name -> name
+    assign    = dst_name AST.:<==: (AST.ConWforms whenelses false_wform Nothing)
+  in
+    AST.CSSASm assign
+  where
+    mkWhenElse :: AST.Expr -> AST.Expr -> AST.WhenElse
+    mkWhenElse cond true_expr =
+      let
+        true_wform = AST.Wform [AST.WformElem true_expr Nothing]
+      in
+        AST.WhenElse true_wform cond
 
 mkAssocElems :: 
   [AST.Expr]                    -- ^ The argument that are applied to function
@@ -163,7 +188,7 @@ altconToVHDLExpr :: CoreSyn.AltCon -> TypeSession AST.Expr
 altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
 
 altconToVHDLExpr (LitAlt _) = error "\nVHDL.conToVHDLExpr: Literals not support in case alternatives yet"
-altconToVHDLExpr DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
+altconToVHDLExpr DEFAULT = return $ AST.PrimLit "undefined" -- error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
 
 -- Turn a datacon (without arguments!) into a VHDL expression.
 dataconToVHDLExpr :: DataCon.DataCon -> TypeSession AST.Expr
