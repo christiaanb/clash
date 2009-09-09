@@ -232,6 +232,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
 -- binders in the alts and only variables in the case values and a variable
 -- for a scrutinee. We check the constructor of the second alt, since the
 -- first is the default case, if there is any.
+
 -- mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) b ty [(_, _, CoreSyn.Var false), (con, _, CoreSyn.Var true)])) = do
 --   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
 --   altcon <- MonadState.lift tsType $ altconToVHDLExpr con
@@ -239,11 +240,12 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
 --   true_expr <- MonadState.lift tsType $ varToVHDLExpr true
 --   false_expr <- MonadState.lift tsType $ varToVHDLExpr false
 --   return ([mkCondAssign (Left bndr) cond_expr true_expr false_expr], [])
-
 mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) _ _ (alt:alts))) = do --error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
+  -- Rotate conditions to the left, so that the default condition is the last
   altcons <- MonadState.lift tsType $ mapM (altconToVHDLExpr . (\(con,_,_) -> con)) (alts ++ [alt])
   let cond_exprs = map (\x -> scrut' AST.:=: x) (init altcons)
+  -- Rotate expressions to the left, so that the expression related to the default case is the last
   exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) (alts ++ [alt])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
