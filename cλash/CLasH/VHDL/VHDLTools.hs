@@ -188,7 +188,7 @@ altconToVHDLExpr :: CoreSyn.AltCon -> TypeSession AST.Expr
 altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
 
 altconToVHDLExpr (LitAlt _) = error "\nVHDL.conToVHDLExpr: Literals not support in case alternatives yet"
-altconToVHDLExpr DEFAULT = return $ AST.PrimLit "undefined" -- error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
+altconToVHDLExpr DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
 
 -- Turn a datacon (without arguments!) into a VHDL expression.
 dataconToVHDLExpr :: DataCon.DataCon -> TypeSession AST.Expr
