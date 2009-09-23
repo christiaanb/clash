@@ -1015,7 +1015,7 @@ vectorFunId el_ty fname = do
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
   typefuns <- getA tsTypeFuns
-  case Map.lookup (OrdType el_ty, fname) typefuns of
+  case Map.lookup (StdType $ OrdType el_ty, fname) typefuns of
     -- Function already generated, just return it
     Just (id, _) -> return id
     -- Function not generated yet, generate it
@@ -1023,7 +1023,7 @@ vectorFunId el_ty fname = do
       let functions = genUnconsVectorFuns elemTM vectorTM
       case lookup fname functions of
         Just body -> do
-          modA tsTypeFuns $ Map.insert (OrdType el_ty, fname) (function_id, (fst body))
+          modA tsTypeFuns $ Map.insert (StdType $ OrdType el_ty, fname) (function_id, (fst body))
           mapM_ (vectorFunId el_ty) (snd body)
           return function_id
         Nothing -> error $ "\nGenerate.vectorFunId: I don't know how to generate vector function " ++ fname
@@ -1469,7 +1469,8 @@ globalNameTable = Map.fromList
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
   , (fromIntegerId    , (1, genFromInteger          ) )
-  , (resizeId         , (1, genResize               ) )
+  , (resizeWordId     , (1, genResize               ) )
+  , (resizeIntId      , (1, genResize               ) )
   , (sizedIntId       , (1, genSizedInt             ) )
   , (smallIntegerId   , (1, genFromInteger          ) )
   , (fstId            , (1, genFst                  ) )

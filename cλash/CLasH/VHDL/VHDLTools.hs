@@ -413,7 +413,8 @@ mk_tycon_ty ty tycon args =
               let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon) ++ elem_names
               let ty_def = AST.TDR $ AST.RecordTypeDef elems
               let tupshow = mkTupleShow elem_tys ty_id
-              modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, tupshow)
+              let htype = ADTType (nameToString (TyCon.tyConName tycon)) (map (\x -> StdType (OrdType x)) real_arg_tys)
+              modA tsTypeFuns $ Map.insert (htype, showIdString) (showId, tupshow)
               return $ Right $ Just (ty_id, Left ty_def)
         -- There were errors in element types
         (errors, _) -> return $ Left $
@@ -428,7 +429,8 @@ mk_tycon_ty ty tycon args =
           let ty_id = mkVHDLExtId $ nameToString (TyCon.tyConName tycon)
           let ty_def = AST.TDE $ AST.EnumTypeDef elems
           let enumShow = mkEnumShow elems ty_id
-          modA tsTypeFuns $ Map.insert (OrdType ty, showIdString) (showId, enumShow)
+          let htype = EnumType (nameToString (TyCon.tyConName tycon)) (map (nameToString . DataCon.dataConName) dcs)
+          modA tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
           return $ Right $ Just (ty_id, Left ty_def)
         xs -> return $ Left $
           "VHDLTools.mkTyConHType: Only enum-like constructor datatypes supported: " ++ pprString dcs ++ "\n"
@@ -472,7 +474,7 @@ mk_vector_ty ty = do
           modA tsTypes (Map.insert (StdType $ OrdType vec_ty) (Just (vec_id, (Left vec_def))))
           modA tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Left vec_def))])
           let vecShowFuns = mkVectorShow el_ty_tm vec_id
-          mapM_ (\(id, subprog) -> modA tsTypeFuns $ Map.insert (OrdType vec_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
+          mapM_ (\(id, subprog) -> modA tsTypeFuns $ Map.insert (StdType $ OrdType el_ty, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Right $ Just (ty_id, Right ty_def))
     -- Empty element type? Empty vector type then. TODO: Does this make sense?

@@ -61,7 +61,7 @@ type TypeMap = Map.Map HType (Maybe (AST.VHDLId, Either AST.TypeDef AST.SubtypeI
 
 -- A map of a vector Core element type and function name to the coressponding
 -- VHDLId of the function and the function body.
-type TypeFunMap = Map.Map (OrdType, String) (AST.VHDLId, AST.SubProgBody)
+type TypeFunMap = Map.Map (HType, String) (AST.VHDLId, AST.SubProgBody)
 
 type TfpIntMap = Map.Map OrdType Int
 -- A substate that deals with type generation
