@@ -345,7 +345,7 @@ genNegation' _ f [arg] = do
   let name = Name.getOccString (TyCon.tyConName tycon)
   case name of
     "SizedInt" -> return $ AST.Neg arg1
-    otherwise -> error $ "\nGenerate.genNegation': Negation allowed for type: " ++ show name 
+    otherwise -> error $ "\nGenerate.genNegation': Negation not allowed for type: " ++ show name 
 
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
