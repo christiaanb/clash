@@ -893,7 +893,32 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
         ramassign      = AST.SigAssign ramloc wform
         rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
         statement   = AST.IfSm (AST.And rising_edge_clk wrenable) [ramassign] [] Nothing
+        
+genSplit :: BuiltinBuilder
+genSplit = genNoInsts $ genVarArgs genSplit'
 
+genSplit' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
+genSplit' (Left res) f args@[vecIn] = do {
+  ; labels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
+  ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vecIn
+  ; let { block_label = mkVHDLExtId ("split" ++ (varToString vecIn))
+        ; halflen   = round ((fromIntegral len) / 2)
+        ; rangeL    = vecSlice (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
+        ; rangeR    = vecSlice (AST.PrimLit $ show halflen) (AST.PrimLit $ show (len - 1))
+        ; resname   = varToVHDLName res
+        ; resnameL  = mkSelectedName resname (labels!!0)
+        ; resnameR  = mkSelectedName resname (labels!!1)
+        ; argexprL  = vhdlNameToVHDLExpr rangeL
+        ; argexprR  = vhdlNameToVHDLExpr rangeR
+        ; out_assignL = mkUncondAssign (Right resnameL) argexprL
+        ; out_assignR = mkUncondAssign (Right resnameR) argexprR
+        ; block = AST.BlockSm block_label [] (AST.PMapAspect []) [] [out_assignL, out_assignR]
+        }
+  ; return [AST.CSBSm block]
+  }
+  where
+    vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res) 
+                            (AST.ToRange init last))
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -1476,6 +1501,7 @@ globalNameTable = Map.fromList
   , (fstId            , (1, genFst                  ) )
   , (sndId            , (1, genSnd                  ) )
   , (blockRAMId       , (5, genBlockRAM             ) )
+  , (splitId          , (1, genSplit                ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

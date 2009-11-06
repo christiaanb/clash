@@ -235,6 +235,9 @@ fstId = "fst"
 sndId :: String
 sndId = "snd"
 
+splitId :: String
+splitId = "split"
+
 -- Equality Operations
 equalityId :: String
 equalityId = "=="
