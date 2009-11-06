@@ -402,7 +402,7 @@ mk_tycon_ty ty tycon args =
           -- Throw away all empty members
           case Maybe.catMaybes elem_tys' of
             [] -> -- No non-empty members
-              return $ Right Nothing
+              return $ Right Nothing           
             elem_tys -> do
               let elems = zipWith AST.ElementDec recordlabels elem_tys
               -- For a single construct datatype, build a record with one field for

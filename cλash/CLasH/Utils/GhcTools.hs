@@ -5,6 +5,8 @@ module CLasH.Utils.GhcTools where
 -- Standard modules
 import qualified Monad
 import qualified System.IO.Unsafe
+import qualified Language.Haskell.TH as TH
+import qualified Maybe
 
 -- GHC API
 import qualified Annotations
@@ -96,16 +98,38 @@ loadModules libdir filenames finder =
         Just f -> concatM $ mapM f cores
       return (cores, env, specs)
 
+findBinds ::
+  Monad m =>
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule
+  -> m (Maybe [CoreSyn.CoreBndr])
+findBinds criteria core = do
+  binders <- findBinder criteria core
+  case binders of
+    [] -> return Nothing
+    bndrs -> return $ Just $ map fst bndrs
+
 findBind ::
   Monad m =>
   (Var.Var -> m Bool)
   -> HscTypes.CoreModule
   -> m (Maybe CoreSyn.CoreBndr)
 findBind criteria core = do
+  binders <- findBinds criteria core
+  case binders of
+    Nothing -> return Nothing
+    (Just bndrs) -> return $ Just $ head bndrs
+
+findExprs ::
+  Monad m =>
+  (Var.Var -> m Bool)
+  -> HscTypes.CoreModule
+  -> m (Maybe [CoreSyn.CoreExpr])
+findExprs criteria core = do
   binders <- findBinder criteria core
   case binders of
     [] -> return Nothing
-    bndrs -> return $ Just $ fst $ head bndrs
+    bndrs -> return $ Just $ (map snd bndrs)
 
 findExpr ::
   Monad m =>
@@ -113,10 +137,22 @@ findExpr ::
   -> HscTypes.CoreModule
   -> m (Maybe CoreSyn.CoreExpr)
 findExpr criteria core = do
-  binders <- findBinder criteria core
-  case binders of
-    [] -> return Nothing
-    bndrs -> return $ Just $ snd $ head bndrs
+  exprs <- findExprs criteria core
+  case exprs of
+    Nothing -> return Nothing
+    (Just exprs) -> return $ Just $ head exprs
+
+findAnns ::
+  Monad m =>
+  (Var.Var -> m [CLasHAnn])
+  -> HscTypes.CoreModule
+  -> m [CLasHAnn]
+findAnns criteria core = do
+  let binds = CoreSyn.flattenBinds $ HscTypes.cm_binds core
+  anns <- Monad.mapM (criteria . fst) binds
+  case anns of
+    [] -> return []
+    xs -> return $ concat xs
 
 -- | Find a binder in module according to a certain criteria
 findBinder :: 
@@ -130,17 +166,27 @@ findBinder criteria core = do
   return critbinds
 
 -- | Determine if a binder has an Annotation meeting a certain criteria
+isCLasHAnnotation ::
+  GHC.GhcMonad m =>
+  (CLasHAnn -> Bool)  -- ^ The criteria the Annotation has to meet
+  -> Var.Var          -- ^ The Binder
+  -> m [CLasHAnn]           -- ^ Indicates if binder has the Annotation
+isCLasHAnnotation clashAnn var = do
+  let deserializer = Serialized.deserializeWithData
+  let target = Annotations.NamedTarget (Var.varName var)
+  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
+  let annEnts = filter clashAnn anns
+  return annEnts
+
+-- | Determine if a binder has an Annotation meeting a certain criteria
 hasCLasHAnnotation ::
   GHC.GhcMonad m =>
   (CLasHAnn -> Bool)  -- ^ The criteria the Annotation has to meet
   -> Var.Var          -- ^ The Binder
   -> m Bool           -- ^ Indicates if binder has the Annotation
 hasCLasHAnnotation clashAnn var = do
-  let deserializer = Serialized.deserializeWithData
-  let target = Annotations.NamedTarget (Var.varName var)
-  (anns :: [CLasHAnn]) <- GHC.findGlobalAnns deserializer target
-  let annEnts = filter clashAnn anns
-  case annEnts of
+  anns <- isCLasHAnnotation clashAnn var
+  case anns of
     [] -> return False
     xs -> return True
 
@@ -152,16 +198,40 @@ hasVarName ::
   -> m Bool     -- ^ Indicate if the binder has the name
 hasVarName lookfor bind = return $ lookfor == (Name.occNameString $ Name.nameOccName $ Name.getName bind)
 
+
+findInitStates ::
+  (Var.Var -> GHC.Ghc Bool) -> 
+  (Var.Var -> GHC.Ghc [CLasHAnn]) -> 
+  HscTypes.CoreModule -> 
+  GHC.Ghc (Maybe [(CoreSyn.CoreBndr, CoreSyn.CoreBndr)])
+findInitStates statec annsc mod = do
+  states <- findBinds statec mod
+  anns  <- findAnns annsc mod
+  let funs = Maybe.catMaybes (map extractInits anns)
+  exprs' <- mapM (\x -> findBind (hasVarName (TH.nameBase x)) mod) funs
+  let exprs = Maybe.catMaybes exprs'
+  let inits = zipMWith (\a b -> (a,b)) states exprs
+  return inits
+  where
+    extractInits :: CLasHAnn -> Maybe TH.Name
+    extractInits (InitState x)  = Just x
+    extractInits _              = Nothing
+    zipMWith :: (a -> b -> c) -> (Maybe [a]) -> [b] -> (Maybe [c])
+    zipMwith _ Nothing _ = Nothing
+    zipMWith f (Just as) bs = Just $ zipWith f as bs
+    
 -- | Make a complete spec out of a three conditions
 findSpec ::
-  (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool)
+  (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc [CLasHAnn]) -> (Var.Var -> GHC.Ghc Bool)
   -> Finder
 
-findSpec topc statec testc mod = do
+findSpec topc statec annsc testc mod = do
   top <- findBind topc mod
-  state <- findExpr statec mod
+  state <- findExprs statec mod
+  anns <- findAnns annsc mod
   test <- findExpr testc mod
-  return [(top, state, test)]
+  inits <- findInitStates statec annsc mod
+  return [(top, inits, test)]
   -- case top of
   --   Just t -> return [(t, state, test)]
   --   Nothing -> return error $ "Could not find top entity requested"

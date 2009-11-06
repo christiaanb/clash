@@ -129,16 +129,21 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   (state_vars, sms) <- Monad.mapAndUnzipM dobind binds
   let (in_state_maybes, out_state_maybes) = unzip state_vars
   let (statementss, used_entitiess) = unzip sms
+  -- Get initial state, if it's there
+  initSmap <- getA tsInitStates
+  let init_state = Map.lookup fname initSmap
   -- Create a state proc, if needed
-  state_proc <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes) of
-        ([in_state], [out_state]) -> mkStateProcSm (in_state, out_state)
-        ([], []) -> return []
-        (ins, outs) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
+  (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
+        ([in_state], [out_state], Nothing) -> error $ "No initial state defined for: " ++ show fname
+        ([in_state], [out_state], Just resetval) -> mkStateProcSm (in_state, out_state,resetval)
+        ([], [], Just _) -> error $ "Initial state defined for state-less function: " ++ show fname
+        ([], [], Nothing) -> return ([],[])
+        (ins, outs, res) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
   -- Join the create statements and the (optional) state_proc
   let statements = concat statementss ++ state_proc
   -- Create the architecture
   let arch = AST.ArchBody (mkVHDLBasicId "structural") (AST.NSimple entity_id) (map AST.BDISD sig_decs) statements
-  let used_entities = concat used_entitiess
+  let used_entities = (concat used_entitiess) ++ resbndr
   return (arch, used_entities)
   where
     dobind :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The bind to process
@@ -162,24 +167,44 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
       return ((Nothing, Nothing), sms)
 
 mkStateProcSm :: 
-  (CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current and new state variables
-  -> TranslatorSession [AST.ConcSm] -- ^ The resulting statements
-mkStateProcSm (old, new) = do
-  nonempty <- hasNonEmptyType old 
+  (CoreSyn.CoreBndr, CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current state, new state and reset variables
+  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) -- ^ The resulting statements
+mkStateProcSm (old, new, res) = do
+  nonempty <- hasNonEmptyType old  
   if nonempty 
-    then return [AST.CSPSm $ AST.ProcSm label [clockId,resetId] [statement]]
-    else return []
-  where
-    label       = mkVHDLBasicId $ "state"
-    rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
-    wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
-    clk_assign      = AST.SigAssign (varToVHDLName old) wform
-    rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
-    resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
-    reset_statement = []
-    clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
-    statement   = AST.IfSm resetn_is_low reset_statement clk_statement Nothing
-
+    then do
+      let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
+      type_mark_old_maybe <- MonadState.lift tsType $ vhdl_ty error_msg (Var.varType old)
+      let type_mark_old = Maybe.fromJust type_mark_old_maybe
+      type_mark_res_maybe <- MonadState.lift tsType $ vhdl_ty error_msg (Var.varType res)
+      let type_mark_res' = Maybe.fromJust type_mark_res_maybe
+      let type_mark_res = if type_mark_old == type_mark_res' then
+                            type_mark_res'
+                          else 
+                            error $ "Initial state has different type than state type, state type: " ++ show type_mark_old ++ ", init type: "  ++ show type_mark_res'    
+      let resvalid  = mkVHDLBasicId $ varToString res ++ "val"
+      let resvaldec = AST.BDISD $ AST.SigDec resvalid type_mark_res Nothing
+      let reswform  = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple resvalid) Nothing]
+      let res_assign = AST.SigAssign (varToVHDLName old) reswform
+      let blocklabel       = mkVHDLBasicId $ "state"
+      let statelabel  = mkVHDLBasicId $ "stateupdate"
+      let rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
+      let wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
+      let clk_assign      = AST.SigAssign (varToVHDLName old) wform
+      let rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
+      let resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
+      signature <- getEntity res
+      let entity_id = ent_id signature
+      let reslabel = "resetval_" ++ ((prettyShow . varToVHDLName) res)
+      let portmaps = mkAssocElems [] (AST.NSimple resvalid) signature
+      let reset_statement = mkComponentInst reslabel entity_id portmaps
+      let clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
+      let statement   = AST.IfSm resetn_is_low [res_assign] clk_statement Nothing
+      let stateupdate = AST.CSPSm $ AST.ProcSm statelabel [clockId,resetId] [statement]
+      let block = AST.CSBSm $ AST.BlockSm blocklabel [] (AST.PMapAspect []) [resvaldec] [reset_statement,stateupdate]
+      return ([block],[res])
+    else 
+      return ([],[])
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::

@@ -1,6 +1,6 @@
 module CLasH.Translator 
-  ( makeVHDLStrings
-  , makeVHDLAnnotations
+  ( -- makeVHDLStrings
+   makeVHDLAnnotations
   ) where
 
 -- Standard Modules
@@ -12,6 +12,7 @@ import qualified Control.Monad.Trans.State as State
 import Text.PrettyPrint.HughesPJ (render)
 import Data.Accessor
 import qualified Data.Map as Map
+import Debug.Trace
 
 -- GHC API
 import qualified CoreSyn
@@ -36,19 +37,20 @@ import CLasH.VHDL.Testbench
 
 -- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
 --   State and Test Inputs.
-makeVHDLStrings :: 
-  FilePath      -- ^ The GHC Library Dir
-  -> [FilePath] -- ^ The FileNames
-  -> String     -- ^ The TopEntity
-  -> String     -- ^ The InitState
-  -> String     -- ^ The TestInput
-  -> IO ()
-makeVHDLStrings libdir filenames topentity initstate testinput = do
-  makeVHDL libdir filenames finder
-    where
-      finder = findSpec (hasVarName topentity)
-                        (hasVarName initstate)
-                        (hasVarName testinput)
+-- makeVHDLStrings :: 
+--   FilePath      -- ^ The GHC Library Dir
+--   -> [FilePath] -- ^ The FileNames
+--   -> String     -- ^ The TopEntity
+--   -> String     -- ^ The InitState
+--   -> String     -- ^ The TestInput
+--   -> IO ()
+-- makeVHDLStrings libdir filenames topentity initstate testinput = do
+--   makeVHDL libdir filenames finder
+--     where
+--       finder = findSpec (hasVarName topentity)
+--                         (hasVarName initstate)
+--                         (isCLasHAnnotation isInitState)
+--                         (hasVarName testinput)
 
 -- | Turn Haskell to VHDL, Using the Annotations for Top Entity, Initial State
 --   and Test Inputs found in the Files. 
@@ -61,6 +63,7 @@ makeVHDLAnnotations libdir filenames = do
     where
       finder = findSpec (hasCLasHAnnotation isTopEntity)
                         (hasCLasHAnnotation isInitState)
+                        (isCLasHAnnotation isInitState)
                         (hasCLasHAnnotation isTestInput)
 
 -- | Turn Haskell to VHDL, using the given finder functions to find the Top
@@ -92,8 +95,11 @@ moduleToVHDL env cores specs = do
   vhdl <- runTranslatorSession env $ do
     let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
     -- Store the bindings we loaded
-    tsBindings %= Map.fromList all_bindings 
+    tsBindings %= Map.fromList all_bindings
+    let all_initstates = concat (map (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs) 
+    tsInitStates %= Map.fromList all_initstates
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
+    mapM_ printAnns specs
     let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
     case topbinds of
       []  -> error $ "Could not find top entity requested"
@@ -108,6 +114,9 @@ moduleToVHDL env cores specs = do
     mkTest (Just top, _, Just input) = do
       bndr <- createTestbench Nothing cores input top
       return $ Just bndr
+    printAnns :: EntitySpec -> TranslatorSession ()
+    printAnns (_, Nothing, _) = trace ("no anns found:\n\n") $ return ()
+    printAnns (_, (Just anns), _) = trace ("anns:\n\n" ++ show anns ++ "\n") $ return ()
 
 -- Run the given translator session. Generates a new UniqSupply for that
 -- session.
@@ -120,7 +129,7 @@ runTranslatorSession env session = do
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   let init_typestate = TypeState Map.empty [] Map.empty Map.empty env
-  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty
+  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty
   return $ State.evalState session init_state
 
 -- | Prepares the directory for writing VHDL files. This means creating the

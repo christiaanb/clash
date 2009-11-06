@@ -23,11 +23,12 @@ import qualified Language.VHDL.AST as AST
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
+import CLasH.Translator.Annotations
 
 -- | A specification of an entity we can generate VHDL for. Consists of the
 --   binder of the top level entity, an optional initial state and an optional
 --   test input.
-type EntitySpec = (Maybe CoreSyn.CoreBndr, Maybe CoreSyn.CoreExpr, Maybe CoreSyn.CoreExpr)
+type EntitySpec = (Maybe CoreSyn.CoreBndr, Maybe [(CoreSyn.CoreBndr, CoreSyn.CoreBndr)], Maybe CoreSyn.CoreExpr)
 
 -- | A function that knows which parts of a module to compile
 type Finder =
@@ -90,6 +91,7 @@ data TranslatorState = TranslatorState {
   , tsEntityCounter_ :: Integer
   , tsEntities_ :: Map.Map CoreSyn.CoreBndr Entity
   , tsArchitectures_ :: Map.Map CoreSyn.CoreBndr (Architecture, [CoreSyn.CoreBndr])
+  , tsInitStates_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreBndr
 }
 
 -- Derive accessors
