@@ -33,6 +33,7 @@ import CLasH.Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.GhcTools
 import CLasH.VHDL
+import CLasH.VHDL.VHDLTools
 import CLasH.VHDL.Testbench
 
 -- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
@@ -128,7 +129,7 @@ runTranslatorSession env session = do
   -- on the compiler dir of ghc suggests that 'z' is not used to generate
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-  let init_typestate = TypeState Map.empty [] Map.empty Map.empty env
+  let init_typestate = TypeState builtin_types [] Map.empty Map.empty env
   let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty
   return $ State.evalState session init_state
 

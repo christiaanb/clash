@@ -84,7 +84,8 @@ createTypesPackage ::
 createTypesPackage = do
   tyfuns <- getA (tsType .> tsTypeFuns)
   let tyfun_decls = mkBuiltInShow ++ (map snd $ Map.elems tyfuns)
-  ty_decls <- getA (tsType .> tsTypeDecls)
+  ty_decls_maybes <- getA (tsType .> tsTypeDecls)
+  let ty_decls = Maybe.catMaybes ty_decls_maybes
   let subProgSpecs = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec) tyfun_decls
   let type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ ty_decls ++ subProgSpecs)
   let type_package_body = AST.LUPackageBody $ AST.PackageBody typesId tyfun_decls

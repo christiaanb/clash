@@ -71,7 +71,7 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
         ty = Var.varType bndr
         error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr 
       in do
-        type_mark_maybe <- MonadState.lift tsType $ vhdl_ty error_msg ty
+        type_mark_maybe <- MonadState.lift tsType $ vhdlTy error_msg ty
         case type_mark_maybe of 
           Just type_mark -> return $ Just (id, type_mark)
           Nothing -> return Nothing
@@ -134,7 +134,9 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   let init_state = Map.lookup fname initSmap
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
-        ([in_state], [out_state], Nothing) -> error $ "No initial state defined for: " ++ show fname
+        ([in_state], [out_state], Nothing) -> do 
+          nonEmpty <- hasNonEmptyType in_state
+          if nonEmpty then error ("No initial state defined for: " ++ show fname) else return ([],[])
         ([in_state], [out_state], Just resetval) -> mkStateProcSm (in_state, out_state,resetval)
         ([], [], Just _) -> error $ "Initial state defined for state-less function: " ++ show fname
         ([], [], Nothing) -> return ([],[])
@@ -170,41 +172,36 @@ mkStateProcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current state, new state and reset variables
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) -- ^ The resulting statements
 mkStateProcSm (old, new, res) = do
-  nonempty <- hasNonEmptyType old  
-  if nonempty 
-    then do
-      let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
-      type_mark_old_maybe <- MonadState.lift tsType $ vhdl_ty error_msg (Var.varType old)
-      let type_mark_old = Maybe.fromJust type_mark_old_maybe
-      type_mark_res_maybe <- MonadState.lift tsType $ vhdl_ty error_msg (Var.varType res)
-      let type_mark_res' = Maybe.fromJust type_mark_res_maybe
-      let type_mark_res = if type_mark_old == type_mark_res' then
-                            type_mark_res'
-                          else 
-                            error $ "Initial state has different type than state type, state type: " ++ show type_mark_old ++ ", init type: "  ++ show type_mark_res'    
-      let resvalid  = mkVHDLBasicId $ varToString res ++ "val"
-      let resvaldec = AST.BDISD $ AST.SigDec resvalid type_mark_res Nothing
-      let reswform  = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple resvalid) Nothing]
-      let res_assign = AST.SigAssign (varToVHDLName old) reswform
-      let blocklabel       = mkVHDLBasicId $ "state"
-      let statelabel  = mkVHDLBasicId $ "stateupdate"
-      let rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
-      let wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
-      let clk_assign      = AST.SigAssign (varToVHDLName old) wform
-      let rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
-      let resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
-      signature <- getEntity res
-      let entity_id = ent_id signature
-      let reslabel = "resetval_" ++ ((prettyShow . varToVHDLName) res)
-      let portmaps = mkAssocElems [] (AST.NSimple resvalid) signature
-      let reset_statement = mkComponentInst reslabel entity_id portmaps
-      let clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
-      let statement   = AST.IfSm resetn_is_low [res_assign] clk_statement Nothing
-      let stateupdate = AST.CSPSm $ AST.ProcSm statelabel [clockId,resetId] [statement]
-      let block = AST.CSBSm $ AST.BlockSm blocklabel [] (AST.PMapAspect []) [resvaldec] [reset_statement,stateupdate]
-      return ([block],[res])
-    else 
-      return ([],[])
+  let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
+  type_mark_old_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType old)
+  let type_mark_old = Maybe.fromJust type_mark_old_maybe
+  type_mark_res_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType res)
+  let type_mark_res' = Maybe.fromJust type_mark_res_maybe
+  let type_mark_res = if type_mark_old == type_mark_res' then
+                        type_mark_res'
+                      else 
+                        error $ "Initial state has different type than state type, state type: " ++ show type_mark_old ++ ", init type: "  ++ show type_mark_res'    
+  let resvalid  = mkVHDLExtId $ varToString res ++ "val"
+  let resvaldec = AST.BDISD $ AST.SigDec resvalid type_mark_res Nothing
+  let reswform  = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple resvalid) Nothing]
+  let res_assign = AST.SigAssign (varToVHDLName old) reswform
+  let blocklabel       = mkVHDLBasicId $ "state"
+  let statelabel  = mkVHDLBasicId $ "stateupdate"
+  let rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
+  let wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
+  let clk_assign      = AST.SigAssign (varToVHDLName old) wform
+  let rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
+  let resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
+  signature <- getEntity res
+  let entity_id = ent_id signature
+  let reslabel = "resetval_" ++ ((prettyShow . varToVHDLName) res)
+  let portmaps = mkAssocElems [] (AST.NSimple resvalid) signature
+  let reset_statement = mkComponentInst reslabel entity_id portmaps
+  let clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
+  let statement   = AST.IfSm resetn_is_low [res_assign] clk_statement Nothing
+  let stateupdate = AST.CSPSm $ AST.ProcSm statelabel [clockId,resetId,resvalid] [statement]
+  let block = AST.CSBSm $ AST.BlockSm blocklabel [] (AST.PMapAspect []) [resvaldec] [reset_statement,stateupdate]
+  return ([block],[res])
 
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
@@ -244,11 +241,25 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
       bndrs' <- Monad.filterM hasNonEmptyType bndrs
       case List.elemIndex sel_bndr bndrs' of
         Just i -> do
-          labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
-          let label = labels!!i
-          let sel_name = mkSelectedName (varToVHDLName scrut) label
-          let sel_expr = AST.PrimName sel_name
-          return ([mkUncondAssign (Left bndr) sel_expr], [])
+          htypeScrt <- MonadState.lift tsType $ mkHTypeEither (Var.varType scrut)
+          htypeBndr <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+          case htypeScrt == htypeBndr of
+            True -> do
+              let sel_name = varToVHDLName scrut
+              let sel_expr = AST.PrimName sel_name
+              return ([mkUncondAssign (Left bndr) sel_expr], [])
+            otherwise -> do
+              case htypeScrt of
+                Right (AggrType _ _) -> do
+                  labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
+                  let label = labels!!i
+                  let sel_name = mkSelectedName (varToVHDLName scrut) label
+                  let sel_expr = AST.PrimName sel_name
+                  return ([mkUncondAssign (Left bndr) sel_expr], [])
+                _ -> do -- error $ "DIE!"
+                  let sel_name = varToVHDLName scrut
+                  let sel_expr = AST.PrimName sel_name
+                  return ([mkUncondAssign (Left bndr) sel_expr], [])
         Nothing -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
       
     _ -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
@@ -294,7 +305,7 @@ argsToVHDLExprs = catMaybesM . (mapM argToVHDLExpr)
 argToVHDLExpr :: Either CoreSyn.CoreExpr AST.Expr -> TranslatorSession (Maybe AST.Expr)
 argToVHDLExpr (Left expr) = MonadState.lift tsType $ do
   let errmsg = "Generate.argToVHDLExpr: Using non-representable type? Should not happen!"
-  ty_maybe <- vhdl_ty errmsg expr
+  ty_maybe <- vhdlTy errmsg expr
   case ty_maybe of
     Just _ -> do
       vhdl_expr <- varToVHDLExpr $ exprToVar expr
@@ -594,7 +605,7 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
   let tmp_ty = Type.mkAppTy nvec (Var.varType start)
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
   -- TODO: Handle Nothing
-  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
+  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("foldlVector" ++ (varToString vec))
   let block_label = mkVHDLExtId ("foldlVector" ++ (varToString res))
@@ -825,7 +836,7 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
   let tmp_ty = Var.varType res
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
   -- TODO: Handle Nothing
-  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdl_ty error_msg tmp_ty
+  Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("iterateVector" ++ (varToString start))
   let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
@@ -892,13 +903,13 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   let (tup',ramvec) = Type.splitAppTy tup
   let Just realram = Type.coreView ramvec
   let Just (tycon, types) = Type.splitTyConApp_maybe realram
-  Just ram_vhdl_ty <- MonadState.lift tsType $ vhdl_ty "wtf" (head types)
+  Just ram_vhdl_ty <- MonadState.lift tsType $ vhdlTy "wtf" (head types)
   -- Make the intermediate vector
   let ram_dec = AST.BDISD $ AST.SigDec ram_id ram_vhdl_ty Nothing
   -- Get the data_out name
-  reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
-  let resname' = varToVHDLName res
-  let resname = mkSelectedName resname' (reslabels!!0)
+  -- reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
+  let resname = varToVHDLName res
+  -- let resname = mkSelectedName resname' (reslabels!!0)
   let rdaddr_int = genExprFCall (mkVHDLBasicId toIntegerId) rdaddr
   let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr_int
   let assign = mkUncondAssign (Right resname) argexpr
@@ -983,14 +994,26 @@ genApplication dst f args = do
           -- It's a datacon. Create a record from its arguments.
           Left bndr -> do
             -- We have the bndr, so we can get at the type
-            labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
-            args' <- argsToVHDLExprs args
-            return $ (zipWith mkassign labels $ args', [])
-            where
-              mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
-              mkassign label arg =
-                let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
-                mkUncondAssign (Right sel_name) arg
+            htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+            let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
+            case argsNostate of
+              [arg] -> do
+                [arg'] <- argsToVHDLExprs [arg]
+                return $ ([mkUncondAssign dst arg'], [])
+              otherwise -> do
+                case htype of
+                  Right (AggrType _ _) -> do
+                    labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
+                    args' <- argsToVHDLExprs argsNostate
+                    return $ (zipWith mkassign labels $ args', [])
+                    where
+                      mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+                      mkassign label arg =
+                        let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+                        mkUncondAssign (Right sel_name) arg
+                  _ -> do -- error $ "DIE!"
+                    args' <- argsToVHDLExprs argsNostate
+                    return $ ([mkUncondAssign dst (head args')], [])            
           Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
         IdInfo.DataConWrapId dc -> case dst of
           -- It's a datacon. Create a record from its arguments.
@@ -1037,7 +1060,12 @@ genApplication dst f args = do
                   -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
                   -- f' <- MonadState.lift tsType $ varToVHDLExpr f
                   --                   return $ ([mkUncondAssign dst f'], [])
-                  error $ ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f))
+                  errtype <- case dst of 
+                    Left bndr -> do 
+                      htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+                      return (show htype)
+                    Right vhd -> return $ show vhd
+                  error $ ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
         IdInfo.ClassOpId cls -> do
           -- FIXME: Not looking for what instance this class op is called for
           -- Is quite stupid of course.
@@ -1060,12 +1088,13 @@ vectorFunId :: Type.Type -> String -> TypeSession AST.VHDLId
 vectorFunId el_ty fname = do
   let error_msg = "\nGenerate.vectorFunId: Can not construct vector function for element: " ++ pprString el_ty
   -- TODO: Handle the Nothing case?
-  Just elemTM <- vhdl_ty error_msg el_ty
+  Just elemTM <- vhdlTy error_msg el_ty
   -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
   typefuns <- getA tsTypeFuns
-  case Map.lookup (StdType $ OrdType el_ty, fname) typefuns of
+  el_htype <- mkHType error_msg el_ty
+  case Map.lookup (UVecType el_htype, fname) typefuns of
     -- Function already generated, just return it
     Just (id, _) -> return id
     -- Function not generated yet, generate it
@@ -1073,7 +1102,7 @@ vectorFunId el_ty fname = do
       let functions = genUnconsVectorFuns elemTM vectorTM
       case lookup fname functions of
         Just body -> do
-          modA tsTypeFuns $ Map.insert (StdType $ OrdType el_ty, fname) (function_id, (fst body))
+          modA tsTypeFuns $ Map.insert (UVecType el_htype, fname) (function_id, (fst body))
           mapM_ (vectorFunId el_ty) (snd body)
           return function_id
         Nothing -> error $ "\nGenerate.vectorFunId: I don't know how to generate vector function " ++ fname

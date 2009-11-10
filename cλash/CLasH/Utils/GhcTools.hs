@@ -217,9 +217,9 @@ findInitStates statec annsc mod = do
     extractInits (InitState x)  = Just x
     extractInits _              = Nothing
     zipMWith :: (a -> b -> c) -> (Maybe [a]) -> [b] -> (Maybe [c])
-    zipMwith _ Nothing _ = Nothing
+    zipMWith _ Nothing   _  = Nothing
     zipMWith f (Just as) bs = Just $ zipWith f as bs
-    
+
 -- | Make a complete spec out of a three conditions
 findSpec ::
   (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc [CLasHAnn]) -> (Var.Var -> GHC.Ghc Bool)

@@ -46,19 +46,21 @@ instance Eq OrdType where
 instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.tcCmpType a b
 
-data HType = StdType OrdType |
-             ADTType String [HType] |
+data HType = AggrType String [HType] |
              EnumType String [String] |
              VecType Int HType |
+             UVecType HType |
              SizedWType Int |
              RangedWType Int |
              SizedIType Int |
-             BuiltinType String
-  deriving (Eq, Ord)
+             BuiltinType String |
+             StateType
+  deriving (Eq, Ord, Show)
 
 -- A map of a Core type to the corresponding type name, or Nothing when the
 -- type would be empty.
-type TypeMap = Map.Map HType (Maybe (AST.VHDLId, Either AST.TypeDef AST.SubtypeIn))
+type TypeMapRec   = Maybe (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn))
+type TypeMap      = Map.Map HType TypeMapRec
 
 -- A map of a vector Core element type and function name to the coressponding
 -- VHDLId of the function and the function body.
@@ -70,7 +72,7 @@ data TypeState = TypeState {
   -- | A map of Core type -> VHDL Type
   tsTypes_      :: TypeMap,
   -- | A list of type declarations
-  tsTypeDecls_  :: [AST.PackageDecItem],
+  tsTypeDecls_  :: [Maybe AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
   tsTypeFuns_   :: TypeFunMap,
   tsTfpInts_    :: TfpIntMap,
