@@ -6,8 +6,7 @@ import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Maybe
 import qualified Data.Either as Either
-import Data.Accessor
-import Data.Accessor.MonadState as MonadState
+import Data.Accessor.Monad.Trans.State as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -50,9 +49,9 @@ getEntity fname = Utils.makeCached fname tsEntities $ do
       args' <- catMaybesM $ mapM mkMap args
       -- TODO: Handle Nothing
       res' <- mkMap res
-      count <- getA tsEntityCounter 
+      count <- MonadState.get tsEntityCounter 
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "Component_" ++ show count
-      putA tsEntityCounter (count + 1)
+      MonadState.set tsEntityCounter (count + 1)
       let ent_decl = createEntityAST vhdl_id args' res'
       let signature = Entity vhdl_id args' res' ent_decl
       return signature
@@ -130,7 +129,7 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   let (in_state_maybes, out_state_maybes) = unzip state_vars
   let (statementss, used_entitiess) = unzip sms
   -- Get initial state, if it's there
-  initSmap <- getA tsInitStates
+  initSmap <- MonadState.get tsInitStates
   let init_state = Map.lookup fname initSmap
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
@@ -340,7 +339,7 @@ genLitArgs ::
   (dst -> func -> [Literal.Literal] -> TranslatorSession [AST.ConcSm])
   -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.ConcSm])
 genLitArgs wrap dst func args = do
-  hscenv <- MonadState.lift tsType $ getA tsHscEnv
+  hscenv <- MonadState.lift tsType $ MonadState.get tsHscEnv
   let (exprargs, []) = Either.partitionEithers args
   -- FIXME: Check if we were passed an CoreSyn.App
   let litargs = concat (map (getLiterals hscenv) exprargs)
@@ -1092,7 +1091,7 @@ vectorFunId el_ty fname = do
   -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
-  typefuns <- getA tsTypeFuns
+  typefuns <- MonadState.get tsTypeFuns
   el_htype <- mkHType error_msg el_ty
   case Map.lookup (UVecType el_htype, fname) typefuns of
     -- Function already generated, just return it
@@ -1102,7 +1101,7 @@ vectorFunId el_ty fname = do
       let functions = genUnconsVectorFuns elemTM vectorTM
       case lookup fname functions of
         Just body -> do
-          modA tsTypeFuns $ Map.insert (UVecType el_htype, fname) (function_id, (fst body))
+          MonadState.modify tsTypeFuns $ Map.insert (UVecType el_htype, fname) (function_id, (fst body))
           mapM_ (vectorFunId el_ty) (snd body)
           return function_id
         Nothing -> error $ "\nGenerate.vectorFunId: I don't know how to generate vector function " ++ fname

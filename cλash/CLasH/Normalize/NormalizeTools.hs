@@ -16,7 +16,7 @@ import qualified Control.Monad.Trans.Writer as Writer
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 import Data.Accessor
-import Data.Accessor.MonadState as MonadState
+import Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API
 import CoreSyn

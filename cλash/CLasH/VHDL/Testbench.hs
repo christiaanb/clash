@@ -7,8 +7,7 @@ module CLasH.VHDL.Testbench where
 import qualified Control.Monad as Monad
 import qualified Maybe
 import qualified Data.Map as Map
-import Data.Accessor
-import qualified Data.Accessor.MonadState as MonadState
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
 -- ForSyDe
 import qualified Language.VHDL.AST as AST
@@ -42,9 +41,9 @@ createTestbench mCycles cores stimuli top = do
   -- testbench has no outputs and no inputs.
   bndr <- mkInternalVar "testbench" TysWiredIn.unitTy
   let entity = createTestbenchEntity bndr
-  modA tsEntities (Map.insert bndr entity)
+  MonadState.modify tsEntities (Map.insert bndr entity)
   arch <- createTestbenchArch mCycles stimuli' top entity
-  modA tsArchitectures (Map.insert bndr arch)
+  MonadState.modify tsArchitectures (Map.insert bndr arch)
   return bndr
 
 createTestbenchEntity :: 

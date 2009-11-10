@@ -11,8 +11,7 @@ import qualified Control.Monad as Monad
 import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
-import Data.Accessor
-import Data.Accessor.MonadState as MonadState
+import Data.Accessor.Monad.Trans.State as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -193,7 +192,7 @@ altconToVHDLExpr DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative shou
 -- Turn a datacon (without arguments!) into a VHDL expression.
 dataconToVHDLExpr :: DataCon.DataCon -> TypeSession AST.Expr
 dataconToVHDLExpr dc = do
-  typemap <- getA tsTypes
+  typemap <- MonadState.get tsTypes
   htype_either <- mkHTypeEither (DataCon.dataConRepType dc)
   case htype_either of
     -- No errors
@@ -331,7 +330,7 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                   | otherwise = do
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
-      typemap <- getA tsTypes
+      typemap <- MonadState.get tsTypes
       let name = Name.getOccString (TyCon.tyConName tycon)
       let builtinTyMaybe = Map.lookup (BuiltinType name) typemap  
       case builtinTyMaybe of
@@ -406,7 +405,7 @@ vhdlTy msg ty = do
 
 vhdlTyMaybe :: HType -> TypeSession (Maybe AST.TypeMark)
 vhdlTyMaybe htype = do
-  typemap <- getA tsTypes
+  typemap <- MonadState.get tsTypes
   -- If not a builtin type, try the custom types
   let existing_ty = Map.lookup htype typemap
   case existing_ty of
@@ -416,10 +415,10 @@ vhdlTyMaybe htype = do
     -- No type yet, try to construct it
     Nothing -> do
       newty <- (construct_vhdl_ty htype)
-      modA tsTypes (Map.insert htype newty)
+      MonadState.modify tsTypes (Map.insert htype newty)
       case newty of
         Just (ty_id, ty_def) -> do
-          modA tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)])
+          MonadState.modify tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (ty_id, ty_def)])
           return $ Just ty_id
         Nothing -> return Nothing
 
@@ -452,14 +451,14 @@ mkTyconTy htype =
           let ty_id = mkVHDLExtId $ tycon ++ elem_names
           let ty_def = AST.TDR $ AST.RecordTypeDef elems
           let tupshow = mkTupleShow elem_tys ty_id
-          modA tsTypeFuns $ Map.insert (htype, showIdString) (showId, tupshow)
+          MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, tupshow)
           return $ Just (ty_id, Just $ Left ty_def)
     (EnumType tycon dcs) -> do
       let elems = map mkVHDLExtId dcs
       let ty_id = mkVHDLExtId tycon
       let ty_def = AST.TDE $ AST.EnumTypeDef elems
       let enumShow = mkEnumShow elems ty_id
-      modA tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
+      MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
       return $ Just (ty_id, Just $ Left ty_def)
     otherwise -> error $ "\nVHDLTools.mkTyconTy: Called for HType that is neiter a AggrType or EnumType: " ++ show htype
   where
@@ -473,7 +472,7 @@ mkVectorTy ::
       -- ^ An error message or The typemark created.
 
 mkVectorTy (VecType len elHType) = do
-  typesMap <- getA tsTypes
+  typesMap <- MonadState.get tsTypes
   elTyTmMaybe <- vhdlTyMaybe elHType
   case elTyTmMaybe of
     (Just elTyTm) -> do
@@ -487,10 +486,10 @@ mkVectorTy (VecType len elHType) = do
         Nothing -> do
           let vec_id  = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elTyTm)
           let vec_def = AST.TDA $ AST.UnconsArrayDef [tfvec_indexTM] elTyTm
-          modA tsTypes (Map.insert (UVecType elHType) (Just (vec_id, (Just $ Left vec_def))))
-          modA tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Just $ Left vec_def))])
+          MonadState.modify tsTypes (Map.insert (UVecType elHType) (Just (vec_id, (Just $ Left vec_def))))
+          MonadState.modify tsTypeDecls (\typedefs -> typedefs ++ [mktydecl (vec_id, (Just $ Left vec_def))])
           let vecShowFuns = mkVectorShow elTyTm vec_id
-          mapM_ (\(id, subprog) -> modA tsTypeFuns $ Map.insert (UVecType elHType, id) ((mkVHDLExtId id), subprog)) vecShowFuns
+          mapM_ (\(id, subprog) -> MonadState.modify tsTypeFuns $ Map.insert (UVecType elHType, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Just (ty_id, Just $ Right ty_def))
     Nothing -> return Nothing
@@ -534,7 +533,7 @@ getFieldLabels ty = do
   let error_msg = "\nVHDLTools.getFieldLabels: Can not get field labels, because: " ++ pprString ty ++ "can not be generated." 
   vhdlTy error_msg ty
   -- Get the types map, lookup and unpack the VHDL TypeDef
-  types <- getA tsTypes
+  types <- MonadState.get tsTypes
   -- Assume the type for which we want labels is really translatable
   htype <- mkHType error_msg ty
   case Map.lookup htype types of
@@ -549,7 +548,7 @@ mktydecl (ty_id, Just (Right ty_def)) = Just $ AST.PDISD $ AST.SubtypeDec ty_id 
 
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
-  hscenv <- getA tsHscEnv
+  hscenv <- MonadState.get tsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
   case Type.splitTyConApp_maybe norm_ty of
     Just (tycon, args) -> do
@@ -559,21 +558,21 @@ tfp_to_int ty = do
           len <- tfp_to_int' ty
           return len
         otherwise -> do
-          modA tsTfpInts (Map.insert (OrdType norm_ty) (-1))
+          MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (-1))
           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 
 tfp_to_int' :: Type.Type -> TypeSession Int
 tfp_to_int' ty = do
-  lens <- getA tsTfpInts
-  hscenv <- getA tsHscEnv
+  lens <- MonadState.get tsTfpInts
+  hscenv <- MonadState.get tsHscEnv
   let norm_ty = normalise_tfp_int hscenv ty
   let existing_len = Map.lookup (OrdType norm_ty) lens
   case existing_len of
     Just len -> return len
     Nothing -> do
       let new_len = eval_tfp_int hscenv ty
-      modA tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
+      MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
       return new_len
       
 mkTupleShow :: 

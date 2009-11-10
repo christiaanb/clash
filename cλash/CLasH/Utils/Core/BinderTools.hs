@@ -4,7 +4,7 @@
 module CLasH.Utils.Core.BinderTools where
 
 -- Standard modules
-import Data.Accessor.MonadState as MonadState
+import Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API
 import CoreSyn
@@ -22,16 +22,14 @@ import qualified VarSet
 import qualified HscTypes
 
 -- Local imports
-import Data.Accessor
-import Data.Accessor.MonadState as MonadState
 import CLasH.Translator.TranslatorTypes
 
 -- Create a new Unique
 mkUnique :: TranslatorSession Unique.Unique    
 mkUnique = do
-  us <- getA tsUniqSupply 
+  us <- MonadState.get tsUniqSupply 
   let (us', us'') = UniqSupply.splitUniqSupply us
-  putA tsUniqSupply us'
+  MonadState.set tsUniqSupply us'
   return $ UniqSupply.uniqFromSupply us''
 
 -- Create a new internal var with the given name and type. A Unique is

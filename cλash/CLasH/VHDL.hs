@@ -11,7 +11,7 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Monoid as Monoid
 import Data.Accessor
-import Data.Accessor.MonadState as MonadState
+import Data.Accessor.Monad.Trans.State as MonadState
 import Debug.Trace
 
 -- ForSyDe
@@ -82,9 +82,9 @@ createTypesPackage ::
   -- ^ The id and content of the types package
  
 createTypesPackage = do
-  tyfuns <- getA (tsType .> tsTypeFuns)
+  tyfuns <- MonadState.get (tsType .> tsTypeFuns)
   let tyfun_decls = mkBuiltInShow ++ (map snd $ Map.elems tyfuns)
-  ty_decls_maybes <- getA (tsType .> tsTypeDecls)
+  ty_decls_maybes <- MonadState.get (tsType .> tsTypeDecls)
   let ty_decls = Maybe.catMaybes ty_decls_maybes
   let subProgSpecs = map (\(AST.SubProgBody spec _ _) -> AST.PDISS spec) tyfun_decls
   let type_package_dec = AST.LUPackageDec $ AST.PackageDec (mkVHDLBasicId "types") ([tfvec_index_decl] ++ ty_decls ++ subProgSpecs)

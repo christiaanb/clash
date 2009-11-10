@@ -9,7 +9,7 @@ module CLasH.Translator.TranslatorTypes where
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Map as Map
 import qualified Data.Accessor.Template
-import Data.Accessor
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API
 import qualified GHC
@@ -109,23 +109,23 @@ type TranslatorSession = State.State TranslatorState
 -- module(s)?
 isTopLevelBinder :: CoreSyn.CoreBndr -> TranslatorSession Bool
 isTopLevelBinder bndr = do
-  bindings <- getA tsBindings
+  bindings <- MonadState.get tsBindings
   return $ Map.member bndr bindings
 
 -- Finds the value of a global binding, if available
 getGlobalBind :: CoreSyn.CoreBndr -> TranslatorSession (Maybe CoreSyn.CoreExpr)
 getGlobalBind bndr = do
-  bindings <- getA tsBindings
+  bindings <- MonadState.get tsBindings
   return $ Map.lookup bndr bindings 
 
 -- Adds a new global binding with the given value
 addGlobalBind :: CoreSyn.CoreBndr -> CoreSyn.CoreExpr -> TranslatorSession ()
-addGlobalBind bndr expr = modA tsBindings (Map.insert bndr expr)
+addGlobalBind bndr expr = MonadState.modify tsBindings (Map.insert bndr expr)
 
 -- Returns a list of all global binders
 getGlobalBinders :: TranslatorSession [CoreSyn.CoreBndr]
 getGlobalBinders = do
-  bindings <- getA tsBindings
+  bindings <- MonadState.get tsBindings
   return $ Map.keys bindings
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

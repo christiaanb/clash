@@ -10,7 +10,7 @@ import qualified Monad
 import qualified System.FilePath as FilePath
 import qualified Control.Monad.Trans.State as State
 import Text.PrettyPrint.HughesPJ (render)
-import Data.Accessor
+import Data.Accessor.Monad.Trans.State
 import qualified Data.Map as Map
 import Debug.Trace
 

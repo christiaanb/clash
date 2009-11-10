@@ -3,6 +3,7 @@ module CLasH.Utils where
 -- Standard Imports
 import qualified Maybe
 import Data.Accessor
+import Data.Accessor.Monad.Trans.State as MonadState
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
@@ -19,14 +20,14 @@ makeCached :: (Monad m, Ord k) =>
   -> State.StateT s m v -- ^ The resulting value, from the cache or freshly
                         --   computed.
 makeCached key accessor create = do
-  cache <- getA accessor
+  cache <- MonadState.get accessor
   case Map.lookup key cache of
     -- Found in cache, just return
     Just value -> return value
     -- Not found, compute it and put it in the cache
     Nothing -> do
       value <- create
-      modA accessor (Map.insert key value)
+      MonadState.modify accessor (Map.insert key value)
       return value
 
 unzipM :: (Monad m) =>
