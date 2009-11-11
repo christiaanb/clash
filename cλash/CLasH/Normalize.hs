@@ -419,6 +419,8 @@ scrutbndrremove (Case (Var scrut) bndr ty alts) | bndr_used = do
       expr' <- substitute bndr (Var scrut) expr
       return (con, bndrs, expr')
     wild = MkCore.mkWildBinder (Id.idType bndr)
+-- Leave all other expressions unchanged
+scrutbndrremove expr = return expr
 scrutbndrremovetop = everywhere ("scrutbndrremove", scrutbndrremove)
 
 --------------------------------
