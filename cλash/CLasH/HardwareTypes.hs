@@ -51,7 +51,7 @@ resizeWord = SizedWord.resize
 data Bit = High | Low
   deriving (P.Show, P.Eq, P.Read, Typeable)
 
-$(deriveLift1 ''Bit)
+deriveLift1 ''Bit
 
 hwand :: Bit -> Bit -> Bit
 hwor  :: Bit -> Bit -> Bit

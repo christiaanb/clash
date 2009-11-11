@@ -3,14 +3,10 @@ module CLasH.Utils where
 -- Standard Imports
 import qualified Maybe
 import Data.Accessor
-import Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
-
--- GHC API
-
--- Local Imports
   
 -- Make a caching version of a stateful computatation.
 makeCached :: (Monad m, Ord k) =>

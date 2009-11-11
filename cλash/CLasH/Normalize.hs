@@ -13,32 +13,23 @@ import qualified List
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
-import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
-import Data.Accessor
 
 -- GHC API
 import CoreSyn
-import qualified UniqSupply
 import qualified CoreUtils
 import qualified Type
-import qualified TcType
-import qualified Name
 import qualified Id
 import qualified Var
 import qualified VarSet
-import qualified NameSet
 import qualified CoreFVs
-import qualified CoreUtils
 import qualified MkCore
-import qualified HscTypes
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import CLasH.Normalize.NormalizeTypes
 import CLasH.Translator.TranslatorTypes
 import CLasH.Normalize.NormalizeTools
-import CLasH.VHDL.VHDLTypes
 import qualified CLasH.Utils as Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Core.BinderTools
@@ -235,7 +226,7 @@ letflattop = everywhere ("letflat", letflat)
 --------------------------------
 -- Remove empty (recursive) lets
 letremove, letremovetop :: Transform
-letremove (Let (Rec []) res) = change $ res
+letremove (Let (Rec []) res) = change res
 -- Leave all other expressions unchanged
 letremove expr = return expr
 -- Perform this transform everywhere
@@ -435,7 +426,7 @@ casesimpl expr@(Case scrut b ty alts) = do
     -- Extract a complex expression, if possible. For this we check if any of
     -- the new list of bndrs are used by expr. We can't use free_vars here,
     -- since that looks at the old bndrs.
-    let uses_bndrs = not $ VarSet.isEmptyVarSet $ CoreFVs.exprSomeFreeVars (`elem` newbndrs) $ expr
+    let uses_bndrs = not $ VarSet.isEmptyVarSet $ CoreFVs.exprSomeFreeVars (`elem` newbndrs) expr
     (exprbinding_maybe, expr') <- doexpr expr uses_bndrs
     -- Create a new alternative
     let newalt = (con, newbndrs, expr')
@@ -486,7 +477,7 @@ casesimpl expr@(Case scrut b ty alts) = do
             id <- Trans.lift $ mkBinderFor expr "caseval"
             -- We don't flag a change here, since casevalsimpl will do that above
             -- based on Just we return here.
-            return $ (Just (id, expr), Var id)
+            return (Just (id, expr), Var id)
           else
             -- Don't simplify anything else
             return (Nothing, expr)
@@ -584,7 +575,7 @@ argprop expr@(App _ _) | is_var fexpr = do
     doarg arg = do
       repr <- isRepr arg
       bndrs <- Trans.lift getGlobalBinders
-      let interesting var = Var.isLocalVar var && (not $ var `elem` bndrs)
+      let interesting var = Var.isLocalVar var && (var `notElem` bndrs)
       if not repr && not (is_var arg && interesting (exprToVar arg)) && not (has_free_tyvars arg) 
         then do
           -- Propagate all complex arguments that are not representable, but not
@@ -699,7 +690,7 @@ getNormalized ::
   CoreBndr -- ^ The function to get
   -> TranslatorSession CoreExpr -- The normalized function body
 
-getNormalized bndr = Utils.makeCached bndr tsNormalized $ do
+getNormalized bndr = Utils.makeCached bndr tsNormalized $
   if is_poly (Var bndr)
     then
       -- This should really only happen at the top level... TODO: Give
@@ -729,7 +720,7 @@ getBinding ::
   CoreBndr -- ^ The binder to get the expression for
   -> TranslatorSession CoreExpr -- ^ The value bound to the binder
 
-getBinding bndr = Utils.makeCached bndr tsBindings $ do
+getBinding bndr = Utils.makeCached bndr tsBindings $
   -- If the binding isn't in the "cache" (bindings map), then we can't create
   -- it out of thin air, so return an error.
   error $ "Normalize.getBinding: Unknown function requested: " ++ show bndr

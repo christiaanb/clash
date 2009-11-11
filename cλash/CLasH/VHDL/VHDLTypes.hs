@@ -1,22 +1,10 @@
 --
 -- Some types used by the VHDL module.
 --
-{-# LANGUAGE TemplateHaskell #-}
 module CLasH.VHDL.VHDLTypes where
 
--- Standard imports
-import qualified Control.Monad.Trans.State as State
-import qualified Data.Map as Map
-import Data.Accessor
-import qualified Data.Accessor.Template
-
--- GHC API imports
-import qualified HscTypes
-
--- ForSyDe imports
+-- VHDL imports
 import qualified Language.VHDL.AST as AST
-
--- Local imports
 
 -- A description of a port of an entity
 type Port = (AST.VHDLId, AST.TypeMark)

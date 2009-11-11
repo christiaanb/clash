@@ -9,11 +9,11 @@ import qualified Maybe
 import qualified Data.Map as Map
 import qualified Data.Accessor.Monad.Trans.State as MonadState
 
--- ForSyDe
+-- VHDL Imports
 import qualified Language.VHDL.AST as AST
 
 -- GHC API
-import CoreSyn
+import qualified CoreSyn
 import qualified HscTypes
 import qualified Var
 import qualified TysWiredIn
@@ -34,7 +34,7 @@ createTestbench ::
   -> [HscTypes.CoreModule] -- ^ Compiled modules
   -> CoreSyn.CoreExpr -- ^ Input stimuli
   -> CoreSyn.CoreBndr -- ^ Top Entity
-  -> TranslatorSession CoreBndr -- ^ The id of the generated archictecture
+  -> TranslatorSession CoreSyn.CoreBndr -- ^ The id of the generated archictecture
 createTestbench mCycles cores stimuli top = do
   stimuli' <- reduceCoreListToHsList cores stimuli
   -- Create a binder for the testbench. We use the unit type (), since the
@@ -136,7 +136,7 @@ createStimulans expr cycl = do
   let ([], binds, res) = splitNormalized expr
   (stimulansbindss, useds) <- unzipM $ Monad.mapM mkConcSm binds
   sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
-  let sig_decs = map (AST.BDISD) (Maybe.catMaybes $ sig_dec_maybes)
+  let sig_decs = map (AST.BDISD) (Maybe.catMaybes sig_dec_maybes)
   let block_label = mkVHDLExtId ("testcycle_" ++ (show cycl))
   let block = AST.BlockSm block_label [] (AST.PMapAspect []) sig_decs (concat stimulansbindss)
   case (sig_decs,(concat stimulansbindss)) of
@@ -160,7 +160,7 @@ createOutputProc outs =
          [clockId]
          [AST.IfSm clkPred (writeOuts outs) [] Nothing]
  where clkPred = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple clockId) 
-                                                   (AST.NSimple $ eventId)
+                                                   (AST.NSimple eventId)
                                                    Nothing          ) `AST.And` 
                  (AST.PrimName (AST.NSimple clockId) AST.:=: AST.PrimLit "'1'")
        writeOuts :: [AST.VHDLId] -> [AST.SeqSm]

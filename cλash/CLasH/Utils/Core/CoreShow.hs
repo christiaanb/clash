@@ -1,22 +1,20 @@
 {-# LANGUAGE StandaloneDeriving,FlexibleInstances, UndecidableInstances, OverlappingInstances #-}
+--
+-- This module derives Show instances for CoreSyn types.
+--
 module CLasH.Utils.Core.CoreShow where
 
--- This module derives Show instances for CoreSyn types.
-
+-- GHC API
 import qualified BasicTypes
-
 import qualified CoreSyn
 import qualified TypeRep
 import qualified TyCon
-
 import qualified HsTypes
 import qualified HsExpr
 import qualified HsBinds
 import qualified SrcLoc
 import qualified RdrName
-
 import Outputable ( Outputable, OutputableBndr, showSDoc, ppr)
-
 
 -- Derive Show for core expressions and binders, so we can see the actual
 -- structure.
@@ -38,7 +36,7 @@ deriving instance Show TyCon.SynTyConRhs
 -- Implement dummy shows, since deriving them will need loads of other shows
 -- as well.
 instance Show TypeRep.PredType where
-  show t = "_PredType:(" ++ (showSDoc $ ppr t) ++ ")"
+  show t = "_PredType:(" ++ showSDoc (ppr t) ++ ")"
 instance Show TyCon.TyCon where
   show t | TyCon.isAlgTyCon t && not (TyCon.isTupleTyCon t) =
            showtc "AlgTyCon" ""
@@ -55,7 +53,7 @@ instance Show TyCon.TyCon where
          | TyCon.isSuperKindTyCon t =
            showtc "SuperKindTyCon" ""
          | otherwise = 
-           "_Nonexistant tycon?:(" ++ (showSDoc $ ppr t) ++ ")_"
+           "_Nonexistant tycon?:(" ++ showSDoc (ppr t) ++ ")_"
       where
         showtc con extra = "(" ++ con ++ " {tyConName = " ++ name ++ extra ++ ", ...})"
         name = show (TyCon.tyConName t)
@@ -79,4 +77,4 @@ instance Show (HsExpr.GRHSs id) where
 
 
 instance (Outputable x) => Show x where
-  show x = "__" ++  (showSDoc $ ppr x) ++ "__"
+  show x = "__" ++ showSDoc (ppr x) ++ "__"

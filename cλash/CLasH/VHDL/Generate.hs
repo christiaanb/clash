@@ -6,10 +6,9 @@ import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Maybe
 import qualified Data.Either as Either
-import Data.Accessor.Monad.Trans.State as MonadState
-import Debug.Trace
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
--- ForSyDe
+-- VHDL Imports
 import qualified Language.VHDL.AST as AST
 
 -- GHC API
@@ -27,7 +26,7 @@ import CLasH.Translator.TranslatorTypes
 import CLasH.VHDL.Constants
 import CLasH.VHDL.VHDLTypes
 import CLasH.VHDL.VHDLTools
-import CLasH.Utils as Utils
+import CLasH.Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Pretty
 import qualified CLasH.Normalize as Normalize
@@ -41,7 +40,7 @@ getEntity ::
   CoreSyn.CoreBndr
   -> TranslatorSession Entity -- ^ The resulting entity
 
-getEntity fname = Utils.makeCached fname tsEntities $ do
+getEntity fname = makeCached fname tsEntities $ do
       expr <- Normalize.getNormalized fname
       -- Split the normalized expression
       let (args, binds, res) = Normalize.splitNormalized expr
@@ -109,7 +108,7 @@ getArchitecture ::
   -> TranslatorSession (Architecture, [CoreSyn.CoreBndr])
   -- ^ The architecture for this function
 
-getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
+getArchitecture fname = makeCached fname tsArchitectures $ do
   expr <- Normalize.getNormalized fname
   -- Split the normalized expression
   let (args, binds, res) = Normalize.splitNormalized expr
@@ -122,7 +121,7 @@ getArchitecture fname = Utils.makeCached fname tsArchitectures $ do
   -- for the output port (that will already have an output port declared in
   -- the entity).
   sig_dec_maybes <- mapM (mkSigDec . fst) (filter ((/=res).fst) binds)
-  let sig_decs = Maybe.catMaybes $ sig_dec_maybes
+  let sig_decs = Maybe.catMaybes sig_dec_maybes
   -- Process each bind, resulting in info about state variables and concurrent
   -- statements.
   (state_vars, sms) <- Monad.mapAndUnzipM dobind binds
@@ -184,8 +183,8 @@ mkStateProcSm (old, new, res) = do
   let resvaldec = AST.BDISD $ AST.SigDec resvalid type_mark_res Nothing
   let reswform  = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple resvalid) Nothing]
   let res_assign = AST.SigAssign (varToVHDLName old) reswform
-  let blocklabel       = mkVHDLBasicId $ "state"
-  let statelabel  = mkVHDLBasicId $ "stateupdate"
+  let blocklabel       = mkVHDLBasicId "state"
+  let statelabel  = mkVHDLBasicId "stateupdate"
   let rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
   let wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
   let clk_assign      = AST.SigAssign (varToVHDLName old) wform
@@ -220,7 +219,7 @@ mkConcSm (bndr, CoreSyn.Cast expr ty) = mkConcSm (bndr, expr)
 -- Simple a = b assignments are just like applications, but without arguments.
 -- We can't just generate an unconditional assignment here, since b might be a
 -- top level binding (e.g., a function with no arguments).
-mkConcSm (bndr, CoreSyn.Var v) = do
+mkConcSm (bndr, CoreSyn.Var v) =
   genApplication (Left bndr) v []
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
@@ -247,7 +246,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
               let sel_name = varToVHDLName scrut
               let sel_expr = AST.PrimName sel_name
               return ([mkUncondAssign (Left bndr) sel_expr], [])
-            otherwise -> do
+            otherwise ->
               case htypeScrt of
                 Right (AggrType _ _) -> do
                   labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
@@ -309,7 +308,7 @@ argToVHDLExpr (Left expr) = MonadState.lift tsType $ do
     Just _ -> do
       vhdl_expr <- varToVHDLExpr $ exprToVar expr
       return $ Just vhdl_expr
-    Nothing -> return $ Nothing
+    Nothing -> return Nothing
 
 argToVHDLExpr (Right expr) = return $ Just expr
 
@@ -342,10 +341,9 @@ genLitArgs wrap dst func args = do
   hscenv <- MonadState.lift tsType $ MonadState.get tsHscEnv
   let (exprargs, []) = Either.partitionEithers args
   -- FIXME: Check if we were passed an CoreSyn.App
-  let litargs = concat (map (getLiterals hscenv) exprargs)
+  let litargs = concatMap (getLiterals hscenv) exprargs
   let args' = map exprToLit litargs
-  concsms <- wrap dst func args'
-  return concsms    
+  wrap dst func args'   
 
 -- | A function to wrap a builder-like function that produces an expression
 -- and expects it to be assigned to the destination.
@@ -354,7 +352,7 @@ genExprRes ::
   -> ((Either CoreSyn.CoreBndr AST.VHDLName) -> func -> [arg] -> TranslatorSession [AST.ConcSm])
 genExprRes wrap dst func args = do
   expr <- wrap dst func args
-  return $ [mkUncondAssign dst expr]
+  return [mkUncondAssign dst expr]
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
@@ -398,8 +396,8 @@ genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate bu
 genFromSizedWord :: BuiltinBuilder
 genFromSizedWord = genNoInsts $ genExprArgs genFromSizedWord'
 genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession [AST.ConcSm]
-genFromSizedWord' (Left res) f args@[arg] = do
-  return $ [mkUncondAssign (Left res) arg]
+genFromSizedWord' (Left res) f args@[arg] =
+  return [mkUncondAssign (Left res) arg]
   -- let fname = varToString f
   -- return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
   --            map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
@@ -583,7 +581,7 @@ genFold left = genVarArgs (genFold' left)
 
 genFold' :: Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
 genFold' left res f args@[folded_f , start ,vec]= do
-  len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty (Var.varType vec))
+  len <- MonadState.lift tsType $ tfp_to_int (tfvec_len_ty (Var.varType vec))
   genFold'' len left res f args
 
 genFold'' :: Int -> Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
@@ -653,7 +651,7 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
                                                                   [Right argexpr2, Right argexpr1]
                                                               )
       -- Return the conditional generate part
-      return $ (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
+      return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
     genOtherCell = do
       len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vec
@@ -673,7 +671,7 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
                                                                   [Right argexpr2, Right argexpr1]
                                                               )
       -- Return the conditional generate part
-      return $ (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
+      return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
 -- | Generate a generate statement for the builtin function "zip"
 genZip :: BuiltinBuilder
@@ -765,7 +763,7 @@ genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [Var.
 genCopy' (Left res) f args@[arg] =
   let
     resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
-                (AST.PrimName $ (varToVHDLName arg))]
+                (AST.PrimName (varToVHDLName arg))]
     out_assign = mkUncondAssign (Left res) resExpr
   in 
     return [out_assign]
@@ -890,7 +888,7 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
       let argexpr = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
       (app_concsms, used) <- genApplication (Right resname) app_f [Right argexpr]
       -- Return the conditional generate part
-      return $ (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
+      return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
 genBlockRAM :: BuiltinBuilder
 genBlockRAM = genNoInsts $ genExprArgs genBlockRAM'
@@ -964,118 +962,117 @@ genApplication ::
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
-genApplication dst f args = do
-  case Var.isGlobalId f of
-    False -> do 
-      top <- isTopLevelBinder f
-      case top of
-        True -> do
-          -- Local binder that references a top level binding.  Generate a
-          -- component instantiation.
-          signature <- getEntity f
-          args' <- argsToVHDLExprs args
-          let entity_id = ent_id signature
-          -- TODO: Using show here isn't really pretty, but we'll need some
-          -- unique-ish value...
-          let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
-          let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-          return ([mkComponentInst label entity_id portmaps], [f])
-        False -> do
-          -- Not a top level binder, so this must be a local variable reference.
-          -- It should have a representable type (and thus, no arguments) and a
-          -- signal should be generated for it. Just generate an unconditional
-          -- assignment here.
-          f' <- MonadState.lift tsType $ varToVHDLExpr f
-          return $ ([mkUncondAssign dst f'], [])
-    True ->
-      case Var.idDetails f of
-        IdInfo.DataConWorkId dc -> case dst of
-          -- It's a datacon. Create a record from its arguments.
-          Left bndr -> do
-            -- We have the bndr, so we can get at the type
-            htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-            let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
-            case argsNostate of
-              [arg] -> do
-                [arg'] <- argsToVHDLExprs [arg]
-                return $ ([mkUncondAssign dst arg'], [])
-              otherwise -> do
-                case htype of
-                  Right (AggrType _ _) -> do
-                    labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
-                    args' <- argsToVHDLExprs argsNostate
-                    return $ (zipWith mkassign labels $ args', [])
-                    where
-                      mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
-                      mkassign label arg =
-                        let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
-                        mkUncondAssign (Right sel_name) arg
-                  _ -> do -- error $ "DIE!"
-                    args' <- argsToVHDLExprs argsNostate
-                    return $ ([mkUncondAssign dst (head args')], [])            
-          Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconstructor application without an original binder"
-        IdInfo.DataConWrapId dc -> case dst of
-          -- It's a datacon. Create a record from its arguments.
-          Left bndr -> do 
-            case (Map.lookup (varToString f) globalNameTable) of
-             Just (arg_count, builder) ->
-              if length args == arg_count then
-                builder dst f args
-              else
-                error $ "\nGenerate.genApplication(DataConWrapId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-             Nothing -> error $ "\nGenerate.genApplication: Can't generate dataconwrapper: " ++ (show dc)
-          Right _ -> error $ "\nGenerate.genApplication: Can't generate dataconwrapper application without an original binder"
-        IdInfo.VanillaId -> do
-          -- It's a global value imported from elsewhere. These can be builtin
-          -- functions. Look up the function name in the name table and execute
-          -- the associated builder if there is any and the argument count matches
-          -- (this should always be the case if it typechecks, but just to be
-          -- sure...).
+genApplication dst f args =
+  if Var.isGlobalId f then
+    case Var.idDetails f of
+      IdInfo.DataConWorkId dc -> case dst of
+        -- It's a datacon. Create a record from its arguments.
+        Left bndr -> do
+          -- We have the bndr, so we can get at the type
+          htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+          let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
+          case argsNostate of
+            [arg] -> do
+              [arg'] <- argsToVHDLExprs [arg]
+              return ([mkUncondAssign dst arg'], [])
+            otherwise ->
+              case htype of
+                Right (AggrType _ _) -> do
+                  labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
+                  args' <- argsToVHDLExprs argsNostate
+                  return (zipWith mkassign labels args', [])
+                  where
+                    mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+                    mkassign label arg =
+                      let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+                      mkUncondAssign (Right sel_name) arg
+                _ -> do -- error $ "DIE!"
+                  args' <- argsToVHDLExprs argsNostate
+                  return ([mkUncondAssign dst (head args')], [])            
+        Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
+      IdInfo.DataConWrapId dc -> case dst of
+        -- It's a datacon. Create a record from its arguments.
+        Left bndr ->
           case (Map.lookup (varToString f) globalNameTable) of
-            Just (arg_count, builder) ->
-              if length args == arg_count then
-                builder dst f args
+           Just (arg_count, builder) ->
+            if length args == arg_count then
+              builder dst f args
+            else
+              error $ "\nGenerate.genApplication(DataConWrapId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+           Nothing -> error $ "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper: " ++ (show dc)
+        Right _ -> error "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper application without an original binder"
+      IdInfo.VanillaId ->
+        -- It's a global value imported from elsewhere. These can be builtin
+        -- functions. Look up the function name in the name table and execute
+        -- the associated builder if there is any and the argument count matches
+        -- (this should always be the case if it typechecks, but just to be
+        -- sure...).
+        case (Map.lookup (varToString f) globalNameTable) of
+          Just (arg_count, builder) ->
+            if length args == arg_count then
+              builder dst f args
+            else
+              error $ "\nGenerate.genApplication(VanillaId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+          Nothing -> do
+            top <- isTopLevelBinder f
+            if top then
+              do
+                -- Local binder that references a top level binding.  Generate a
+                -- component instantiation.
+                signature <- getEntity f
+                args' <- argsToVHDLExprs args
+                let entity_id = ent_id signature
+                -- TODO: Using show here isn't really pretty, but we'll need some
+                -- unique-ish value...
+                let label = "comp_ins_" ++ (either show prettyShow) dst
+                let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
+                return ([mkComponentInst label entity_id portmaps], [f])
               else
-                error $ "\nGenerate.genApplication(VanillaId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> do
-              top <- isTopLevelBinder f
-              case top of
-                True -> do
-                  -- Local binder that references a top level binding.  Generate a
-                  -- component instantiation.
-                  signature <- getEntity f
-                  args' <- argsToVHDLExprs args
-                  let entity_id = ent_id signature
-                  -- TODO: Using show here isn't really pretty, but we'll need some
-                  -- unique-ish value...
-                  let label = "comp_ins_" ++ (either show prettyShow) dst
-                  let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-                  return ([mkComponentInst label entity_id portmaps], [f])
-                False -> do
-                  -- Not a top level binder, so this must be a local variable reference.
-                  -- It should have a representable type (and thus, no arguments) and a
-                  -- signal should be generated for it. Just generate an unconditional
-                  -- assignment here.
-                  -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
-                  -- f' <- MonadState.lift tsType $ varToVHDLExpr f
-                  --                   return $ ([mkUncondAssign dst f'], [])
-                  errtype <- case dst of 
+                -- Not a top level binder, so this must be a local variable reference.
+                -- It should have a representable type (and thus, no arguments) and a
+                -- signal should be generated for it. Just generate an unconditional
+                -- assignment here.
+                -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
+                -- f' <- MonadState.lift tsType $ varToVHDLExpr f
+                --                   return $ ([mkUncondAssign dst f'], [])
+              do errtype <- case dst of 
                     Left bndr -> do 
                       htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
                       return (show htype)
                     Right vhd -> return $ show vhd
-                  error $ ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
-        IdInfo.ClassOpId cls -> do
-          -- FIXME: Not looking for what instance this class op is called for
-          -- Is quite stupid of course.
-          case (Map.lookup (varToString f) globalNameTable) of
-            Just (arg_count, builder) ->
-              if length args == arg_count then
-                builder dst f args
-              else
-                error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-            Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
-        details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+                 error ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
+      IdInfo.ClassOpId cls ->
+        -- FIXME: Not looking for what instance this class op is called for
+        -- Is quite stupid of course.
+        case (Map.lookup (varToString f) globalNameTable) of
+          Just (arg_count, builder) ->
+            if length args == arg_count then
+              builder dst f args
+            else
+              error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+          Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
+      details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+    else do
+      top <- isTopLevelBinder f
+      if top then
+        do
+           -- Local binder that references a top level binding.  Generate a
+           -- component instantiation.
+           signature <- getEntity f
+           args' <- argsToVHDLExprs args
+           let entity_id = ent_id signature
+           -- TODO: Using show here isn't really pretty, but we'll need some
+           -- unique-ish value...
+           let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
+           let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
+           return ([mkComponentInst label entity_id portmaps], [f])
+        else
+          -- Not a top level binder, so this must be a local variable reference.
+          -- It should have a representable type (and thus, no arguments) and a
+          -- signal should be generated for it. Just generate an unconditional
+          -- assignment here.
+        do f' <- MonadState.lift tsType $ varToVHDLExpr f
+           return ([mkUncondAssign dst f'], [])
 
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
@@ -1151,7 +1148,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
                                AST.IfaceVarDec ixPar  unsignedTM] elemTM
     exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed 
-              (AST.IndexedName (AST.NSimple vecPar) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ ixPar)]))
+              (AST.IndexedName (AST.NSimple vecPar) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple ixPar)]))
     replaceSpec = AST.Function (mkVHDLExtId replaceId)  [ AST.IfaceVarDec vecPar vectorTM
                                           , AST.IfaceVarDec iPar   unsignedTM
                                           , AST.IfaceVarDec aPar   elemTM
@@ -1168,7 +1165,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                 Nothing
        --  res AST.:= vec(0 to i-1) & a & vec(i+1 to length'vec-1)
     replaceExpr1 = AST.NSimple resId AST.:= AST.PrimName (AST.NSimple vecPar)
-    replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ iPar)]) AST.:= AST.PrimName (AST.NSimple aPar)
+    replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple iPar)]) AST.:= AST.PrimName (AST.NSimple aPar)
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     vecSlice init last =  AST.PrimName (AST.NSlice 
                                         (AST.SliceName 
@@ -1176,7 +1173,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                                               (AST.ToRange init last)))
     lastSpec = AST.Function (mkVHDLExtId lastId) [AST.IfaceVarDec vecPar vectorTM] elemTM
        -- return vec(vec'length-1);
-    lastExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
+    lastExpr = AST.ReturnSm (Just (AST.PrimName $ AST.NIndexed (AST.IndexedName 
                     (AST.NSimple vecPar) 
                     [AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
@@ -1310,7 +1307,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     -- for i res'range loop
     --   res(i) := vec(f+i*s);
     -- end loop;
-    selFor = AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple $ rangeId) Nothing) [selAssign]
+    selFor = AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple rangeId) Nothing) [selAssign]
     -- res(i) := vec(f+i*s);
     selAssign = let origExp = AST.PrimName (AST.NSimple fPar) AST.:+: 
                                 (AST.PrimName (AST.NSimple iId) AST.:*: 
@@ -1461,7 +1458,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     --   res(vec'length-i-1) := vec(i);
     -- end loop;
     reverseFor = 
-       AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple $ rangeId) Nothing) [reverseAssign]
+       AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple rangeId) Nothing) [reverseAssign]
     -- res(vec'length-i-1) := vec(i);
     reverseAssign = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [destExp]) AST.:=
       (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) 
@@ -1556,5 +1553,5 @@ globalNameTable = Map.fromList
   , (blockRAMId       , (5, genBlockRAM             ) )
   , (splitId          , (1, genSplit                ) )
   --, (tfvecId          , (1, genTFVec                ) )
-  , (minimumId        , (2, error $ "\nFunction name: \"minimum\" is used internally, use another name"))
+  , (minimumId        , (2, error "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

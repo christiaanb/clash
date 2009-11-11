@@ -8,22 +8,17 @@ import qualified Data.List as List
 import qualified Data.Char as Char
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
-import qualified Control.Arrow as Arrow
-import qualified Control.Monad.Trans.State as State
-import qualified Data.Monoid as Monoid
-import Data.Accessor.Monad.Trans.State as MonadState
-import Debug.Trace
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
--- ForSyDe
+-- VHDL Imports
 import qualified Language.VHDL.AST as AST
 
 -- GHC API
-import CoreSyn
+import qualified CoreSyn
 import qualified Name
 import qualified OccName
 import qualified Var
 import qualified Id
-import qualified IdInfo
 import qualified TyCon
 import qualified Type
 import qualified DataCon
@@ -44,14 +39,14 @@ import CLasH.VHDL.Constants
 
 -- Create an unconditional assignment statement
 mkUncondAssign ::
-  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  Either CoreSyn.CoreBndr AST.VHDLName -- ^ The signal to assign to
   -> AST.Expr -- ^ The expression to assign
   -> AST.ConcSm -- ^ The resulting concurrent statement
 mkUncondAssign dst expr = mkAssign dst Nothing expr
 
 -- Create a conditional assignment statement
 mkCondAssign ::
-  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  Either CoreSyn.CoreBndr AST.VHDLName -- ^ The signal to assign to
   -> AST.Expr -- ^ The condition
   -> AST.Expr -- ^ The value when true
   -> AST.Expr -- ^ The value when false
@@ -60,7 +55,7 @@ mkCondAssign dst cond true false = mkAssign dst (Just (cond, true)) false
 
 -- Create a conditional or unconditional assignment statement
 mkAssign ::
-  Either CoreBndr AST.VHDLName -- ^ The signal to assign to
+  Either CoreSyn.CoreBndr AST.VHDLName -- ^ The signal to assign to
   -> Maybe (AST.Expr , AST.Expr) -- ^ Optionally, the condition to test for
                                  -- and the value to assign when true.
   -> AST.Expr -- ^ The value to assign when false or no condition
@@ -85,12 +80,12 @@ mkAssign dst cond false_expr =
     AST.CSSASm assign
 
 mkAltsAssign ::
-  Either CoreBndr AST.VHDLName            -- ^ The signal to assign to
+  Either CoreSyn.CoreBndr AST.VHDLName            -- ^ The signal to assign to
   -> [AST.Expr]       -- ^ The conditions
   -> [AST.Expr]       -- ^ The expressions
   -> AST.ConcSm   -- ^ The Alt assigns
 mkAltsAssign dst conds exprs
-        | (length conds) /= ((length exprs) - 1) = error $ "\nVHDLTools.mkAltsAssign: conditions expression mismatch"
+        | (length conds) /= ((length exprs) - 1) = error "\nVHDLTools.mkAltsAssign: conditions expression mismatch"
         | otherwise =
   let
     whenelses   = zipWith mkWhenElse conds exprs
@@ -151,7 +146,7 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
 -----------------------------------------------------------------------------
 
 varToVHDLExpr :: Var.Var -> TypeSession AST.Expr
-varToVHDLExpr var = do
+varToVHDLExpr var =
   case Id.isDataConWorkId_maybe var of
     Just dc -> dataconToVHDLExpr dc
     -- This is a dataconstructor.
@@ -168,7 +163,7 @@ varToVHDLExpr var = do
                   case Name.getOccString (TyCon.tyConName tycon) of
                     "Dec" -> do
                       len <- tfp_to_int ty
-                      return $ AST.PrimLit $ (show len)
+                      return $ AST.PrimLit (show len)
                     otherwise -> return $ AST.PrimName $ AST.NSimple $ varToVHDLId var
 
 -- Turn a VHDLName into an AST expression
@@ -184,10 +179,10 @@ exprToVHDLExpr core = varToVHDLExpr (exprToVar core)
 -- dataconstructors, this is only the constructor itself, not any arguments it
 -- has. Should not be called with a DEFAULT constructor.
 altconToVHDLExpr :: CoreSyn.AltCon -> TypeSession AST.Expr
-altconToVHDLExpr (DataAlt dc) = dataconToVHDLExpr dc
+altconToVHDLExpr (CoreSyn.DataAlt dc) = dataconToVHDLExpr dc
 
-altconToVHDLExpr (LitAlt _) = error "\nVHDL.conToVHDLExpr: Literals not support in case alternatives yet"
-altconToVHDLExpr DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
+altconToVHDLExpr (CoreSyn.LitAlt _) = error "\nVHDL.conToVHDLExpr: Literals not support in case alternatives yet"
+altconToVHDLExpr CoreSyn.DEFAULT = error "\nVHDL.conToVHDLExpr: DEFAULT alternative should not occur here!"
 
 -- Turn a datacon (without arguments!) into a VHDL expression.
 dataconToVHDLExpr :: DataCon.DataCon -> TypeSession AST.Expr
@@ -202,7 +197,7 @@ dataconToVHDLExpr dc = do
         (BuiltinType "Bit") -> return $ AST.PrimLit $ case Name.getOccString dcname of "High" -> "'1'"; "Low" -> "'0'"
         (BuiltinType "Bool") -> return $ AST.PrimLit $ case Name.getOccString dcname of "True" -> "true"; "False" -> "false"
         otherwise -> do
-          let existing_ty = (Monad.liftM $ fmap fst) $ Map.lookup htype typemap
+          let existing_ty = Monad.liftM (fmap fst) $ Map.lookup htype typemap
           case existing_ty of
             Just ty -> do
               let lit    = idToVHDLExpr $ mkVHDLExtId $ Name.getOccString dcname
@@ -219,7 +214,7 @@ dataconToVHDLExpr dc = do
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId var = mkVHDLExtId $ (varToString var ++ varToStringUniq var ++ (show $ lowers $ varToStringUniq var))
+varToVHDLId var = mkVHDLExtId (varToString var ++ varToStringUniq var ++ show (lowers $ varToStringUniq var))
   where
     lowers :: String -> Int
     lowers xs = length [x | x <- xs, Char.isLower x]
@@ -258,7 +253,7 @@ mkVHDLBasicId s =
     -- Strip leading numbers and underscores
     strip_leading = dropWhile (`elem` ['0'..'9'] ++ "_")
     -- Strip multiple adjacent underscores
-    strip_multiscore = concat . map (\cs -> 
+    strip_multiscore = concatMap (\cs -> 
         case cs of 
           ('_':_) -> "_"
           _ -> cs
@@ -319,7 +314,7 @@ mkHType msg ty = do
 
 mkHTypeEither :: (TypedThing t, Outputable.Outputable t) => 
   t -> TypeSession (Either String HType)
-mkHTypeEither tything = do
+mkHTypeEither tything =
   case getType tything of
     Nothing -> return $ Left $ "\nVHDLTools.mkHTypeEither: Typed thing without a type: " ++ pprString tything
     Just ty -> mkHTypeEither' ty
@@ -327,7 +322,7 @@ mkHTypeEither tything = do
 mkHTypeEither' :: Type.Type -> TypeSession (Either String HType)
 mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHTypeEither': Cannot create type: type has free type variables: " ++ pprString ty
                   | isStateType ty = return $ Right StateType
-                  | otherwise = do
+                  | otherwise =
   case Type.splitTyConApp_maybe ty of
     Just (tycon, args) -> do
       typemap <- MonadState.get tsTypes
@@ -335,7 +330,7 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
       let builtinTyMaybe = Map.lookup (BuiltinType name) typemap  
       case builtinTyMaybe of
         (Just x) -> return $ Right $ BuiltinType name
-        Nothing -> do
+        Nothing ->
           case name of
                 "TFVec" -> do
                   let el_ty = tfvec_elem ty
@@ -357,7 +352,7 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                 "RangedWord" -> do
                   bound <- tfp_to_int (ranged_word_bound_ty ty)
                   return $ Right $ RangedWType bound
-                otherwise -> do
+                otherwise ->
                   mkTyConHType tycon args
     Nothing -> return $ Left $ "\nVHDLTools.mkHTypeEither': Do not know what to do with type: " ++ pprString ty
 
@@ -372,17 +367,17 @@ mkTyConHType tycon args =
       let real_arg_tys_nostate = filter (\x -> not (isStateType x)) real_arg_tys
       elem_htys_either <- mapM mkHTypeEither real_arg_tys_nostate
       case Either.partitionEithers elem_htys_either of
-        ([], [elem_hty]) -> do
+        ([], [elem_hty]) ->
           return $ Right elem_hty
         -- No errors in element types
-        ([], elem_htys) -> do
+        ([], elem_htys) ->
           return $ Right $ AggrType (nameToString (TyCon.tyConName tycon)) elem_htys
         -- There were errors in element types
         (errors, _) -> return $ Left $
           "\nVHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
           ++ (concat errors)
     dcs -> do
-      let arg_tys = concat $ map DataCon.dataConRepArgTys dcs
+      let arg_tys = concatMap DataCon.dataConRepArgTys dcs
       let real_arg_tys = map (CoreSubst.substTy subst) arg_tys
       case real_arg_tys of
         [] ->
@@ -400,8 +395,7 @@ vhdlTy :: (TypedThing t, Outputable.Outputable t) =>
   String -> t -> TypeSession (Maybe AST.TypeMark)
 vhdlTy msg ty = do
   htype <- mkHType msg ty
-  tm <- vhdlTyMaybe htype
-  return tm
+  vhdlTyMaybe htype
 
 vhdlTyMaybe :: HType -> TypeSession (Maybe AST.TypeMark)
 vhdlTyMaybe htype = do
@@ -426,7 +420,7 @@ vhdlTyMaybe htype = do
 -- message or the resulting typemark and typedef.
 construct_vhdl_ty :: HType -> TypeSession TypeMapRec
 -- State types don't generate VHDL
-construct_vhdl_ty htype = do
+construct_vhdl_ty htype =
     case htype of
       StateType -> return  Nothing
       (SizedWType w) -> mkUnsignedTy w
@@ -447,7 +441,7 @@ mkTyconTy htype =
           return Nothing
         elem_tys -> do
           let elems = zipWith AST.ElementDec recordlabels elem_tys  
-          let elem_names = concat $ map prettyShow elem_tys
+          let elem_names = concatMap prettyShow elem_tys
           let ty_id = mkVHDLExtId $ tycon ++ elem_names
           let ty_def = AST.TDR $ AST.RecordTypeDef elems
           let tupshow = mkTupleShow elem_tys ty_id
@@ -478,7 +472,7 @@ mkVectorTy (VecType len elHType) = do
     (Just elTyTm) -> do
       let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId elTyTm) ++ "-0_to_" ++ (show len)
       let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
-      let existing_uvec_ty = (fmap $ fmap fst) $ Map.lookup (UVecType elHType) typesMap
+      let existing_uvec_ty = fmap (fmap fst) $ Map.lookup (UVecType elHType) typesMap
       case existing_uvec_ty of
         Just (Just t) -> do
           let ty_def = AST.SubtypeIn t (Just range)
@@ -554,9 +548,8 @@ tfp_to_int ty = do
     Just (tycon, args) -> do
       let name = Name.getOccString (TyCon.tyConName tycon)
       case name of
-        "Dec" -> do
-          len <- tfp_to_int' ty
-          return len
+        "Dec" ->
+          tfp_to_int' ty
         otherwise -> do
           MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (-1))
           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
@@ -624,7 +617,7 @@ mkVectorShow elemTM vectorTM =
     resId   = AST.unsafeVHDLBasicId "res"
     headSpec = AST.Function (mkVHDLExtId headId) [AST.IfaceVarDec vecPar vectorTM] elemTM
     -- return vec(0);
-    headExpr = AST.ReturnSm (Just $ (AST.PrimName $ AST.NIndexed (AST.IndexedName 
+    headExpr = AST.ReturnSm (Just (AST.PrimName $ AST.NIndexed (AST.IndexedName 
                     (AST.NSimple vecPar) [AST.PrimLit "0"])))
     vecSlice init last =  AST.PrimName (AST.NSlice 
                                       (AST.SliceName 
@@ -710,13 +703,13 @@ mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
                         AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
                         (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [signToInt]) Nothing )
                       where
-                        signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ signedPar)
+                        signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple signedPar)
     showUnsignedSpec =  AST.Function showId [AST.IfaceVarDec unsignedPar unsignedTM] stringTM
     showUnsignedExpr =  AST.ReturnSm (Just $
                           AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
                           (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [unsignToInt]) Nothing )
                         where
-                          unsignToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple $ unsignedPar)
+                          unsignToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple unsignedPar)
     -- showNaturalSpec = AST.Function showId [AST.IfaceVarDec naturalPar naturalTM] stringTM
     -- showNaturalExpr = AST.ReturnSm (Just $
     --                     AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId)

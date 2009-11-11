@@ -1,8 +1,8 @@
+{-# LANGUAGE TemplateHaskell #-}
 --
 -- Simple module providing some types used by Translator. These are in a
 -- separate module to prevent circular dependencies in Pretty for example.
 --
-{-# LANGUAGE TemplateHaskell #-}
 module CLasH.Translator.TranslatorTypes where
 
 -- Standard modules
@@ -18,12 +18,11 @@ import qualified Type
 import qualified HscTypes
 import qualified UniqSupply
 
--- ForSyDe
+-- VHDL Imports
 import qualified Language.VHDL.AST as AST
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
-import CLasH.Translator.Annotations
 
 -- | A specification of an entity we can generate VHDL for. Consists of the
 --   binder of the top level entity, an optional initial state and an optional
@@ -80,7 +79,7 @@ data TypeState = TypeState {
 }
 
 -- Derive accessors
-$( Data.Accessor.Template.deriveAccessors ''TypeState )
+Data.Accessor.Template.deriveAccessors ''TypeState
 
 -- Define a session
 type TypeSession = State.State TypeState
@@ -97,7 +96,7 @@ data TranslatorState = TranslatorState {
 }
 
 -- Derive accessors
-$( Data.Accessor.Template.deriveAccessors ''TranslatorState )
+Data.Accessor.Template.deriveAccessors ''TranslatorState
 
 type TranslatorSession = State.State TranslatorState
 

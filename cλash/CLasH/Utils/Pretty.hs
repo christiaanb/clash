@@ -1,21 +1,19 @@
 module CLasH.Utils.Pretty (prettyShow, pprString, pprStringDebug) where
 
-
+-- Standard imports
 import qualified Data.Map as Map
-import qualified Data.Foldable as Foldable
-import qualified List
-
-import qualified CoreSyn
-import qualified Module
-import qualified HscTypes
 import Text.PrettyPrint.HughesPJClass
+
+-- GHC API
+import qualified CoreSyn
 import Outputable ( showSDoc, showSDocDebug, ppr, Outputable, OutputableBndr)
 
+-- VHDL Imports 
 import qualified Language.VHDL.Ppr as Ppr
 import qualified Language.VHDL.AST as AST
 import qualified Language.VHDL.AST.Ppr
 
-import CLasH.Translator.TranslatorTypes
+-- Local imports
 import CLasH.VHDL.VHDLTypes
 import CLasH.Utils.Core.CoreShow
 

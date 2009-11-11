@@ -7,7 +7,7 @@ module CLasH.Utils.Core.CoreTools where
 
 --Standard modules
 import qualified Maybe
-import System.IO.Unsafe
+import qualified System.IO.Unsafe
 
 -- GHC API
 import qualified GHC
@@ -15,30 +15,23 @@ import qualified Type
 import qualified TcType
 import qualified HsExpr
 import qualified HsTypes
-import qualified HsBinds
 import qualified HscTypes
-import qualified RdrName
 import qualified Name
-import qualified OccName
-import qualified Type
 import qualified Id
 import qualified TyCon
 import qualified DataCon
 import qualified TysWiredIn
-import qualified Bag
 import qualified DynFlags
 import qualified SrcLoc
 import qualified CoreSyn
 import qualified Var
 import qualified IdInfo
 import qualified VarSet
-import qualified Unique
 import qualified CoreUtils
 import qualified CoreFVs
 import qualified Literal
 import qualified MkCore
 import qualified VarEnv
-import qualified Literal
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -74,9 +67,8 @@ eval_tfp_int env ty =
 
 normalise_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
 normalise_tfp_int env ty =
-   unsafePerformIO $ do
-     nty <- normaliseType env ty
-     return nty
+   System.IO.Unsafe.unsafePerformIO $
+     normaliseType env ty
 
 -- | Get the width of a SizedWord type
 -- sized_word_len :: HscTypes.HscEnv -> Type.Type -> Int
@@ -278,7 +270,7 @@ reduceCoreListToHsList _ _ = return []
 
 -- Is the given var the State data constructor?
 isStateCon :: Var.Var -> Bool
-isStateCon var = do
+isStateCon var =
   -- See if it is a DataConWrapId (not DataConWorkId, since State is a
   -- newtype).
   case Id.idDetails var of
@@ -390,7 +382,7 @@ genUniques' subst (CoreSyn.Let (CoreSyn.NonRec bndr bound) res) = do
 genUniques' subst (CoreSyn.Let (CoreSyn.Rec binds) res) = do
   -- Make each of the binders unique
   (subst', bndrs') <- mapAccumLM genUnique subst (map fst binds)
-  bounds' <- mapM (genUniques' subst') (map snd binds)
+  bounds' <- mapM (genUniques' subst' . snd) binds
   res' <- genUniques' subst' res
   let binds' = zip bndrs' bounds'
   return $ CoreSyn.Let (CoreSyn.Rec binds') res'

@@ -1,5 +1,5 @@
 module CLasH.Translator 
-  ( -- makeVHDLStrings
+  (
    makeVHDLAnnotations
   ) where
 
@@ -12,25 +12,21 @@ import qualified Control.Monad.Trans.State as State
 import Text.PrettyPrint.HughesPJ (render)
 import Data.Accessor.Monad.Trans.State
 import qualified Data.Map as Map
-import Debug.Trace
 
 -- GHC API
 import qualified CoreSyn
-import qualified GHC
 import qualified HscTypes
 import qualified UniqSupply
 
 -- VHDL Imports
 import qualified Language.VHDL.AST as AST
-import qualified Language.VHDL.FileIO
+import qualified Language.VHDL.FileIO as FileIO
 import qualified Language.VHDL.Ppr as Ppr
 
 -- Local Imports
-import CLasH.Normalize
 import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
 import CLasH.Utils
-import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.GhcTools
 import CLasH.VHDL
 import CLasH.VHDL.VHDLTools
@@ -59,7 +55,7 @@ makeVHDLAnnotations ::
   FilePath      -- ^ The GHC Library Dir
   -> [FilePath] -- ^ The FileNames
   -> IO ()
-makeVHDLAnnotations libdir filenames = do
+makeVHDLAnnotations libdir filenames =
   makeVHDL libdir filenames finder
     where
       finder = findSpec (hasCLasHAnnotation isTopEntity)
@@ -83,7 +79,7 @@ makeVHDL libdir filenames finder = do
   let top_entity = head $ Maybe.catMaybes $ map (\(t, _, _) -> t) specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
-  mapM (writeVHDL dir) vhdl
+  mapM_ (writeVHDL dir) vhdl
   return ()
 
 -- | Translate the specified entities in the given modules to VHDL.
@@ -94,18 +90,17 @@ moduleToVHDL ::
   -> IO [(AST.VHDLId, AST.DesignFile)]
 moduleToVHDL env cores specs = do
   vhdl <- runTranslatorSession env $ do
-    let all_bindings = concat (map (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores)
+    let all_bindings = concatMap (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings
-    let all_initstates = concat (map (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs) 
+    let all_initstates = concatMap (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs 
     tsInitStates %= Map.fromList all_initstates
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
-    mapM_ printAnns specs
     let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
     case topbinds of
-      []  -> error $ "Could not find top entity requested"
+      []  -> error "Could not find top entity requested"
       tops -> createDesignFiles (tops ++ test_binds)
-  mapM (putStr . render . Ppr.ppr . snd) vhdl
+  mapM_ (putStr . render . Ppr.ppr . snd) vhdl
   return vhdl
   where
     mkTest :: EntitySpec -> TranslatorSession (Maybe CoreSyn.CoreBndr)
@@ -115,9 +110,6 @@ moduleToVHDL env cores specs = do
     mkTest (Just top, _, Just input) = do
       bndr <- createTestbench Nothing cores input top
       return $ Just bndr
-    printAnns :: EntitySpec -> TranslatorSession ()
-    printAnns (_, Nothing, _) = trace ("no anns found:\n\n") $ return ()
-    printAnns (_, (Just anns), _) = trace ("anns:\n\n" ++ show anns ++ "\n") $ return ()
 
 -- Run the given translator session. Generates a new UniqSupply for that
 -- session.
@@ -154,6 +146,6 @@ writeVHDL dir (name, vhdl) = do
   -- Find the filename
   let fname = dir ++ (AST.fromVHDLId name) ++ ".vhdl"
   -- Write the file
-  Language.VHDL.FileIO.writeDesignFile vhdl fname
+  FileIO.writeDesignFile vhdl fname
 
 -- vim: set ts=8 sw=2 sts=2 expandtab:

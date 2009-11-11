@@ -29,8 +29,8 @@ import CLasH.Utils
 listBindings :: FilePath -> [FilePath] -> IO [()]
 listBindings libdir filenames = do
   (cores,_,_) <- loadModules libdir filenames Nothing
-  let binds = concat $ map (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
-  mapM (listBinding) binds
+  let binds = concatMap (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
+  mapM listBinding binds
 
 listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
 listBinding (b, e) = do
@@ -51,7 +51,7 @@ listBind :: FilePath -> [FilePath] -> String -> IO ()
 listBind libdir filenames name = do
   (cores,_,_) <- loadModules libdir filenames Nothing
   bindings <- concatM $ mapM (findBinder (hasVarName name)) cores
-  mapM listBinding bindings
+  mapM_ listBinding bindings
   return ()
 
 -- Change a DynFlag from within the Ghc monad. Strangely enough there seems to
@@ -71,7 +71,7 @@ setDynFlag dflag = do
 -- just return an IO monad when they are evaluated).
 unsafeRunGhc :: FilePath -> GHC.Ghc a -> a
 unsafeRunGhc libDir m =
-  System.IO.Unsafe.unsafePerformIO $ do
+  System.IO.Unsafe.unsafePerformIO $
       GHC.runGhc (Just libDir) $ do
         dflags <- GHC.getSessionDynFlags
         GHC.setSessionDynFlags dflags
@@ -87,7 +87,7 @@ loadModules ::
         , [EntitySpec]
         ) -- ^ ( The loaded modules, the resulting ghc environment, the entities to build)
 loadModules libdir filenames finder =
-  GHC.defaultErrorHandler DynFlags.defaultDynFlags $ do
+  GHC.defaultErrorHandler DynFlags.defaultDynFlags $
     GHC.runGhc (Just libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags
@@ -129,7 +129,7 @@ findExprs criteria core = do
   binders <- findBinder criteria core
   case binders of
     [] -> return Nothing
-    bndrs -> return $ Just $ (map snd bndrs)
+    bndrs -> return $ Just (map snd bndrs)
 
 findExpr ::
   Monad m =>
@@ -162,8 +162,7 @@ findBinder ::
   -> m [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)] -- ^ The binders to meet the criteria
 findBinder criteria core = do
   let binds = CoreSyn.flattenBinds $ HscTypes.cm_binds core
-  critbinds <- Monad.filterM (criteria . fst) binds
-  return critbinds
+  Monad.filterM (criteria . fst) binds
 
 -- | Determine if a binder has an Annotation meeting a certain criteria
 isCLasHAnnotation ::
@@ -196,7 +195,7 @@ hasVarName ::
   String        -- ^ The name the binder has to have
   -> Var.Var    -- ^ The Binder
   -> m Bool     -- ^ Indicate if the binder has the name
-hasVarName lookfor bind = return $ lookfor == (Name.occNameString $ Name.nameOccName $ Name.getName bind)
+hasVarName lookfor bind = return $ lookfor == Name.occNameString (Name.nameOccName $ Name.getName bind)
 
 
 findInitStates ::

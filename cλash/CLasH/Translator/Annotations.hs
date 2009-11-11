@@ -1,10 +1,10 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module CLasH.Translator.Annotations where
   
-import Language.Haskell.TH
+import qualified Language.Haskell.TH as TH
 import Data.Data
 
-data CLasHAnn = TopEntity | InitState Name | TestInput | TestCycles
+data CLasHAnn = TopEntity | InitState TH.Name | TestInput | TestCycles
   deriving (Show, Data, Typeable)
   
 isTopEntity :: CLasHAnn -> Bool

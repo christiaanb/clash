@@ -1,5 +1,6 @@
 module CLasH.VHDL.Constants where
-  
+
+-- VHDL Imports  
 import qualified Language.VHDL.AST as AST
 
 --------------

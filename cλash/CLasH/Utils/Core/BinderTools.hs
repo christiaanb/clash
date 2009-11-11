@@ -4,10 +4,10 @@
 module CLasH.Utils.Core.BinderTools where
 
 -- Standard modules
-import Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API
-import CoreSyn
+import qualified CoreSyn
 import qualified Type
 import qualified UniqSupply
 import qualified Unique
@@ -17,9 +17,6 @@ import qualified Var
 import qualified SrcLoc
 import qualified IdInfo
 import qualified CoreUtils
-import qualified CoreSubst
-import qualified VarSet
-import qualified HscTypes
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -57,15 +54,15 @@ mkTypeVar str kind = do
 -- Creates a binder for the given expression with the given name. This
 -- works for both value and type level expressions, so it can return a Var or
 -- TyVar (which is just an alias for Var).
-mkBinderFor :: CoreExpr -> String -> TranslatorSession Var.Var
-mkBinderFor (Type ty) string = mkTypeVar string (Type.typeKind ty)
+mkBinderFor :: CoreSyn.CoreExpr -> String -> TranslatorSession Var.Var
+mkBinderFor (CoreSyn.Type ty) string = mkTypeVar string (Type.typeKind ty)
 mkBinderFor expr string = mkInternalVar string (CoreUtils.exprType expr)
 
 -- Creates a reference to the given variable. This works for both a normal
 -- variable as well as a type variable
-mkReferenceTo :: Var.Var -> CoreExpr
-mkReferenceTo var | Var.isTyVar var = (Type $ Type.mkTyVarTy var)
-                  | otherwise       = (Var var)
+mkReferenceTo :: Var.Var -> CoreSyn.CoreExpr
+mkReferenceTo var | Var.isTyVar var = (CoreSyn.Type $ Type.mkTyVarTy var)
+                  | otherwise       = (CoreSyn.Var var)
 
 cloneVar :: Var.Var -> TranslatorSession Var.Var
 cloneVar v = do
@@ -77,7 +74,7 @@ cloneVar v = do
 -- Creates a new function with the same name as the given binder (but with a
 -- new unique) and with the given function body. Returns the new binder for
 -- this function.
-mkFunction :: CoreBndr -> CoreExpr -> TranslatorSession CoreBndr
+mkFunction :: CoreSyn.CoreBndr -> CoreSyn.CoreExpr -> TranslatorSession CoreSyn.CoreBndr
 mkFunction bndr body = do
   let ty = CoreUtils.exprType body
   id <- cloneVar bndr

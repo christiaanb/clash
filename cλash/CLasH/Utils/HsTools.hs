@@ -1,4 +1,3 @@
-{-# LANGUAGE ViewPatterns #-}
 module CLasH.Utils.HsTools where
 
 -- Standard modules
@@ -33,28 +32,19 @@ import qualified TcEnv
 import qualified TcSimplify
 import qualified TcTyFuns
 import qualified Desugar
-import qualified InstEnv
-import qualified FamInstEnv
 import qualified PrelNames
 import qualified Module
 import qualified OccName
 import qualified RdrName
 import qualified Name
-import qualified TysWiredIn
 import qualified SrcLoc
 import qualified LoadIface
 import qualified BasicTypes
-import qualified Bag
 -- Core representation and handling
 import qualified CoreSyn
 import qualified Id
 import qualified Type
 import qualified TyCon
-
-
--- Local imports
-import CLasH.Utils.GhcTools
-import CLasH.Utils.Core.CoreShow
 
 -- | Translate a HsExpr to a Core expression. This does renaming, type
 -- checking, simplification of class instances and desugaring. The result is
@@ -96,15 +86,14 @@ toCore expr = do
         tc_expr
   -- Desugar the expression, resulting in core.
   let rdr_env  = HscTypes.ic_rn_gbl_env icontext
-  desugar_expr <- HscTypes.ioMsgMaybe $ Desugar.deSugarExpr env PrelNames.iNTERACTIVE rdr_env HscTypes.emptyTypeEnv letexpr
+  HscTypes.ioMsgMaybe $ Desugar.deSugarExpr env PrelNames.iNTERACTIVE rdr_env HscTypes.emptyTypeEnv letexpr
 
-  return desugar_expr
 
 -- | Create an Id from a RdrName. Might not work for DataCons...
 mkId :: RdrName.RdrName -> GHC.Ghc Id.Id
 mkId rdr_name = do
   env <- GHC.getSession
-  id <- HscTypes.ioMsgMaybe $ MonadUtils.liftIO $ 
+  HscTypes.ioMsgMaybe $ MonadUtils.liftIO $ 
     -- Translage the TcRn (typecheck-rename) monad in an IO monad
     TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ 
       -- Automatically import all available modules, so fully qualified names
@@ -119,7 +108,6 @@ mkId rdr_name = do
         -- Note that tcLookupId doesn't seem to work for DataCons. See source for
         -- tcLookupId to find out.
         TcEnv.tcLookupId name 
-  return id
 
 normaliseType ::
   HscTypes.HscEnv
@@ -147,7 +135,7 @@ coreToHsType ty = case Type.splitTyConApp_maybe ty of
       occ_name = Name.nameOccName tycon_name
       tycon_rdrname = RdrName.mkRdrQual mod_name occ_name
       tycon_ty = SrcLoc.noLoc $ HsTypes.HsTyVar tycon_rdrname
-  Nothing -> error $ "HsTools.coreToHsType Cannot translate non-tycon type"
+  Nothing -> error "HsTools.coreToHsType Cannot translate non-tycon type"
 
 -- | Evaluate a CoreExpr and return its value. For this to work, the caller
 --   should already know the result type for sure, since the result value is
