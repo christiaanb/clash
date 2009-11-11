@@ -390,6 +390,31 @@ scrutsimpl expr = return expr
 scrutsimpltop = everywhere ("scrutsimpl", scrutsimpl)
 
 --------------------------------
+-- Scrutinee binder removal
+--------------------------------
+-- A case expression can have an extra binder, to which the scrutinee is bound
+-- after bringing it to WHNF. This is used for forcing evaluation of strict
+-- arguments. Since strictness does not matter for us (rather, everything is
+-- sort of strict), this binder is ignored when generating VHDL, and must thus
+-- be wild in the normal form.
+scrutbndrremove, scrutbndrremovetop :: Transform
+-- If the scrutinee is already simple, and the bndr is not wild yet, replace
+-- all occurences of the binder with the scrutinee variable.
+scrutbndrremove (Case (Var scrut) bndr ty alts) | bndr_used = do
+    alts' <- mapM subs_bndr alts
+    return $ Case (Var scrut) wild ty alts'
+  where
+    is_used (_, _, expr) = expr_uses_binders [bndr] expr
+    bndr_used = or $ map is_used alts
+    subs_bndr (con, bndrs, expr) = do
+      expr' <- substitute bndr (Var scrut) expr
+      return (con, bndrs, expr')
+    wild = MkCore.mkWildBinder (Id.idType bndr)
+-- Leave all other expressions unchanged
+scrutbndrremove expr = return expr
+scrutbndrremovetop = everywhere ("scrutbndrremove", scrutbndrremove)
+
+--------------------------------
 -- Case binder wildening
 --------------------------------
 casesimpl, casesimpltop :: Transform
@@ -683,7 +708,7 @@ simplrestop expr = do
 
 
 -- What transforms to run?
-transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
+transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
 
 -- | Returns the normalized version of the given function.
 getNormalized ::
