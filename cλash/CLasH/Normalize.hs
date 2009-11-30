@@ -620,6 +620,9 @@ argprop expr@(App _ _) | is_var fexpr = do
         else do
           -- Representable types will not be propagated, and arguments with free
           -- type variables will be propagated later.
+          -- Note that we implicitly remove any type variables in the type of
+          -- the original argument by using the type of the actual argument
+          -- for the new formal parameter.
           -- TODO: preserve original naming?
           id <- Trans.lift $ mkBinderFor arg "param"
           -- Just pass the original argument to the new function, which binds it
