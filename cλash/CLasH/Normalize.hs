@@ -616,6 +616,11 @@ argprop expr@(App _ _) | is_var fexpr = do
           let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting arg
           -- Mark the current expression as changed
           setChanged
+          -- TODO: Clone the free_vars (and update references in arg), since
+          -- this might cause conflicts if two arguments that are propagated
+          -- share a free variable. Also, we are now introducing new variables
+          -- into a function that are not fresh, which violates the binder
+          -- uniqueness invariant.
           return (map Var free_vars, free_vars, arg)
         else do
           -- Representable types will not be propagated, and arguments with free
