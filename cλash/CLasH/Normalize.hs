@@ -402,7 +402,7 @@ scrutbndrremove, scrutbndrremovetop :: Transform
 -- all occurences of the binder with the scrutinee variable.
 scrutbndrremove (Case (Var scrut) bndr ty alts) | bndr_used = do
     alts' <- mapM subs_bndr alts
-    return $ Case (Var scrut) wild ty alts'
+    change $ Case (Var scrut) wild ty alts'
   where
     is_used (_, _, expr) = expr_uses_binders [bndr] expr
     bndr_used = or $ map is_used alts
