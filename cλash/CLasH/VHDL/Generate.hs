@@ -172,9 +172,13 @@ mkStateProcSm ::
 mkStateProcSm (old, new, res) = do
   let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
   type_mark_old_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType old)
-  let type_mark_old = Maybe.fromJust type_mark_old_maybe
+  let type_mark_old = Maybe.fromMaybe 
+                        (error $ "\nGenerate.mkStateProcSm: empty type for state? Type: " ++ pprString (Var.varType old))
+                        type_mark_old_maybe
   type_mark_res_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType res)
-  let type_mark_res' = Maybe.fromJust type_mark_res_maybe
+  let type_mark_res' = Maybe.fromMaybe 
+                        (error $ "\nGenerate.mkStateProcSm: empty type for initial state? Type: " ++ pprString (Var.varType res))
+                        type_mark_res_maybe
   let type_mark_res = if type_mark_old == type_mark_res' then
                         type_mark_res'
                       else 
