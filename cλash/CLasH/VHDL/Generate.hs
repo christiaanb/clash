@@ -752,30 +752,50 @@ genSnd' (Left res) f args@[arg] = do {
 genUnzip :: BuiltinBuilder
 genUnzip = genNoInsts $ genVarArgs genUnzip'
 genUnzip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genUnzip' (Left res) f args@[arg] = do {
-    -- Setup the generate scheme
-  ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
-    -- TODO: Use something better than varToString
-  ; let { label           = mkVHDLExtId ("unzipVector" ++ (varToString res))
-        ; n_id            = mkVHDLBasicId "n"
-        ; n_expr          = idToVHDLExpr n_id
-        ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
-        ; genScheme       = AST.ForGn n_id range
-        ; resname'        = varToVHDLName res
-        ; argexpr'        = mkIndexedName (varToVHDLName arg) n_expr
-        } ;
-  ; reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
-  ; arglabels <- MonadState.lift tsType $ getFieldLabels (tfvec_elem (Var.varType arg))
-  ; let { resnameA    = mkIndexedName (mkSelectedName resname' (reslabels!!0)) n_expr
-        ; resnameB    = mkIndexedName (mkSelectedName resname' (reslabels!!1)) n_expr
-        ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!0)
-        ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!1)
-        ; resA_assign = mkUncondAssign (Right resnameA) argexprA
-        ; resB_assign = mkUncondAssign (Right resnameB) argexprB
-        } ;
-    -- Return the generate functions
-  ; return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
-  }
+genUnzip' (Left res) f args@[arg] = do
+  let error_msg = "\nGenerate.genUnzip: Cannot generate unzip call: " ++ pprString res ++ " = " ++ pprString f ++ " " ++ pprString arg
+  htype <- MonadState.lift tsType $ mkHType error_msg (Var.varType arg)
+  -- Prepare a unconditional assignment, for the case when either part
+  -- of the unzip is a state variable, which will disappear in the
+  -- resulting VHDL, making the the unzip no longer required.
+  case htype of
+    -- A normal vector containing two-tuples
+    VecType _ (AggrType _ [_, _]) -> do {
+        -- Setup the generate scheme
+      ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
+        -- TODO: Use something better than varToString
+      ; let { label           = mkVHDLExtId ("unzipVector" ++ (varToString res))
+            ; n_id            = mkVHDLBasicId "n"
+            ; n_expr          = idToVHDLExpr n_id
+            ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
+            ; genScheme       = AST.ForGn n_id range
+            ; resname'        = varToVHDLName res
+            ; argexpr'        = mkIndexedName (varToVHDLName arg) n_expr
+            } ;
+      ; reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
+      ; arglabels <- MonadState.lift tsType $ getFieldLabels (tfvec_elem (Var.varType arg))
+      ; let { resnameA    = mkIndexedName (mkSelectedName resname' (reslabels!!0)) n_expr
+            ; resnameB    = mkIndexedName (mkSelectedName resname' (reslabels!!1)) n_expr
+            ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!0)
+            ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (arglabels!!1)
+            ; resA_assign = mkUncondAssign (Right resnameA) argexprA
+            ; resB_assign = mkUncondAssign (Right resnameB) argexprB
+            } ;
+        -- Return the generate functions
+      ; return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
+      }
+    -- Both elements of the tuple were state, so they've disappeared. No
+    -- need to do anything
+    VecType _ (AggrType _ []) -> return []
+    -- A vector containing aggregates with more than two elements?
+    VecType _ (AggrType _ _) -> error $ "Unzipping a value that is not a vector of two-tuples? Value: " ++ pprString arg ++ "\nType: " ++ pprString (Var.varType arg)
+    -- One of the elements of the tuple was state, so there won't be a
+    -- tuple (record) in the VHDL output. We can just do a plain
+    -- assignment, then.
+    VecType _ _ -> do
+      argexpr <- MonadState.lift tsType $ varToVHDLExpr arg
+      return [mkUncondAssign (Left res) argexpr]
+    _ -> error $ "Unzipping a value that is not a vector? Value: " ++ pprString arg ++ "\nType: " ++ pprString (Var.varType arg) ++ "\nhtype: " ++ show htype
 
 genCopy :: BuiltinBuilder 
 genCopy = genNoInsts $ genVarArgs genCopy'
