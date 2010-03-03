@@ -13,7 +13,9 @@ import qualified List
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 import qualified Data.Monoid as Monoid
+import qualified Data.Map as Map
 
 -- GHC API
 import CoreSyn
@@ -576,6 +578,12 @@ argprop expr@(App _ _) | is_var fexpr = do
           let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
           -- Create a new function with the same name but a new body
           newf <- Trans.lift $ mkFunction f newbody
+
+          Trans.lift $ MonadState.modify tsInitStates (\ismap ->
+            let init_state_maybe = Map.lookup f ismap in
+            case init_state_maybe of
+              Nothing -> ismap
+              Just init_state -> Map.insert newf init_state ismap)
           -- Replace the original application with one of the new function to the
           -- new arguments.
           change $ MkCore.mkCoreApps (Var newf) newargs
