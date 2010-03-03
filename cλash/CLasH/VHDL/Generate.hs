@@ -134,8 +134,14 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
         ([in_state], [out_state], Nothing) -> do 
           nonEmpty <- hasNonEmptyType in_state
-          if nonEmpty then error ("No initial state defined for: " ++ show fname) else return ([],[])
-        ([in_state], [out_state], Just resetval) -> mkStateProcSm (in_state, out_state,resetval)
+          if nonEmpty 
+            then error ("No initial state defined for: " ++ show fname) 
+            else return ([],[])
+        ([in_state], [out_state], Just resetval) -> do
+          nonEmpty <- hasNonEmptyType in_state
+          if nonEmpty 
+            then mkStateProcSm (in_state, out_state, resetval)
+            else error ("Initial state defined for function with only substate: " ++ show fname)
         ([], [], Just _) -> error $ "Initial state defined for state-less function: " ++ show fname
         ([], [], Nothing) -> return ([],[])
         (ins, outs, res) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
