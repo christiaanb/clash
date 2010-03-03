@@ -236,29 +236,35 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
                 | otherwise =
   case alt of
     (CoreSyn.DataAlt dc, bndrs, (CoreSyn.Var sel_bndr)) -> do
-      bndrs' <- Monad.filterM hasNonEmptyType bndrs
-      case List.elemIndex sel_bndr bndrs' of
-        Just i -> do
-          htypeScrt <- MonadState.lift tsType $ mkHTypeEither (Var.varType scrut)
-          htypeBndr <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-          case htypeScrt == htypeBndr of
-            True -> do
-              let sel_name = varToVHDLName scrut
-              let sel_expr = AST.PrimName sel_name
-              return ([mkUncondAssign (Left bndr) sel_expr], [])
-            otherwise ->
-              case htypeScrt of
-                Right (AggrType _ _) -> do
-                  labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
-                  let label = labels!!i
-                  let sel_name = mkSelectedName (varToVHDLName scrut) label
-                  let sel_expr = AST.PrimName sel_name
-                  return ([mkUncondAssign (Left bndr) sel_expr], [])
-                _ -> do -- error $ "DIE!"
+      nonemptysel <- hasNonEmptyType sel_bndr 
+      if nonemptysel 
+        then do
+          bndrs' <- Monad.filterM hasNonEmptyType bndrs
+          case List.elemIndex sel_bndr bndrs' of
+            Just i -> do
+              htypeScrt <- MonadState.lift tsType $ mkHTypeEither (Var.varType scrut)
+              htypeBndr <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+              case htypeScrt == htypeBndr of
+                True -> do
                   let sel_name = varToVHDLName scrut
                   let sel_expr = AST.PrimName sel_name
                   return ([mkUncondAssign (Left bndr) sel_expr], [])
-        Nothing -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
+                otherwise ->
+                  case htypeScrt of
+                    Right (AggrType _ _) -> do
+                      labels <- MonadState.lift tsType $ getFieldLabels (Id.idType scrut)
+                      let label = labels!!i
+                      let sel_name = mkSelectedName (varToVHDLName scrut) label
+                      let sel_expr = AST.PrimName sel_name
+                      return ([mkUncondAssign (Left bndr) sel_expr], [])
+                    _ -> do -- error $ "DIE!"
+                      let sel_name = varToVHDLName scrut
+                      let sel_expr = AST.PrimName sel_name
+                      return ([mkUncondAssign (Left bndr) sel_expr], [])
+            Nothing -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case: result is not one of the binders\n" ++ (pprString expr)
+          else
+            -- A selector case that selects a state value, ignore it.
+            return ([], [])
       
     _ -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
 
