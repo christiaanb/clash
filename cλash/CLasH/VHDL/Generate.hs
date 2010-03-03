@@ -1104,7 +1104,10 @@ vectorFunId :: Type.Type -> String -> TypeSession AST.VHDLId
 vectorFunId el_ty fname = do
   let error_msg = "\nGenerate.vectorFunId: Can not construct vector function for element: " ++ pprString el_ty
   -- TODO: Handle the Nothing case?
-  Just elemTM <- vhdlTy error_msg el_ty
+  elemTM_maybe <- vhdlTy error_msg el_ty
+  let elemTM = Maybe.fromMaybe
+                 (error $ "\nGenerate.vectorFunId: Cannot generate vector function \"" ++ fname ++ "\" for the empty type \"" ++ (pprString el_ty) ++ "\"")
+                 elemTM_maybe
   -- TODO: This should not be duplicated from mk_vector_ty. Probably but it in
   -- the VHDLState or something.
   let vectorTM = mkVHDLExtId $ "vector_" ++ (AST.fromVHDLId elemTM)
