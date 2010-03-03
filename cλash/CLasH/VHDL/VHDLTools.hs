@@ -533,7 +533,7 @@ getFieldLabels ty = do
   case Map.lookup htype types of
     Just (Just (_, Just (Left (AST.TDR (AST.RecordTypeDef elems))))) -> return $ map (\(AST.ElementDec id _) -> id) elems
     Just Nothing -> return [] -- The type is empty
-    _ -> error $ "\nVHDL.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show htype)
+    _ -> error $ "\nVHDLTools.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show htype)
     
 mktydecl :: (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn)) -> Maybe AST.PackageDecItem
 mytydecl (_, Nothing) = Nothing
