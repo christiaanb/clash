@@ -1008,118 +1008,124 @@ genApplication ::
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
-genApplication dst f args =
-  if Var.isGlobalId f then
-    case Var.idDetails f of
-      IdInfo.DataConWorkId dc -> case dst of
-        -- It's a datacon. Create a record from its arguments.
-        Left bndr -> do
-          -- We have the bndr, so we can get at the type
-          htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-          let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
-          case argsNostate of
-            [arg] -> do
-              [arg'] <- argsToVHDLExprs [arg]
-              return ([mkUncondAssign dst arg'], [])
-            otherwise ->
-              case htype of
-                Right (AggrType _ _) -> do
-                  labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
-                  args' <- argsToVHDLExprs argsNostate
-                  return (zipWith mkassign labels args', [])
-                  where
-                    mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
-                    mkassign label arg =
-                      let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
-                      mkUncondAssign (Right sel_name) arg
-                _ -> do -- error $ "DIE!"
-                  args' <- argsToVHDLExprs argsNostate
-                  return ([mkUncondAssign dst (head args')], [])            
-        Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
-      IdInfo.DataConWrapId dc -> case dst of
-        -- It's a datacon. Create a record from its arguments.
-        Left bndr ->
-          case (Map.lookup (varToString f) globalNameTable) of
-           Just (arg_count, builder) ->
-            if length args == arg_count then
-              builder dst f args
+genApplication dst f args = do
+  nonemptydst <- case dst of
+    Left bndr -> hasNonEmptyType bndr 
+    Right _ -> return True
+  if nonemptydst
+    then
+      if Var.isGlobalId f then
+        case Var.idDetails f of
+          IdInfo.DataConWorkId dc -> case dst of
+            -- It's a datacon. Create a record from its arguments.
+            Left bndr -> do
+              -- We have the bndr, so we can get at the type
+              htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+              let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
+              case argsNostate of
+                [arg] -> do
+                  [arg'] <- argsToVHDLExprs [arg]
+                  return ([mkUncondAssign dst arg'], [])
+                otherwise ->
+                  case htype of
+                    Right (AggrType _ _) -> do
+                      labels <- MonadState.lift tsType $ getFieldLabels (Var.varType bndr)
+                      args' <- argsToVHDLExprs argsNostate
+                      return (zipWith mkassign labels args', [])
+                      where
+                        mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+                        mkassign label arg =
+                          let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+                          mkUncondAssign (Right sel_name) arg
+                    _ -> do -- error $ "DIE!"
+                      args' <- argsToVHDLExprs argsNostate
+                      return ([mkUncondAssign dst (head args')], [])            
+            Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
+          IdInfo.DataConWrapId dc -> case dst of
+            -- It's a datacon. Create a record from its arguments.
+            Left bndr ->
+              case (Map.lookup (varToString f) globalNameTable) of
+               Just (arg_count, builder) ->
+                if length args == arg_count then
+                  builder dst f args
+                else
+                  error $ "\nGenerate.genApplication(DataConWrapId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+               Nothing -> error $ "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper: " ++ (show dc)
+            Right _ -> error "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper application without an original binder"
+          IdInfo.VanillaId ->
+            -- It's a global value imported from elsewhere. These can be builtin
+            -- functions. Look up the function name in the name table and execute
+            -- the associated builder if there is any and the argument count matches
+            -- (this should always be the case if it typechecks, but just to be
+            -- sure...).
+            case (Map.lookup (varToString f) globalNameTable) of
+              Just (arg_count, builder) ->
+                if length args == arg_count then
+                  builder dst f args
+                else
+                  error $ "\nGenerate.genApplication(VanillaId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+              Nothing -> do
+                top <- isTopLevelBinder f
+                if top then
+                  do
+                    -- Local binder that references a top level binding.  Generate a
+                    -- component instantiation.
+                    signature <- getEntity f
+                    args' <- argsToVHDLExprs args
+                    let entity_id = ent_id signature
+                    -- TODO: Using show here isn't really pretty, but we'll need some
+                    -- unique-ish value...
+                    let label = "comp_ins_" ++ (either show prettyShow) dst
+                    let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
+                    return ([mkComponentInst label entity_id portmaps], [f])
+                  else
+                    -- Not a top level binder, so this must be a local variable reference.
+                    -- It should have a representable type (and thus, no arguments) and a
+                    -- signal should be generated for it. Just generate an unconditional
+                    -- assignment here.
+                    -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
+                    -- f' <- MonadState.lift tsType $ varToVHDLExpr f
+                    --                   return $ ([mkUncondAssign dst f'], [])
+                  do errtype <- case dst of 
+                        Left bndr -> do 
+                          htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
+                          return (show htype)
+                        Right vhd -> return $ show vhd
+                     error ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
+          IdInfo.ClassOpId cls ->
+            -- FIXME: Not looking for what instance this class op is called for
+            -- Is quite stupid of course.
+            case (Map.lookup (varToString f) globalNameTable) of
+              Just (arg_count, builder) ->
+                if length args == arg_count then
+                  builder dst f args
+                else
+                  error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
+              Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
+          details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
+        else do
+          top <- isTopLevelBinder f
+          if top then
+            do
+               -- Local binder that references a top level binding.  Generate a
+               -- component instantiation.
+               signature <- getEntity f
+               args' <- argsToVHDLExprs args
+               let entity_id = ent_id signature
+               -- TODO: Using show here isn't really pretty, but we'll need some
+               -- unique-ish value...
+               let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
+               let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
+               return ([mkComponentInst label entity_id portmaps], [f])
             else
-              error $ "\nGenerate.genApplication(DataConWrapId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-           Nothing -> error $ "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper: " ++ (show dc)
-        Right _ -> error "\nGenerate.genApplication(DataConWrapId): Can't generate dataconwrapper application without an original binder"
-      IdInfo.VanillaId ->
-        -- It's a global value imported from elsewhere. These can be builtin
-        -- functions. Look up the function name in the name table and execute
-        -- the associated builder if there is any and the argument count matches
-        -- (this should always be the case if it typechecks, but just to be
-        -- sure...).
-        case (Map.lookup (varToString f) globalNameTable) of
-          Just (arg_count, builder) ->
-            if length args == arg_count then
-              builder dst f args
-            else
-              error $ "\nGenerate.genApplication(VanillaId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-          Nothing -> do
-            top <- isTopLevelBinder f
-            if top then
-              do
-                -- Local binder that references a top level binding.  Generate a
-                -- component instantiation.
-                signature <- getEntity f
-                args' <- argsToVHDLExprs args
-                let entity_id = ent_id signature
-                -- TODO: Using show here isn't really pretty, but we'll need some
-                -- unique-ish value...
-                let label = "comp_ins_" ++ (either show prettyShow) dst
-                let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-                return ([mkComponentInst label entity_id portmaps], [f])
-              else
-                -- Not a top level binder, so this must be a local variable reference.
-                -- It should have a representable type (and thus, no arguments) and a
-                -- signal should be generated for it. Just generate an unconditional
-                -- assignment here.
-                -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
-                -- f' <- MonadState.lift tsType $ varToVHDLExpr f
-                --                   return $ ([mkUncondAssign dst f'], [])
-              do errtype <- case dst of 
-                    Left bndr -> do 
-                      htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-                      return (show htype)
-                    Right vhd -> return $ show vhd
-                 error ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
-      IdInfo.ClassOpId cls ->
-        -- FIXME: Not looking for what instance this class op is called for
-        -- Is quite stupid of course.
-        case (Map.lookup (varToString f) globalNameTable) of
-          Just (arg_count, builder) ->
-            if length args == arg_count then
-              builder dst f args
-            else
-              error $ "\nGenerate.genApplication(ClassOpId): Incorrect number of arguments to builtin function: " ++ pprString f ++ " Args: " ++ show args
-          Nothing -> error $ "\nGenerate.genApplication(ClassOpId): Using function from another module that is not a known builtin: " ++ pprString f
-      details -> error $ "\nGenerate.genApplication: Calling unsupported function " ++ pprString f ++ " with GlobalIdDetails " ++ pprString details
-    else do
-      top <- isTopLevelBinder f
-      if top then
-        do
-           -- Local binder that references a top level binding.  Generate a
-           -- component instantiation.
-           signature <- getEntity f
-           args' <- argsToVHDLExprs args
-           let entity_id = ent_id signature
-           -- TODO: Using show here isn't really pretty, but we'll need some
-           -- unique-ish value...
-           let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
-           let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-           return ([mkComponentInst label entity_id portmaps], [f])
-        else
-          -- Not a top level binder, so this must be a local variable reference.
-          -- It should have a representable type (and thus, no arguments) and a
-          -- signal should be generated for it. Just generate an unconditional
-          -- assignment here.
-        do f' <- MonadState.lift tsType $ varToVHDLExpr f
-           return ([mkUncondAssign dst f'], [])
-
+              -- Not a top level binder, so this must be a local variable reference.
+              -- It should have a representable type (and thus, no arguments) and a
+              -- signal should be generated for it. Just generate an unconditional
+              -- assignment here.
+            do f' <- MonadState.lift tsType $ varToVHDLExpr f
+               return ([mkUncondAssign dst f'], [])
+    else -- Destination has empty type, don't generate anything
+      return ([], [])
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
 -----------------------------------------------------------------------------
