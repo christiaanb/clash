@@ -304,6 +304,8 @@ isReprType ty = do
     Left _ -> False
     Right _ -> True
 
+-- | Turn a Core type into a HType, returning an error using the given
+-- error string if the type was not representable.
 mkHType :: (TypedThing t, Outputable.Outputable t) => 
   String -> t -> TypeSession HType
 mkHType msg ty = do
@@ -312,6 +314,8 @@ mkHType msg ty = do
     Right htype -> return htype
     Left err -> error $ msg ++ err  
 
+-- | Turn a Core type into a HType. Returns either an error message if
+-- the type was not representable, or the HType generated.
 mkHTypeEither :: (TypedThing t, Outputable.Outputable t) => 
   t -> TypeSession (Either String HType)
 mkHTypeEither tything =
@@ -486,6 +490,7 @@ mkVectorTy (VecType len elHType) = do
           mapM_ (\(id, subprog) -> MonadState.modify tsTypeFuns $ Map.insert (UVecType elHType, id) ((mkVHDLExtId id), subprog)) vecShowFuns
           let ty_def = AST.SubtypeIn vec_id (Just range)
           return (Just (ty_id, Just $ Right ty_def))
+    -- Vector of empty elements becomes empty itself.
     Nothing -> return Nothing
 mkVectorTy htype = error $ "\nVHDLTools.mkVectorTy: Called for HType that is not a VecType: " ++ show htype
 
