@@ -531,9 +531,10 @@ getFieldLabels ty = do
   -- Assume the type for which we want labels is really translatable
   htype <- mkHType error_msg ty
   case Map.lookup htype types of
-    Just (Just (_, Just (Left (AST.TDR (AST.RecordTypeDef elems))))) -> return $ map (\(AST.ElementDec id _) -> id) elems
+    Nothing -> error $ "\nVHDLTools.getFieldLabels: Type not found? This should not happen!\nLooking for type: " ++ (pprString ty) ++ "\nhtype: " ++ (show htype) 
     Just Nothing -> return [] -- The type is empty
-    _ -> error $ "\nVHDLTools.getFieldLabels: Type not found or not a record type? This should not happen! Type: " ++ (show htype)
+    Just (Just (_, Just (Left (AST.TDR (AST.RecordTypeDef elems))))) -> return $ map (\(AST.ElementDec id _) -> id) elems
+    Just (Just (_, Just vty)) -> error $ "\nVHDLTools.getFieldLabels: Type not a record type? This should not happen!\nLooking for type: " ++ pprString (ty) ++ "\nhtype: " ++ (show htype) ++ "\nFound type: " ++ (show vty)
     
 mktydecl :: (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn)) -> Maybe AST.PackageDecItem
 mytydecl (_, Nothing) = Nothing
