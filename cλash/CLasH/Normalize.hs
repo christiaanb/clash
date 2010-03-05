@@ -726,20 +726,40 @@ simplrestop expr = do
 -- What transforms to run?
 transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
 
--- | Returns the normalized version of the given function.
+-- | Returns the normalized version of the given function, or an error
+-- if it is not a known global binder.
 getNormalized ::
   CoreBndr -- ^ The function to get
   -> TranslatorSession CoreExpr -- The normalized function body
+getNormalized bndr = do
+  norm <- getNormalized_maybe bndr
+  return $ Maybe.fromMaybe
+    (error $ "Normalize.getNormalized: Unknown function requested: " ++ show bndr)
+    norm
 
-getNormalized bndr = Utils.makeCached bndr tsNormalized $
-  if is_poly (Var bndr)
-    then
-      -- This should really only happen at the top level... TODO: Give
-      -- a different error if this happens down in the recursion.
-      error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
-    else do
-      Just expr <- getGlobalBind bndr
-      normalizeExpr (show bndr) expr
+-- | Returns the normalized version of the given function, or Nothing
+-- when the binder is not a known global binder.
+getNormalized_maybe ::
+  CoreBndr -- ^ The function to get
+  -> TranslatorSession (Maybe CoreExpr) -- The normalized function body
+
+getNormalized_maybe bndr = do
+    expr_maybe <- getGlobalBind bndr
+    if Maybe.isNothing expr_maybe
+      then
+        -- Binder not found
+        return Nothing
+      else if is_poly (Var bndr)
+        then
+          -- This should really only happen at the top level... TODO: Give
+          -- a different error if this happens down in the recursion.
+          error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
+        else do
+          -- Binder found and is monomorphic. Normalize the expression
+          -- and cache the result.
+          normalized <- Utils.makeCached bndr tsNormalized $ 
+            normalizeExpr (show bndr) (Maybe.fromJust expr_maybe)
+          return (Just normalized)
 
 -- | Normalize an expression
 normalizeExpr ::
