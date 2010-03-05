@@ -209,9 +209,12 @@ isUserDefined bndr = str `notElem` compiler_names
 -- into hardware. Note that if a binder is not normalizable, it might become
 -- so using argument propagation.
 isNormalizeable :: CoreBndr -> TransformMonad Bool 
-isNormalizeable bndr = do
+isNormalizeable bndr = Trans.lift (isNormalizeable' bndr)
+
+isNormalizeable' :: CoreBndr -> TranslatorSession Bool 
+isNormalizeable' bndr = do
   let ty = Id.idType bndr
   let (arg_tys, res_ty) = Type.splitFunTys ty
   -- This function is normalizable if all its arguments and return value are
   -- representable.
-  andM $ mapM isRepr (res_ty:arg_tys)
+  andM $ mapM isRepr' (res_ty:arg_tys)
