@@ -734,20 +734,21 @@ getNormalized ::
 getNormalized bndr = do
   norm <- getNormalized_maybe bndr
   return $ Maybe.fromMaybe
-    (error $ "Normalize.getNormalized: Unknown function requested: " ++ show bndr)
+    (error $ "Normalize.getNormalized: Unknown or non-representable function requested: " ++ show bndr)
     norm
 
 -- | Returns the normalized version of the given function, or Nothing
--- when the binder is not a known global binder.
+-- when the binder is not a known global binder or is not normalizeable.
 getNormalized_maybe ::
   CoreBndr -- ^ The function to get
   -> TranslatorSession (Maybe CoreExpr) -- The normalized function body
 
 getNormalized_maybe bndr = do
     expr_maybe <- getGlobalBind bndr
-    if Maybe.isNothing expr_maybe
+    normalizeable <- isNormalizeable' bndr
+    if not normalizeable || Maybe.isNothing expr_maybe
       then
-        -- Binder not found
+        -- Binder not normalizeable or not found
         return Nothing
       else if is_poly (Var bndr)
         then
