@@ -738,7 +738,7 @@ getNormalized bndr = Utils.makeCached bndr tsNormalized $
       -- a different error if this happens down in the recursion.
       error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
     else do
-      expr <- getBinding bndr
+      Just expr <- getGlobalBind bndr
       normalizeExpr (show bndr) expr
 
 -- | Normalize an expression
@@ -754,17 +754,6 @@ normalizeExpr what expr = do
       expr' <- dotransforms transforms expr_uniqued
       trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
       return expr'
-
--- | Get the value that is bound to the given binder at top level. Fails when
---   there is no such binding.
-getBinding ::
-  CoreBndr -- ^ The binder to get the expression for
-  -> TranslatorSession CoreExpr -- ^ The value bound to the binder
-
-getBinding bndr = Utils.makeCached bndr tsBindings $
-  -- If the binding isn't in the "cache" (bindings map), then we can't create
-  -- it out of thin air, so return an error.
-  error $ "Normalize.getBinding: Unknown function requested: " ++ show bndr
 
 -- | Split a normalized expression into the argument binders, top level
 --   bindings and the result binder.
