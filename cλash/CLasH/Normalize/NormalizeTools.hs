@@ -178,9 +178,12 @@ substitute_clone find repl expr = subeverywhere (substitute_clone find repl) exp
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: (CoreTools.TypedThing t) => t -> TransformMonad Bool
-isRepr tything = case CoreTools.getType tything of
+isRepr tything = Trans.lift (isRepr' tything)
+
+isRepr' :: (CoreTools.TypedThing t) => t -> TranslatorSession Bool
+isRepr' tything = case CoreTools.getType tything of
   Nothing -> return False
-  Just ty -> Trans.lift $ MonadState.lift tsType $ VHDLTools.isReprType ty 
+  Just ty -> MonadState.lift tsType $ VHDLTools.isReprType ty 
 
 is_local_var :: CoreSyn.CoreExpr -> TranslatorSession Bool
 is_local_var (CoreSyn.Var v) = do
