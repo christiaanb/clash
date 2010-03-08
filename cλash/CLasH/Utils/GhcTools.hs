@@ -35,7 +35,7 @@ listBindings libdir filenames = do
 listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
 listBinding (b, e) = do
   putStr "\nBinder: "
-  putStr $ show b
+  putStr $ show b ++ "[" ++ show (Var.varUnique b) ++ "]"
   putStr "\nType of Binder: \n"
   putStr $ Outputable.showSDoc $ Outputable.ppr $ Var.varType b
   putStr "\n\nExpression: \n"
