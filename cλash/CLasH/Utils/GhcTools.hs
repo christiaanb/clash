@@ -27,7 +27,7 @@ import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
 import CLasH.Utils
 
-listBindings :: FilePath -> [FilePath] -> IO [()]
+listBindings :: FilePath -> [FilePath] -> IO ()
 listBindings libdir filenames = do
   (cores,_,_) <- loadModules libdir filenames Nothing
   let binds = concatMap (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
@@ -35,6 +35,7 @@ listBindings libdir filenames = do
   putStr "\n=========================\n"
   let classes = concatMap (HscTypes.typeEnvClasses . HscTypes.cm_types) cores
   mapM listClass classes
+  return ()
 
 listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
 listBinding (b, e) = do
