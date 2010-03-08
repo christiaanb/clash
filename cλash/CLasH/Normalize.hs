@@ -364,6 +364,22 @@ needsInline expr = case splitNormalized expr of
   (args, [bind], res) -> True
   _ -> False
 
+
+--------------------------------
+-- Dictionary inlining
+--------------------------------
+-- Inline all top level dictionaries, so we can use them to resolve
+-- class methods based on the dictionary passed. 
+inlinedict expr@(Var f) | Id.isDictId f = do
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    Nothing -> return expr
+    Just body -> change body
+
+-- Leave all other expressions unchanged
+inlinedict expr = return expr
+inlinedicttop = everywhere ("inlinedict", inlinedict)
+
 --------------------------------
 -- Scrutinee simplification
 --------------------------------
@@ -720,7 +736,7 @@ simplrestop expr = do
 
 
 -- What transforms to run?
-transforms = [inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
+transforms = [inlinedicttop, inlinetopleveltop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
