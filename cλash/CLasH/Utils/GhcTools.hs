@@ -19,6 +19,7 @@ import qualified Name
 import qualified Serialized
 import qualified Var
 import qualified Outputable
+import qualified Class
 
 -- Local Imports
 import CLasH.Utils.Pretty
@@ -31,6 +32,9 @@ listBindings libdir filenames = do
   (cores,_,_) <- loadModules libdir filenames Nothing
   let binds = concatMap (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
   mapM listBinding binds
+  putStr "\n=========================\n"
+  let classes = concatMap (HscTypes.typeEnvClasses . HscTypes.cm_types) cores
+  mapM listClass classes
 
 listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
 listBinding (b, e) = do
@@ -45,6 +49,14 @@ listBinding (b, e) = do
   putStr "\n\nType of Expression: \n"
   putStr $ Outputable.showSDoc $ Outputable.ppr $ CoreUtils.exprType e
   putStr "\n\n"
+
+listClass :: Class.Class -> IO ()
+listClass c = do
+  putStr "\nClass: "
+  putStr $ show (Class.className c)
+  putStr "\nSelectors: "
+  putStr $ show (Class.classSelIds c)
+  putStr "\n"
   
 -- | Show the core structure of the given binds in the given file.
 listBind :: FilePath -> [FilePath] -> String -> IO ()
