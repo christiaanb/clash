@@ -499,17 +499,20 @@ casesimpl expr@(Case scrut b ty [(con, bndrs, Var x)]) = return expr
 -- is bound to a new simple selector case statement and for each complex
 -- expression. We do this only for representable types, to prevent loops with
 -- inlinenonrep.
-casesimpl expr@(Case scrut b ty alts) = do
+casesimpl expr@(Case scrut bndr ty alts) | not bndr_used = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
   -- Replace the case with a let with bindings and a case
-  let newlet = mkNonRecLets bindings (Case scrut b ty alts')
+  let newlet = mkNonRecLets bindings (Case scrut bndr ty alts')
   -- If there are no non-wild binders, or this case is already a simple
   -- selector (i.e., a single alt with exactly one binding), already a simple
   -- selector altan no bindings (i.e., no wild binders in the original case),
   -- don't change anything, otherwise, replace the case.
   if null bindings then return expr else change newlet 
   where
+  -- Check if the scrutinee binder is used
+  is_used (_, _, expr) = expr_uses_binders [bndr] expr
+  bndr_used = or $ map is_used alts
   -- Generate a single wild binder, since they are all the same
   wild = MkCore.mkWildBinder
   -- Wilden the binders of one alt, producing a list of bindings as a
@@ -591,7 +594,7 @@ caseremove, caseremovetop :: Transform
 -- Replace a useless case by the value of its single alternative
 caseremove (Case scrut b ty [(con, bndrs, expr)]) | not usesvars = change expr
     -- Find if any of the binders are used by expr
-    where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
+    where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` b:bndrs))) expr
 -- Leave all other expressions unchanged
 caseremove expr = return expr
 -- Perform this transform everywhere
