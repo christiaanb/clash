@@ -23,6 +23,7 @@ import qualified CoreUtils
 import qualified Type
 import qualified Id
 import qualified Var
+import qualified Name
 import qualified VarSet
 import qualified CoreFVs
 import qualified Class
@@ -33,6 +34,7 @@ import Outputable ( showSDoc, ppr, nest )
 import CLasH.Normalize.NormalizeTypes
 import CLasH.Translator.TranslatorTypes
 import CLasH.Normalize.NormalizeTools
+import CLasH.VHDL.Constants (builtinIds)
 import qualified CLasH.Utils as Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Core.BinderTools
@@ -409,8 +411,14 @@ inlinedicttop = everywhere ("inlinedict", inlinedict)
 -- argument) correspond exactly to this list, we then look up baz in
 -- that list and replace the entire expression by the corresponding 
 -- argument to D:Baz.
+--
+-- We don't resolve methods that have a builtin translation (such as
+-- ==), since the actual implementation is not always (easily)
+-- translateable. For example, when deriving ==, GHC generates code
+-- using $con2tag functions to translate a datacon to an int and compare
+-- that with GHC.Prim.==# . Better to avoid that for now.
 classopresolution, classopresolutiontop :: Transform
-classopresolution expr@(App (App (Var sel) ty) dict) =
+classopresolution expr@(App (App (Var sel) ty) dict) | not is_builtin =
   case Id.isClassOpId_maybe sel of
     -- Not a class op selector
     Nothing -> return expr
@@ -431,6 +439,8 @@ classopresolution expr@(App (App (Var sel) ty) dict) =
     -- equal
     tyargs_neq (Type ty1) (Type ty2) = not $ Type.coreEqType ty1 ty2
     tyargs_neq _ _ = True
+    -- Is this a builtin function / method?
+    is_builtin = elem (Name.getOccString sel) builtinIds
 
 -- Leave all other expressions unchanged
 classopresolution expr = return expr
