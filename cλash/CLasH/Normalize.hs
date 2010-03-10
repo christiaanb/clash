@@ -341,33 +341,46 @@ inlinetoplevel, inlinetopleveltop :: Transform
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserve structure.
 inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
-  norm_maybe <- Trans.lift $ getNormalized_maybe f
-  case norm_maybe of
-      -- No body or not normalizeable.
-    Nothing -> return expr
-    Just norm -> if needsInline norm then do
+  body_maybe <- needsInline f
+  case body_maybe of
+    Just body -> do
         -- Regenerate all uniques in the to-be-inlined expression
-        norm_uniqued <- Trans.lift $ genUniques norm
+        body_uniqued <- Trans.lift $ genUniques body
         -- And replace the variable reference with the unique'd body.
-        change norm_uniqued
-      else
+        change body_uniqued
         -- No need to inline
-        return expr
+    Nothing -> return expr
+
 
 -- Leave all other expressions unchanged
 inlinetoplevel expr = return expr
 inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
-
-needsInline :: CoreExpr -> Bool
-needsInline expr = case splitNormalized expr of
-  -- Inline any function that only has a single definition, it is probably
-  -- simple enough. This might inline some stuff that it shouldn't though it
-  -- will never inline user-defined functions (inlinetoplevel only tries
-  -- system names) and inlining should never break things.
-  (args, [bind], res) -> True
-  _ -> False
-
-
+  
+-- | Does the given binder need to be inlined? If so, return the body to
+-- be used for inlining.
+needsInline :: CoreBndr -> TransformMonad (Maybe CoreExpr)
+needsInline f = do
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    -- No body available?
+    Nothing -> return Nothing
+    Just body -> case CoreSyn.collectArgs body of
+      -- The body is some (top level) binder applied to 0 or more
+      -- arguments. That should be simple enough to inline.
+      (Var f, args) -> return $ Just body
+      -- Body is more complicated, try normalizing it
+      _ -> do
+        norm_maybe <- Trans.lift $ getNormalized_maybe f
+        case norm_maybe of
+          -- Noth normalizeable
+          Nothing -> return Nothing 
+          Just norm -> case splitNormalized norm of
+            -- The function has just a single binding, so that's simple
+            -- enough to inline.
+            (args, [bind], res) -> return $ Just norm
+            -- More complicated function, don't inline
+            _ -> return Nothing
+            
 --------------------------------
 -- Dictionary inlining
 --------------------------------
