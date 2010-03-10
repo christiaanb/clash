@@ -416,7 +416,8 @@ classopresolution expr@(App (App (Var sel) ty) dict) =
     Nothing -> return expr
     Just cls -> case collectArgs dict of
       (_, []) -> return expr -- Dict is not an application (e.g., not inlined yet)
-      (dictdc, (ty':selectors)) | tyargs_neq ty ty' -> error $ "Applying class selector to dictionary without matching type?\n" ++ pprString expr
+      (Var dictdc, (ty':selectors)) | not (Maybe.isJust (Id.isDataConId_maybe dictdc)) -> return expr -- Dictionary is not a datacon yet (but e.g., a top level binder)
+                                | tyargs_neq ty ty' -> error $ "Applying class selector to dictionary without matching type?\n" ++ pprString expr
                                 | otherwise ->
         let selector_ids = Class.classSelIds cls in
         -- Find the selector used in the class' list of selectors
@@ -424,6 +425,7 @@ classopresolution expr@(App (App (Var sel) ty) dict) =
           Nothing -> error $ "Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
           -- Get the corresponding argument from the dictionary
           Just n -> change (selectors!!n)
+      (_, _) -> return expr -- Not applying a variable? Don't touch
   where
     -- Compare two type arguments, returning True if they are _not_
     -- equal
