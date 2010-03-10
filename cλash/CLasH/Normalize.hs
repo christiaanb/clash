@@ -338,6 +338,13 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 -- doesn't seem to set all those names as "system names", we apply some
 -- guessing here.
 inlinetoplevel, inlinetopleveltop :: Transform
+-- HACK: Don't inline == and /=. The default (derived) implementation
+-- for /= uses the polymorphic version of ==, which gets a dictionary
+-- for Eq passed in, which contains a reference to itself, resulting in
+-- an infinite loop in transformation. Not inlining == is really a hack,
+-- but for now it keeps things working with the most common symptom of
+-- this problem.
+inlinetoplevel expr@(Var f) | Name.getOccString f `elem` ["==", "/="] = return expr
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserve structure.
 inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
