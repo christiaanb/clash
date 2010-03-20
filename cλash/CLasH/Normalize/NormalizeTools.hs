@@ -211,7 +211,7 @@ isUserDefined bndr = str `notElem` (compiler_names ++ builtin_names)
                     , "copy", "lengthT", "null", "hwxor", "hwand", "hwor"
                     , "hwnot", "not", "+", "*", "-", "fromSizedWord"
                     , "resizeWord", "resizeInt", "fst", "snd", "blockRAM"
-                    , "split", "==", "/="
+                    , "split", "==", "/=", "init"
                     ]
 
     -- , (ltId             , (2, genOperator2 (AST.:<:)  ) )
