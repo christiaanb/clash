@@ -264,6 +264,9 @@ boolOrId = "||"
 boolAndId :: String
 boolAndId = "&&"
 
+boolNot :: String
+boolNot = "not"
+
 -- Numeric Operations
 
 -- | plus operation identifier

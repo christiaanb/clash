@@ -584,9 +584,7 @@ genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
 genMap' (Right name) _ _ = error $ "\nGenerate.genMap': Cannot generate map function call assigned to a VHDLName: " ++ show name
     
 genZipWith :: BuiltinBuilder
-genZipWith = genVarArgs genZipWith'
-genZipWith' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
-genZipWith' (Left res) f args@[zipped_f, arg1, arg2] = do {
+genZipWith (Left res) f args@[Left zipped_f, Left (CoreSyn.Var arg1), Left (CoreSyn.Var arg2)] = do {
   -- Setup the generate scheme
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
           -- TODO: Use something better than varToString
@@ -598,10 +596,12 @@ genZipWith' (Left res) f args@[zipped_f, arg1, arg2] = do {
           -- Create the content of the generate statement: Applying the zipped_f to
           -- each of the elements in arg1 and arg2, storing to each element in res
         ; resname     = mkIndexedName (varToVHDLName res) n_expr
+        ; (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs zipped_f
+        ; valargs     = get_val_args (Var.varType real_f) already_mapped_args
         ; argexpr1    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
         ; argexpr2    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
         } ;
-  ; (app_concsms, used) <- genApplication (Right resname) zipped_f [Right argexpr1, Right argexpr2]
+  ; (app_concsms, used) <- genApplication (Right resname) real_f (map Left valargs ++ [Right argexpr1, Right argexpr2])
     -- Return the generate functions
   ; return ([AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms], used)
   }
@@ -1603,6 +1603,7 @@ globalNameTable = Map.fromList
   , (gteqId           , (2, genOperator2 (AST.:>=:) ) )
   , (boolOrId         , (2, genOperator2 AST.Or     ) )
   , (boolAndId        , (2, genOperator2 AST.And    ) )
+  , (boolNot          , (1, genOperator1 AST.Not    ) )
   , (plusId           , (2, genOperator2 (AST.:+:)  ) )
   , (timesId          , (2, genTimes                ) )
   , (negateId         , (1, genNegation             ) )

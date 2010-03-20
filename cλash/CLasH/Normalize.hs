@@ -416,12 +416,12 @@ classopresolution expr@(App (App (Var sel) ty) dict) =
     Nothing -> return expr
     Just cls -> case collectArgs dict of
       (_, []) -> return expr -- Dict is not an application (e.g., not inlined yet)
-      (dictdc, (ty':selectors)) | tyargs_neq ty ty' -> error $ "Applying class selector to dictionary without matching type?\n" ++ pprString expr
+      (dictdc, (ty':selectors)) | tyargs_neq ty ty' -> error $ "Normalize.classopresolution: Applying class selector to dictionary without matching type?\n" ++ pprString expr
                                 | otherwise ->
         let selector_ids = Class.classSelIds cls in
         -- Find the selector used in the class' list of selectors
         case List.elemIndex sel selector_ids of
-          Nothing -> error $ "Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
+          Nothing -> error $ "Normalize.classopresolution: Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
           -- Get the corresponding argument from the dictionary
           Just n -> change (selectors!!n)
   where
