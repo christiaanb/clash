@@ -814,15 +814,15 @@ genUnzip' (Left res) f args@[arg] = do
     _ -> error $ "Unzipping a value that is not a vector? Value: " ++ pprString arg ++ "\nType: " ++ pprString (Var.varType arg) ++ "\nhtype: " ++ show htype
 
 genCopy :: BuiltinBuilder 
-genCopy = genNoInsts $ genVarArgs genCopy'
-genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genCopy' (Left res) f args@[arg] =
-  let
-    resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
-                (AST.PrimName (varToVHDLName arg))]
-    out_assign = mkUncondAssign (Left res) resExpr
-  in 
-    return [out_assign]
+genCopy = genNoInsts genCopy'
+genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.ConcSm]
+genCopy' (Left res) f [arg] = do {
+  ; [arg'] <- argsToVHDLExprs [arg]
+  ; let { resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) arg']
+        ; out_assign = mkUncondAssign (Left res) resExpr
+        }
+  ; return [out_assign]
+  }
     
 genConcat :: BuiltinBuilder
 genConcat = genNoInsts $ genVarArgs genConcat'
