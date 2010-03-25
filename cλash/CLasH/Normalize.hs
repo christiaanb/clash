@@ -23,6 +23,7 @@ import qualified CoreUtils
 import qualified Type
 import qualified Id
 import qualified Var
+import qualified Name
 import qualified VarSet
 import qualified CoreFVs
 import qualified Class
@@ -33,6 +34,7 @@ import Outputable ( showSDoc, ppr, nest )
 import CLasH.Normalize.NormalizeTypes
 import CLasH.Translator.TranslatorTypes
 import CLasH.Normalize.NormalizeTools
+import CLasH.VHDL.Constants (builtinIds)
 import qualified CLasH.Utils as Utils
 import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Core.BinderTools
@@ -336,36 +338,56 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 -- doesn't seem to set all those names as "system names", we apply some
 -- guessing here.
 inlinetoplevel, inlinetopleveltop :: Transform
+-- HACK: Don't inline == and /=. The default (derived) implementation
+-- for /= uses the polymorphic version of ==, which gets a dictionary
+-- for Eq passed in, which contains a reference to itself, resulting in
+-- an infinite loop in transformation. Not inlining == is really a hack,
+-- but for now it keeps things working with the most common symptom of
+-- this problem.
+inlinetoplevel expr@(Var f) | Name.getOccString f `elem` ["==", "/="] = return expr
 -- Any system name is candidate for inlining. Never inline user-defined
 -- functions, to preserve structure.
 inlinetoplevel expr@(Var f) | not $ isUserDefined f = do
-  norm_maybe <- Trans.lift $ getNormalized_maybe f
-  case norm_maybe of
-      -- No body or not normalizeable.
-    Nothing -> return expr
-    Just norm -> if needsInline norm then do
+  body_maybe <- needsInline f
+  case body_maybe of
+    Just body -> do
         -- Regenerate all uniques in the to-be-inlined expression
-        norm_uniqued <- Trans.lift $ genUniques norm
+        body_uniqued <- Trans.lift $ genUniques body
         -- And replace the variable reference with the unique'd body.
-        change norm_uniqued
-      else
+        change body_uniqued
         -- No need to inline
-        return expr
+    Nothing -> return expr
+
 
 -- Leave all other expressions unchanged
 inlinetoplevel expr = return expr
 inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
-
-needsInline :: CoreExpr -> Bool
-needsInline expr = case splitNormalized expr of
-  -- Inline any function that only has a single definition, it is probably
-  -- simple enough. This might inline some stuff that it shouldn't though it
-  -- will never inline user-defined functions (inlinetoplevel only tries
-  -- system names) and inlining should never break things.
-  (args, [bind], res) -> True
-  _ -> False
-
-
+  
+-- | Does the given binder need to be inlined? If so, return the body to
+-- be used for inlining.
+needsInline :: CoreBndr -> TransformMonad (Maybe CoreExpr)
+needsInline f = do
+  body_maybe <- Trans.lift $ getGlobalBind f
+  case body_maybe of
+    -- No body available?
+    Nothing -> return Nothing
+    Just body -> case CoreSyn.collectArgs body of
+      -- The body is some (top level) binder applied to 0 or more
+      -- arguments. That should be simple enough to inline.
+      (Var f, args) -> return $ Just body
+      -- Body is more complicated, try normalizing it
+      _ -> do
+        norm_maybe <- Trans.lift $ getNormalized_maybe f
+        case norm_maybe of
+          -- Noth normalizeable
+          Nothing -> return Nothing 
+          Just norm -> case splitNormalized norm of
+            -- The function has just a single binding, so that's simple
+            -- enough to inline.
+            (args, [bind], res) -> return $ Just norm
+            -- More complicated function, don't inline
+            _ -> return Nothing
+            
 --------------------------------
 -- Dictionary inlining
 --------------------------------
@@ -409,14 +431,21 @@ inlinedicttop = everywhere ("inlinedict", inlinedict)
 -- argument) correspond exactly to this list, we then look up baz in
 -- that list and replace the entire expression by the corresponding 
 -- argument to D:Baz.
+--
+-- We don't resolve methods that have a builtin translation (such as
+-- ==), since the actual implementation is not always (easily)
+-- translateable. For example, when deriving ==, GHC generates code
+-- using $con2tag functions to translate a datacon to an int and compare
+-- that with GHC.Prim.==# . Better to avoid that for now.
 classopresolution, classopresolutiontop :: Transform
-classopresolution expr@(App (App (Var sel) ty) dict) =
+classopresolution expr@(App (App (Var sel) ty) dict) | not is_builtin =
   case Id.isClassOpId_maybe sel of
     -- Not a class op selector
     Nothing -> return expr
     Just cls -> case collectArgs dict of
       (_, []) -> return expr -- Dict is not an application (e.g., not inlined yet)
-      (dictdc, (ty':selectors)) | tyargs_neq ty ty' -> error $ "Normalize.classopresolution: Applying class selector to dictionary without matching type?\n" ++ pprString expr
+      (Var dictdc, (ty':selectors)) | not (Maybe.isJust (Id.isDataConId_maybe dictdc)) -> return expr -- Dictionary is not a datacon yet (but e.g., a top level binder)
+                                | tyargs_neq ty ty' -> error $ "Normalize.classopresolution: Applying class selector to dictionary without matching type?\n" ++ pprString expr
                                 | otherwise ->
         let selector_ids = Class.classSelIds cls in
         -- Find the selector used in the class' list of selectors
@@ -424,11 +453,14 @@ classopresolution expr@(App (App (Var sel) ty) dict) =
           Nothing -> error $ "Normalize.classopresolution: Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
           -- Get the corresponding argument from the dictionary
           Just n -> change (selectors!!n)
+      (_, _) -> return expr -- Not applying a variable? Don't touch
   where
     -- Compare two type arguments, returning True if they are _not_
     -- equal
     tyargs_neq (Type ty1) (Type ty2) = not $ Type.coreEqType ty1 ty2
     tyargs_neq _ _ = True
+    -- Is this a builtin function / method?
+    is_builtin = elem (Name.getOccString sel) builtinIds
 
 -- Leave all other expressions unchanged
 classopresolution expr = return expr
@@ -497,17 +529,20 @@ casesimpl expr@(Case scrut b ty [(con, bndrs, Var x)]) = return expr
 -- is bound to a new simple selector case statement and for each complex
 -- expression. We do this only for representable types, to prevent loops with
 -- inlinenonrep.
-casesimpl expr@(Case scrut b ty alts) = do
+casesimpl expr@(Case scrut bndr ty alts) | not bndr_used = do
   (bindingss, alts') <- (Monad.liftM unzip) $ mapM doalt alts
   let bindings = concat bindingss
   -- Replace the case with a let with bindings and a case
-  let newlet = mkNonRecLets bindings (Case scrut b ty alts')
+  let newlet = mkNonRecLets bindings (Case scrut bndr ty alts')
   -- If there are no non-wild binders, or this case is already a simple
   -- selector (i.e., a single alt with exactly one binding), already a simple
   -- selector altan no bindings (i.e., no wild binders in the original case),
   -- don't change anything, otherwise, replace the case.
   if null bindings then return expr else change newlet 
   where
+  -- Check if the scrutinee binder is used
+  is_used (_, _, expr) = expr_uses_binders [bndr] expr
+  bndr_used = or $ map is_used alts
   -- Generate a single wild binder, since they are all the same
   wild = MkCore.mkWildBinder
   -- Wilden the binders of one alt, producing a list of bindings as a
@@ -589,7 +624,7 @@ caseremove, caseremovetop :: Transform
 -- Replace a useless case by the value of its single alternative
 caseremove (Case scrut b ty [(con, bndrs, expr)]) | not usesvars = change expr
     -- Find if any of the binders are used by expr
-    where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` bndrs))) expr
+    where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` b:bndrs))) expr
 -- Leave all other expressions unchanged
 caseremove expr = return expr
 -- Perform this transform everywhere

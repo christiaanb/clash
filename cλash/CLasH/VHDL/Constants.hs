@@ -3,6 +3,20 @@ module CLasH.VHDL.Constants where
 -- VHDL Imports  
 import qualified Language.VHDL.AST as AST
 
+-- | A list of all builtin functions. Partly duplicates the name table
+-- in VHDL.Generate, but we can't use that map everywhere due to
+-- circular dependencie.
+builtinIds = [ exId, replaceId, headId, lastId, tailId, initId, takeId, dropId
+             , selId, plusgtId, ltplusId, plusplusId, mapId, zipWithId, foldlId
+             , foldrId, zipId, unzipId, shiftlId, shiftrId, rotlId, rotrId
+             , concatId, reverseId, iteratenId, iterateId, generatenId, generateId
+             , emptyId, singletonId, copynId, copyId, lengthTId, nullId
+             , hwxorId, hwandId, hworId, hwnotId, equalityId, inEqualityId, ltId
+             , lteqId, gtId, gteqId, boolOrId, boolAndId, plusId, timesId
+             , negateId, minusId, fromSizedWordId, fromIntegerId, resizeWordId
+             , resizeIntId, sizedIntId, smallIntegerId, fstId, sndId, blockRAMId
+             , splitId, minimumId 
+             ]
 --------------
 -- Identifiers
 --------------

@@ -1554,7 +1554,8 @@ type BuiltinBuilder =
 type NameTable = Map.Map String (Int, BuiltinBuilder )
 
 -- | The builtin functions we support. Maps a name to an argument count and a
--- builder function.
+-- builder function. If you add a name to this map, don't forget to add
+-- it to VHDL.Constants/builtinIds as well.
 globalNameTable :: NameTable
 globalNameTable = Map.fromList
   [ (exId             , (2, genFCall True          ) )
