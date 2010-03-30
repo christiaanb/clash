@@ -48,13 +48,20 @@ import CLasH.Utils.Pretty
 -- η abstraction
 --------------------------------
 eta, etatop :: Transform
+-- Don't apply to expressions that are applied, since that would cause
+-- us to apply to our own result indefinitely.
+eta (AppFirst:_) expr = return expr
+-- Also don't apply to arguments, since this can cause loops with
+-- funextract. This isn't the proper solution, but due to an
+-- implementation bug in notappargs, this is how it used to work so far.
+eta (AppSecond:_) expr = return expr
 eta c expr | is_fun expr && not (is_lam expr) = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   id <- Trans.lift $ mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta c e = return e
-etatop = notappargs ("eta", eta)
+etatop = everywhere ("eta", eta)
 
 --------------------------------
 -- β-reduction
