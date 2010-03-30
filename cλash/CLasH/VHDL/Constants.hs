@@ -15,7 +15,7 @@ builtinIds = [ exId, replaceId, headId, lastId, tailId, initId, takeId, dropId
              , lteqId, gtId, gteqId, boolOrId, boolAndId, plusId, timesId
              , negateId, minusId, fromSizedWordId, fromIntegerId, resizeWordId
              , resizeIntId, sizedIntId, smallIntegerId, fstId, sndId, blockRAMId
-             , splitId, minimumId 
+             , splitId, minimumId, fromRangedWordId 
              ]
 --------------
 -- Identifiers
@@ -302,6 +302,9 @@ minusId = "-"
 -- | convert sizedword to ranged
 fromSizedWordId :: String
 fromSizedWordId = "fromSizedWord"
+
+fromRangedWordId :: String
+fromRangedWordId = "fromRangedWord"
 
 toIntegerId :: String
 toIntegerId = "to_integer"

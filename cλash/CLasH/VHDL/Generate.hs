@@ -344,9 +344,11 @@ genVarArgs ::
   -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
 genVarArgs wrap dst func args = wrap dst func args'
   where
-    args' = map exprToVar exprargs
+    args' = map exprToVar args''
     -- Check (rather crudely) that all arguments are CoreExprs
-    (exprargs, []) = Either.partitionEithers args
+    args'' = case Either.partitionEithers args of 
+      (exprargs, []) -> exprargs
+      (exprsargs, rest) -> error $ "\nGenerate.genVarArgs: expect varargs but found ast exprs:" ++ (show rest)
 
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be Literals
@@ -418,6 +420,20 @@ genFromSizedWord' (Left res) f args@[arg] =
   -- return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
   --            map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
 genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
+
+genFromRangedWord :: BuiltinBuilder
+genFromRangedWord = genNoInsts $ genExprArgs $ genExprRes genFromRangedWord'
+genFromRangedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
+genFromRangedWord' (Left res) f [arg] = do {
+  ; let { ty = Var.varType res
+        ; (tycon, args) = Type.splitTyConApp ty
+        ; name = Name.getOccString (TyCon.tyConName tycon)
+        } ;
+  ; len <- MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
+  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId resizeId))
+             [Nothing AST.:=>: AST.ADExpr arg, Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+  }
+genFromRangedWord' (Right name) _ _ = error $ "\nGenerate.genFromRangedWord': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 genResize :: BuiltinBuilder
 genResize = genNoInsts $ genExprArgs $ genExprRes genResize'
@@ -1610,6 +1626,7 @@ globalNameTable = Map.fromList
   , (negateId         , (1, genNegation             ) )
   , (minusId          , (2, genOperator2 (AST.:-:)  ) )
   , (fromSizedWordId  , (1, genFromSizedWord        ) )
+  , (fromRangedWordId , (1, genFromRangedWord       ) )
   , (fromIntegerId    , (1, genFromInteger          ) )
   , (resizeWordId     , (1, genResize               ) )
   , (resizeIntId      , (1, genResize               ) )
