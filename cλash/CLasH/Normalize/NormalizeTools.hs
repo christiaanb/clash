@@ -100,23 +100,6 @@ subeverywhere trans c (Cast expr ty) = do
 
 subeverywhere trans c expr = error $ "\nNormalizeTools.subeverywhere: Unsupported expression: " ++ show expr
 
--- Apply the given transformation to all expressions, except for direct
--- arguments of an application
-notappargs :: (String, Transform) -> Transform
-notappargs trans = applyboth (subnotappargs trans) trans
-
--- Apply the given transformation to all (direct and indirect) subexpressions
--- (but not the expression itself), except for direct arguments of an
--- application
-subnotappargs :: (String, Transform) -> Transform
-subnotappargs trans c (App a b) = do
-  a' <- subnotappargs trans (Other:c) a
-  b' <- subnotappargs trans (Other:c) b
-  return $ App a' b'
-
--- Let subeverywhere handle all other expressions
-subnotappargs trans c expr = subeverywhere (notappargs trans) c expr
-
 -- Runs each of the transforms repeatedly inside the State monad.
 dotransforms :: [Transform] -> CoreExpr -> TranslatorSession CoreExpr
 dotransforms transs expr = do
