@@ -62,18 +62,18 @@ subeverywhere trans c (App a b) = do
   return $ App a' b'
 
 subeverywhere trans c (Let (NonRec b bexpr) expr) = do
-  bexpr' <- trans (Other:c) bexpr
-  expr' <- trans (Other:c) expr
+  bexpr' <- trans (LetBinding:c) bexpr
+  expr' <- trans (LetBody:c) expr
   return $ Let (NonRec b bexpr') expr'
 
 subeverywhere trans c (Let (Rec binds) expr) = do
-  expr' <- trans (Other:c) expr
+  expr' <- trans (LetBody:c) expr
   binds' <- mapM transbind binds
   return $ Let (Rec binds') expr'
   where
     transbind :: (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
     transbind (b, e) = do
-      e' <- trans (Other:c) e
+      e' <- trans (LetBinding:c) e
       return (b, e')
 
 subeverywhere trans c (Lam x expr) = do

@@ -21,6 +21,11 @@ data CoreContext = AppFirst        -- ^ The expression is the first
                  | AppSecond       -- ^ The expression is the second
                                    --   argument of an application
                                    --   (i.e., something is applied to it)
+                 | LetBinding      -- ^ The expression is bound in a
+                                   --   (recursive or non-recursive) let
+                                   --   expression.
+                 | LetBody         -- ^ The expression is the body of a
+                                   --   let expression
                  | Other           -- ^ Another context
 
 -- | Transforms a CoreExpr and keeps track if it has changed.
