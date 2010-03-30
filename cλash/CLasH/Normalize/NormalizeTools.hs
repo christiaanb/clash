@@ -37,19 +37,18 @@ everywhere trans = applyboth (subeverywhere (everywhere trans)) trans
 -- Apply the first transformation, followed by the second transformation, and
 -- keep applying both for as long as expression still changes.
 applyboth :: Transform -> (String, Transform) -> Transform
-applyboth first (name, second) expr = do
+applyboth first (name, second) context expr = do
   -- Apply the first
-  expr' <- first expr
+  expr' <- first context expr
   -- Apply the second
-  (expr'', changed) <- Writer.listen $ second expr'
+  (expr'', changed) <- Writer.listen $ second context expr'
   if Monoid.getAny $
         -- trace ("Trying to apply transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n")
         changed 
     then 
      -- trace ("Applying transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n"
      --        ++ "Result of applying " ++ name ++ ":\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
-      applyboth first (name, second)
-        expr'' 
+      applyboth first (name, second) context expr'' 
     else 
       -- trace ("No changes") $
       return expr''
@@ -57,49 +56,49 @@ applyboth first (name, second) expr = do
 -- Apply the given transformation to all direct subexpressions (only), not the
 -- expression itself.
 subeverywhere :: Transform -> Transform
-subeverywhere trans (App a b) = do
-  a' <- trans a
-  b' <- trans b
+subeverywhere trans c (App a b) = do
+  a' <- trans (Other:c) a
+  b' <- trans (Other:c) b
   return $ App a' b'
 
-subeverywhere trans (Let (NonRec b bexpr) expr) = do
-  bexpr' <- trans bexpr
-  expr' <- trans expr
+subeverywhere trans c (Let (NonRec b bexpr) expr) = do
+  bexpr' <- trans (Other:c) bexpr
+  expr' <- trans (Other:c) expr
   return $ Let (NonRec b bexpr') expr'
 
-subeverywhere trans (Let (Rec binds) expr) = do
-  expr' <- trans expr
+subeverywhere trans c (Let (Rec binds) expr) = do
+  expr' <- trans (Other:c) expr
   binds' <- mapM transbind binds
   return $ Let (Rec binds') expr'
   where
     transbind :: (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
     transbind (b, e) = do
-      e' <- trans e
+      e' <- trans (Other:c) e
       return (b, e')
 
-subeverywhere trans (Lam x expr) = do
-  expr' <- trans expr
+subeverywhere trans c (Lam x expr) = do
+  expr' <- trans (Other:c) expr
   return $ Lam x expr'
 
-subeverywhere trans (Case scrut b t alts) = do
-  scrut' <- trans scrut
+subeverywhere trans c (Case scrut b t alts) = do
+  scrut' <- trans (Other:c) scrut
   alts' <- mapM transalt alts
   return $ Case scrut' b t alts'
   where
     transalt :: CoreAlt -> TransformMonad CoreAlt
     transalt (con, binders, expr) = do
-      expr' <- trans expr
+      expr' <- trans (Other:c) expr
       return (con, binders, expr')
 
-subeverywhere trans (Var x) = return $ Var x
-subeverywhere trans (Lit x) = return $ Lit x
-subeverywhere trans (Type x) = return $ Type x
+subeverywhere trans c (Var x) = return $ Var x
+subeverywhere trans c (Lit x) = return $ Lit x
+subeverywhere trans c (Type x) = return $ Type x
 
-subeverywhere trans (Cast expr ty) = do
-  expr' <- trans expr
+subeverywhere trans c (Cast expr ty) = do
+  expr' <- trans (Other:c) expr
   return $ Cast expr' ty
 
-subeverywhere trans expr = error $ "\nNormalizeTools.subeverywhere: Unsupported expression: " ++ show expr
+subeverywhere trans c expr = error $ "\nNormalizeTools.subeverywhere: Unsupported expression: " ++ show expr
 
 -- Apply the given transformation to all expressions, except for direct
 -- arguments of an application
@@ -110,34 +109,34 @@ notappargs trans = applyboth (subnotappargs trans) trans
 -- (but not the expression itself), except for direct arguments of an
 -- application
 subnotappargs :: (String, Transform) -> Transform
-subnotappargs trans (App a b) = do
-  a' <- subnotappargs trans a
-  b' <- subnotappargs trans b
+subnotappargs trans c (App a b) = do
+  a' <- subnotappargs trans (Other:c) a
+  b' <- subnotappargs trans (Other:c) b
   return $ App a' b'
 
 -- Let subeverywhere handle all other expressions
-subnotappargs trans expr = subeverywhere (notappargs trans) expr
+subnotappargs trans c expr = subeverywhere (notappargs trans) c expr
 
 -- Runs each of the transforms repeatedly inside the State monad.
 dotransforms :: [Transform] -> CoreExpr -> TranslatorSession CoreExpr
 dotransforms transs expr = do
-  (expr', changed) <- Writer.runWriterT $ Monad.foldM (flip ($)) expr transs
+  (expr', changed) <- Writer.runWriterT $ Monad.foldM (\e trans -> trans [] e) expr transs
   if Monoid.getAny changed then dotransforms transs expr' else return expr'
 
 -- Inline all let bindings that satisfy the given condition
 inlinebind :: ((CoreBndr, CoreExpr) -> TransformMonad Bool) -> Transform
-inlinebind condition expr@(Let (NonRec bndr expr') res) = do
+inlinebind condition context expr@(Let (NonRec bndr expr') res) = do
     applies <- condition (bndr, expr')
     if applies
       then do
         -- Substitute the binding in res and return that
-        res' <- substitute_clone bndr expr' res
+        res' <- substitute_clone bndr expr' context res
         change res'
       else
         -- Don't change this let
         return expr
 -- Leave all other expressions unchanged
-inlinebind _ expr = return expr
+inlinebind _ context expr = return expr
 
 -- Sets the changed flag in the TransformMonad, to signify that some
 -- transform has changed the result
@@ -161,7 +160,7 @@ changeif False val = return val
 -- Does not set the changed flag.
 substitute :: CoreBndr -> CoreExpr -> Transform
 -- Use CoreSubst to subst a type var in an expression
-substitute find repl expr = do
+substitute find repl context expr = do
   let subst = CoreSubst.extendSubst CoreSubst.emptySubst find repl
   return $ CoreSubst.substExpr subst expr 
 
@@ -170,12 +169,12 @@ substitute find repl expr = do
 -- expression are cloned before the replacement, to guarantee uniqueness.
 substitute_clone :: CoreBndr -> CoreExpr -> Transform
 -- If we see the var to find, replace it by a uniqued version of repl
-substitute_clone find repl (Var var) | find == var = do
+substitute_clone find repl context (Var var) | find == var = do
   repl' <- Trans.lift $ CoreTools.genUniques repl
   change repl'
 
 -- For all other expressions, just look in subexpressions
-substitute_clone find repl expr = subeverywhere (substitute_clone find repl) expr
+substitute_clone find repl context expr = subeverywhere (substitute_clone find repl) context expr
 
 -- Is the given expression representable at runtime, based on the type?
 isRepr :: (CoreTools.TypedThing t) => t -> TransformMonad Bool

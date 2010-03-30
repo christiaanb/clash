@@ -14,5 +14,8 @@ import CLasH.Translator.TranslatorTypes
 -- over a single expression and track if the expression was changed.
 type TransformMonad = Writer.WriterT Monoid.Any TranslatorSession
 
+-- | In what context does a core expression occur?
+data CoreContext = Other -- ^ Another context
+
 -- | Transforms a CoreExpr and keeps track if it has changed.
-type Transform = CoreSyn.CoreExpr -> TransformMonad CoreSyn.CoreExpr
+type Transform = [CoreContext] -> CoreSyn.CoreExpr -> TransformMonad CoreSyn.CoreExpr
