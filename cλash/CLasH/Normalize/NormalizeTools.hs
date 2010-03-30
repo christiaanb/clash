@@ -57,8 +57,8 @@ applyboth first (name, second) context expr = do
 -- expression itself.
 subeverywhere :: Transform -> Transform
 subeverywhere trans c (App a b) = do
-  a' <- trans (Other:c) a
-  b' <- trans (Other:c) b
+  a' <- trans (AppFirst:c) a
+  b' <- trans (AppSecond:c) b
   return $ App a' b'
 
 subeverywhere trans c (Let (NonRec b bexpr) expr) = do

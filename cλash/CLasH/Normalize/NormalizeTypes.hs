@@ -15,7 +15,13 @@ import CLasH.Translator.TranslatorTypes
 type TransformMonad = Writer.WriterT Monoid.Any TranslatorSession
 
 -- | In what context does a core expression occur?
-data CoreContext = Other -- ^ Another context
+data CoreContext = AppFirst        -- ^ The expression is the first
+                                   -- argument of an application (i.e.,
+                                   -- it is applied)
+                 | AppSecond       -- ^ The expression is the second
+                                   --   argument of an application
+                                   --   (i.e., something is applied to it)
+                 | Other           -- ^ Another context
 
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = [CoreContext] -> CoreSyn.CoreExpr -> TransformMonad CoreSyn.CoreExpr
