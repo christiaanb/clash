@@ -341,30 +341,32 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 -- all structure defined by the user. Currently this includes all functions
 -- that were created by funextract, since we would get loops otherwise.
 --
+-- Only functions that are actually completely applied and bound by a
+-- variable in a let expression are inlined. These are the expressions
+-- that will eventually generate instantiations of trivial components.
+-- By not inlining any other reference, we also prevent looping problems
+-- with funextract and inlinedict.
+--
 -- Note that "defined by the compiler" isn't completely watertight, since GHC
 -- doesn't seem to set all those names as "system names", we apply some
 -- guessing here.
 inlinetoplevel, inlinetopleveltop :: Transform
--- HACK: Don't inline == and /=. The default (derived) implementation
--- for /= uses the polymorphic version of ==, which gets a dictionary
--- for Eq passed in, which contains a reference to itself, resulting in
--- an infinite loop in transformation. Not inlining == is really a hack,
--- but for now it keeps things working with the most common symptom of
--- this problem.
-inlinetoplevel c expr@(Var f) | Name.getOccString f `elem` ["==", "/="] = return expr
--- Any system name is candidate for inlining. Never inline user-defined
--- functions, to preserve structure.
-inlinetoplevel c expr@(Var f) | not $ isUserDefined f = do
-  body_maybe <- needsInline f
-  case body_maybe of
-    Just body -> do
-        -- Regenerate all uniques in the to-be-inlined expression
-        body_uniqued <- Trans.lift $ genUniques body
-        -- And replace the variable reference with the unique'd body.
-        change body_uniqued
-        -- No need to inline
-    Nothing -> return expr
-
+inlinetoplevel (LetBinding:_) expr =
+  case collectArgs expr of
+	-- Any system name is candidate for inlining. Never inline
+	-- user-defined functions, to preserve structure.
+	(Var f, args) | not $ isUserDefined f -> do
+	  body_maybe <- needsInline f
+	  case body_maybe of
+		Just body -> do
+			-- Regenerate all uniques in the to-be-inlined expression
+			body_uniqued <- Trans.lift $ genUniques body
+			-- And replace the variable reference with the unique'd body.
+			change (mkApps body_uniqued args)
+			-- No need to inline
+		Nothing -> return expr
+	-- This is not an application of a binder, leave it unchanged.
+	_ -> return expr
 
 -- Leave all other expressions unchanged
 inlinetoplevel c expr = return expr
