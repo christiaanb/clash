@@ -148,6 +148,11 @@ is_lam :: CoreSyn.CoreExpr -> Bool
 is_lam (CoreSyn.Lam _ _) = True
 is_lam _ = False
 
+-- Is the given core expression a let expression?
+is_let :: CoreSyn.CoreExpr -> Bool
+is_let (CoreSyn.Let _ _) = True
+is_let _ = False
+
 -- Is the given core expression of a function type?
 is_fun :: CoreSyn.CoreExpr -> Bool
 -- Treat Type arguments differently, because exprType is not defined for them.
