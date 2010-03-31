@@ -45,12 +45,13 @@ applyboth first (name, second) context expr = do
   if Monoid.getAny $
         -- trace ("Trying to apply transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n")
         changed 
-    then do
+    then
      -- trace ("Applying transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n"
      --        ++ "Context: " ++ show context ++ "\n"
      --        ++ "Result of applying " ++ name ++ ":\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
-      Trans.lift $ MonadState.modify tsTransformCounter (+1)
-      applyboth first (name, second) context expr'' 
+      do
+        Trans.lift $ MonadState.modify tsTransformCounter (+1)
+        applyboth first (name, second) context expr'' 
     else 
       -- trace ("No changes") $
       return expr''
