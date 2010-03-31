@@ -6,6 +6,7 @@ module CLasH.Normalize.NormalizeTools where
 
 -- Standard modules
 import qualified Data.Monoid as Monoid
+import qualified Data.Either as Either
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified "transformers" Control.Monad.Trans as Trans
@@ -111,16 +112,22 @@ dotransforms transs expr = do
 
 -- Inline all let bindings that satisfy the given condition
 inlinebind :: ((CoreBndr, CoreExpr) -> TransformMonad Bool) -> Transform
-inlinebind condition context expr@(Let (NonRec bndr expr') res) = do
-    applies <- condition (bndr, expr')
-    if applies
-      then do
-        -- Substitute the binding in res and return that
-        res' <- substitute_clone bndr expr' context res
-        change res'
-      else
-        -- Don't change this let
-        return expr
+inlinebind condition context expr@(Let (Rec binds) res) = do
+    -- Find all bindings that adhere to the condition
+    res_eithers <- mapM docond binds
+    case Either.partitionEithers res_eithers of
+      -- No replaces? No change
+      ([], _) -> return expr
+      (replace, others) -> do
+        -- Substitute the to be replaced binders with their expression
+        newexpr <- Monad.foldM (\e (bndr, repl) -> substitute_clone bndr repl context e) (Let (Rec others) res) replace
+        change newexpr
+  where 
+    docond :: (CoreBndr, CoreExpr) -> TransformMonad (Either (CoreBndr, CoreExpr) (CoreBndr, CoreExpr))
+    docond b = do
+      res <- condition b
+      return $ case res of True -> Left b; False -> Right b
+
 -- Leave all other expressions unchanged
 inlinebind _ context expr = return expr
 
