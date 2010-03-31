@@ -26,7 +26,8 @@ data CoreContext = AppFirst        -- ^ The expression is the first
                                    --   expression.
                  | LetBody         -- ^ The expression is the body of a
                                    --   let expression
+                 | LambdaBody      -- ^ The expression is the body of a
+                                   --   lambda abstraction
                  | Other           -- ^ Another context
-
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = [CoreContext] -> CoreSyn.CoreExpr -> TransformMonad CoreSyn.CoreExpr

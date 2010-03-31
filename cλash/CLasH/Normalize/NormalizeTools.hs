@@ -77,7 +77,7 @@ subeverywhere trans c (Let (Rec binds) expr) = do
       return (b, e')
 
 subeverywhere trans c (Lam x expr) = do
-  expr' <- trans (Other:c) expr
+  expr' <- trans (LambdaBody:c) expr
   return $ Lam x expr'
 
 subeverywhere trans c (Case scrut b t alts) = do
