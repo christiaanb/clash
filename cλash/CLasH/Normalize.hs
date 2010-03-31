@@ -120,35 +120,40 @@ castsimpl c expr = return expr
 -- Perform this transform everywhere
 castsimpltop = everywhere ("castsimpl", castsimpl)
 
-
 --------------------------------
--- Lambda simplication
+-- Ensure that a function that just returns another function (or rather,
+-- another top-level binder) is still properly normalized. This is a temporary
+-- solution, we should probably integrate this pass with lambdasimpl and
+-- letsimpl instead.
 --------------------------------
--- Ensure that a lambda always evaluates to a let expressions or a simple
--- variable reference.
-lambdasimpl, lambdasimpltop :: Transform
--- Don't simplify a lambda that evaluates to let, since this is already
--- normal form (and would cause infinite loops).
-lambdasimpl c expr@(Lam _ (Let _ _)) = return expr
--- Put the of a lambda in its own binding, but not when the expression is
--- already a local variable, or not representable (to prevent loops with
--- inlinenonrep).
-lambdasimpl c expr@(Lam bndr res) = do
-  repr <- isRepr res
-  local_var <- Trans.lift $ is_local_var res
+retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
+  -- Don't extract values that are already a local variable, to prevent
+  -- loops with ourselves.
+  local_var <- Trans.lift $ is_local_var body
+  -- Don't extract values that are not representable, to prevent loops with
+  -- inlinenonrep
+  repr <- isRepr body
   if not local_var && repr
     then do
-      id <- Trans.lift $ mkBinderFor res "res"
-      change $ Lam bndr (Let (NonRec id res) (Var id))
+      id <- Trans.lift $ mkBinderFor body "res" 
+      change $ Let (Rec ((id, body):binds)) (Var id)
     else
-      -- If the result is already a local var or not representable, don't
-      -- extract it.
+      return expr
+
+retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
+  local_var <- Trans.lift $ is_local_var expr
+  repr <- isRepr expr
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor expr "res" 
+      change $ Let (Rec [(id, expr)]) (Var id)
+    else
       return expr
 
 -- Leave all other expressions unchanged
-lambdasimpl c expr = return expr
+retvalsimpl c expr = return expr
 -- Perform this transform everywhere
-lambdasimpltop = everywhere ("lambdasimpl", lambdasimpl)
+retvalsimpltop = everywhere ("retvalsimpl", retvalsimpl)
 
 --------------------------------
 -- let derecursification
@@ -173,33 +178,6 @@ letderec c expr@(Let (Rec binds) res) = case liftable of
 letderec c expr = return expr
 -- Perform this transform everywhere
 letderectop = everywhere ("letderec", letderec)
-
---------------------------------
--- let simplification
---------------------------------
-letsimpl, letsimpltop :: Transform
--- Don't simplify a let that evaluates to another let, since this is already
--- normal form (and would cause infinite loops with letflat below).
-letsimpl c expr@(Let _ (Let _ _)) = return expr
--- Put the "in ..." value of a let in its own binding, but not when the
--- expression is already a local variable, or not representable (to prevent loops with inlinenonrep).
-letsimpl c expr@(Let binds res) = do
-  repr <- isRepr res
-  local_var <- Trans.lift $ is_local_var res
-  if not local_var && repr
-    then do
-      -- If the result is not a local var already (to prevent loops with
-      -- ourselves), extract it.
-      id <- Trans.lift $ mkBinderFor res "foo"
-      change $ Let binds (Let (NonRec id  res) (Var id))
-    else
-      -- If the result is already a local var, don't extract it.
-      return expr
-
--- Leave all other expressions unchanged
-letsimpl c expr = return expr
--- Perform this transform everywhere
-letsimpltop = everywhere ("letsimpl", letsimpl)
 
 --------------------------------
 -- let flattening
@@ -820,25 +798,6 @@ funextract c expr = return expr
 funextracttop = everywhere ("funextract", funextract)
 
 --------------------------------
--- Ensure that a function that just returns another function (or rather,
--- another top-level binder) is still properly normalized. This is a temporary
--- solution, we should probably integrate this pass with lambdasimpl and
--- letsimpl instead.
---------------------------------
-simplrestop c expr@(Lam _ _) = return expr
-simplrestop c expr@(Let _ _) = return expr
-simplrestop c expr = do
-  local_var <- Trans.lift $ is_local_var expr
-  -- Don't extract values that are not representable, to prevent loops with
-  -- inlinenonrep
-  repr <- isRepr expr
-  if local_var || not repr
-    then
-      return expr
-    else do
-      id <- Trans.lift $ mkBinderFor expr "res" 
-      change $ Let (NonRec id expr) (Var id)
---------------------------------
 -- End of transformations
 --------------------------------
 
@@ -846,7 +805,7 @@ simplrestop c expr = do
 
 
 -- What transforms to run?
-transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, letsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop, lambdasimpltop, simplrestop]
+transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
