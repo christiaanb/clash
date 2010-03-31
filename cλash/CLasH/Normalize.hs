@@ -850,11 +850,14 @@ normalizeExpr ::
   -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
 
 normalizeExpr what expr = do
+      startcount <- MonadState.get tsTransformCounter 
       expr_uniqued <- genUniques expr
       -- Normalize this expression
       trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") $ return ()
       expr' <- dotransforms transforms expr_uniqued
+      endcount <- MonadState.get tsTransformCounter 
       trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
+      trace ("\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $ return ()
       return expr'
 
 -- | Split a normalized expression into the argument binders, top level
