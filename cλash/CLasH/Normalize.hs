@@ -158,26 +158,14 @@ retvalsimpltop = everywhere ("retvalsimpl", retvalsimpl)
 --------------------------------
 -- let derecursification
 --------------------------------
-letderec, letderectop :: Transform
-letderec c expr@(Let (Rec binds) res) = case liftable of
-  -- Nothing is liftable, just return
-  [] -> return expr
-  -- Something can be lifted, generate a new let expression
-  _ -> change $ mkNonRecLets liftable (Let (Rec nonliftable) res)
-  where
-    -- Make a list of all the binders bound in this recursive let
-    bndrs = map fst binds
-    -- See which bindings are liftable
-    (liftable, nonliftable) = List.partition canlift binds
-    -- Any expression that does not use any of the binders in this recursive let
-    -- can be lifted into a nonrec let. It can't use its own binder either,
-    -- since that would mean the binding is self-recursive and should be in a
-    -- single bind recursive let.
-    canlift (bndr, e) = not $ expr_uses_binders bndrs e
+letrec, letrectop :: Transform
+letrec c expr@(Let (NonRec bndr val) res) = 
+  change $ Let (Rec [(bndr, val)]) res
+
 -- Leave all other expressions unchanged
-letderec c expr = return expr
+letrec c expr = return expr
 -- Perform this transform everywhere
-letderectop = everywhere ("letderec", letderec)
+letrectop = everywhere ("letrec", letrec)
 
 --------------------------------
 -- let flattening
@@ -805,7 +793,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letderectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
+transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
