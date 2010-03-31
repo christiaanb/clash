@@ -45,17 +45,16 @@ import CLasH.Utils.Pretty
 --------------------------------
 
 --------------------------------
--- η abstraction
+-- η expansion
 --------------------------------
+-- Make sure all parameters to the normalized functions are named by top
+-- level lambda expressions. For this we apply η expansion to the
+-- function body (possibly enclosed in some lambda abstractions) while
+-- it has a function type. Eventually this will result in a function
+-- body consisting of a bunch of nested lambdas containing a
+-- non-function value (e.g., a complete application).
 eta, etatop :: Transform
--- Don't apply to expressions that are applied, since that would cause
--- us to apply to our own result indefinitely.
-eta (AppFirst:_) expr = return expr
--- Also don't apply to arguments, since this can cause loops with
--- funextract. This isn't the proper solution, but due to an
--- implementation bug in notappargs, this is how it used to work so far.
-eta (AppSecond:_) expr = return expr
-eta c expr | is_fun expr && not (is_lam expr) = do
+eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   id <- Trans.lift $ mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
