@@ -353,7 +353,7 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 -- By not inlining any other reference, we also prevent looping problems
 -- with funextract and inlinedict.
 inlinetoplevel, inlinetopleveltop :: Transform
-inlinetoplevel (LetBinding:_) expr =
+inlinetoplevel (LetBinding:_) expr | not (is_fun expr) =
   case collectArgs expr of
 	(Var f, args) -> do
 	  body_maybe <- needsInline f
