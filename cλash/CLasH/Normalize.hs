@@ -856,9 +856,9 @@ normalizeExpr what expr = do
       trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") $ return ()
       expr' <- dotransforms transforms expr_uniqued
       endcount <- MonadState.get tsTransformCounter 
-      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')) $ return ()
-      trace ("\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $ return ()
-      return expr'
+      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')
+             ++ "\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $
+       return expr'
 
 -- | Split a normalized expression into the argument binders, top level
 --   bindings and the result binder.
