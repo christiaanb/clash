@@ -400,13 +400,25 @@ needsInline f = do
 --------------------------------
 -- Dictionary inlining
 --------------------------------
--- Inline all top level dictionaries, so we can use them to resolve
--- class methods based on the dictionary passed. 
-inlinedict c expr@(Var f) | Id.isDictId f = do
-  body_maybe <- Trans.lift $ getGlobalBind f
+-- Inline all top level dictionaries, that are in a position where
+-- classopresolution can actually resolve them. This makes this
+-- transformation look similar to classoperesolution below, but we'll
+-- keep them separated for clarity. By not inlining other dictionaries,
+-- we prevent expression sizes exploding when huge type level integer
+-- dictionaries are inlined which can never be expanded (in casts, for
+-- example).
+inlinedict c expr@(App (App (Var sel) ty) (Var dict)) | not is_builtin && is_classop = do
+  body_maybe <- Trans.lift $ getGlobalBind dict
   case body_maybe of
+    -- No body available (no source available, or a local variable /
+    -- argument)
     Nothing -> return expr
-    Just body -> change body
+    Just body -> change (App (App (Var sel) ty) body)
+  where
+    -- Is this a builtin function / method?
+    is_builtin = elem (Name.getOccString sel) builtinIds
+    -- Are we dealing with a class operation selector?
+    is_classop = Maybe.isJust (Id.isClassOpId_maybe sel)
 
 -- Leave all other expressions unchanged
 inlinedict c expr = return expr
