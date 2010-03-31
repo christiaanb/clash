@@ -21,7 +21,7 @@ Library
                     data-accessor, containers, base >= 4, transformers,
                     filepath, template-haskell, data-accessor-template,
                     data-accessor-transformers, prettyclass, directory, 
-                    th-lift-ng, tfp, tfvec
+                    th-lift-ng, tfp, tfvec, time
                     
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
