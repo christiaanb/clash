@@ -12,6 +12,8 @@ import qualified Control.Monad.Trans.State as State
 import Text.PrettyPrint.HughesPJ (render)
 import Data.Accessor.Monad.Trans.State
 import qualified Data.Map as Map
+import qualified Data.Time.Clock as Clock
+import Debug.Trace
 
 -- GHC API
 import qualified CoreSyn
@@ -71,6 +73,7 @@ makeVHDL ::
   -> Finder
   -> IO ()
 makeVHDL libdir filenames finder = do
+  start <- Clock.getCurrentTime
   -- Load the modules
   (cores, env, specs) <- loadModules libdir filenames (Just finder)
   -- Translate to VHDL
@@ -80,7 +83,9 @@ makeVHDL libdir filenames finder = do
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM_ (writeVHDL dir) vhdl
-  return ()
+  end <- Clock.getCurrentTime
+  trace ("\nTotal compilation took " ++ show (Clock.diffUTCTime end start)) $
+    return ()
 
 -- | Translate the specified entities in the given modules to VHDL.
 moduleToVHDL ::
