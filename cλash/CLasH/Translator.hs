@@ -94,7 +94,7 @@ moduleToVHDL ::
   -> [EntitySpec]             -- ^ The entities to generate
   -> IO [(AST.VHDLId, AST.DesignFile)]
 moduleToVHDL env cores specs = do
-  vhdl <- runTranslatorSession env $ do
+  (vhdl, count) <- runTranslatorSession env $ do
     let all_bindings = concatMap (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings
@@ -102,10 +102,13 @@ moduleToVHDL env cores specs = do
     tsInitStates %= Map.fromList all_initstates
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
     let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
-    case topbinds of
+    vhdl <- case topbinds of
       []  -> error "Could not find top entity requested"
       tops -> createDesignFiles (tops ++ test_binds)
+    count <- get tsTransformCounter 
+    return (vhdl, count)
   mapM_ (putStr . render . Ppr.ppr . snd) vhdl
+  putStr $ "Total number of transformations applied: " ++ (show count) ++ "\n"
   return vhdl
   where
     mkTest :: EntitySpec -> TranslatorSession (Maybe CoreSyn.CoreBndr)
@@ -127,7 +130,7 @@ runTranslatorSession env session = do
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   let init_typestate = TypeState builtin_types [] Map.empty Map.empty env
-  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty
+  let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty 0
   return $ State.evalState session init_state
 
 -- | Prepares the directory for writing VHDL files. This means creating the

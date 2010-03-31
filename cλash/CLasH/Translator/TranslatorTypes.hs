@@ -93,6 +93,7 @@ data TranslatorState = TranslatorState {
   , tsEntities_ :: Map.Map CoreSyn.CoreBndr Entity
   , tsArchitectures_ :: Map.Map CoreSyn.CoreBndr (Architecture, [CoreSyn.CoreBndr])
   , tsInitStates_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreBndr
+  , tsTransformCounter_ :: Int -- ^ How many transformations were applied?
 }
 
 -- Derive accessors
