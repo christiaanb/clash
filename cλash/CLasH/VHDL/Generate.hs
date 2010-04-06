@@ -299,7 +299,7 @@ mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) _ _ (alt:alts))) = do --error 
   exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) (alts ++ [alt])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
-mkConcSm (_, CoreSyn.Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement has does not have a simple variable as scrutinee"
+mkConcSm (_, CoreSyn.Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement does not have a simple variable as scrutinee"
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 
 -----------------------------------------------------------------------------
