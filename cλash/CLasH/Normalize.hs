@@ -358,10 +358,10 @@ needsInline f = do
         case norm_maybe of
           -- Noth normalizeable
           Nothing -> return Nothing 
-          Just norm -> case splitNormalized norm of
+          Just norm -> case splitNormalizedNonRep norm of
             -- The function has just a single binding, so that's simple
             -- enough to inline.
-            (args, [bind], res) -> return $ Just norm
+            (args, [bind], Var res) -> return $ Just norm
             -- More complicated function, don't inline
             _ -> return Nothing
             
