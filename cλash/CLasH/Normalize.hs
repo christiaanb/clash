@@ -852,14 +852,21 @@ normalizeExpr what expr = do
        return expr'
 
 -- | Split a normalized expression into the argument binders, top level
---   bindings and the result binder.
+--   bindings and the result binder. This function returns an error if
+--   the type of the expression is not representable.
 splitNormalized ::
   CoreExpr -- ^ The normalized expression
   -> ([CoreBndr], [Binding], CoreBndr)
-splitNormalized expr = (args, binds, res)
+splitNormalized expr = 
+  case splitNormalizedNonRep expr of
+    (args, binds, Var res) -> (args, binds, res)
+    _ -> error $ "Normalize.splitNormalized: Not in normal form: " ++ pprString expr ++ "\n"
+
+-- Split a normalized expression, whose type can be unrepresentable.
+splitNormalizedNonRep::
+  CoreExpr -- ^ The normalized expression
+  -> ([CoreBndr], [Binding], CoreExpr)
+splitNormalizedNonRep expr = (args, binds, resexpr)
   where
     (args, letexpr) = CoreSyn.collectBinders expr
     (binds, resexpr) = flattenLets letexpr
-    res = case resexpr of 
-      (Var x) -> x
-      _ -> error $ "Normalize.splitNormalized: Not in normal form: " ++ pprString expr ++ "\n"
