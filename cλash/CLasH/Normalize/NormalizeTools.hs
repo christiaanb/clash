@@ -120,13 +120,34 @@ inlinebind condition context expr@(Let (Rec binds) res) = do
       ([], _) -> return expr
       (replace, others) -> do
         -- Substitute the to be replaced binders with their expression
-        newexpr <- Monad.foldM (\e (bndr, repl) -> substitute_clone bndr repl context e) (Let (Rec others) res) replace
+        newexpr <- do_substitute replace (Let (Rec others) res)
         change newexpr
   where 
+    -- Apply the condition to a let binding and return an Either
+    -- depending on whether it needs to be inlined or not.
     docond :: (CoreBndr, CoreExpr) -> TransformMonad (Either (CoreBndr, CoreExpr) (CoreBndr, CoreExpr))
     docond b = do
       res <- condition b
       return $ case res of True -> Left b; False -> Right b
+
+    -- Apply the given list of substitutions to the the given expression
+    do_substitute :: [(CoreBndr, CoreExpr)] -> CoreExpr -> TransformMonad CoreExpr
+    do_substitute [] expr = return expr
+    do_substitute ((bndr, val):reps) expr = do
+      -- Perform this substitution in the expression
+      expr' <- substitute_clone bndr val context expr
+      -- And in the substitution values we will be using next
+      reps' <- mapM (subs_bind bndr val) reps
+      -- And then perform the remaining substitutions
+      do_substitute reps' expr'
+   
+    -- Replace the given binder with the given expression in the
+    -- expression oft the given let binding
+    subs_bind :: CoreBndr -> CoreExpr -> (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
+    subs_bind bndr expr (b, v) = do
+      v' <- substitute_clone  bndr expr (LetBinding:context) v
+      return (b, v')
+
 
 -- Leave all other expressions unchanged
 inlinebind _ context expr = return expr
