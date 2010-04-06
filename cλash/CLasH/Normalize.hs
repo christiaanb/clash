@@ -121,11 +121,13 @@ castsimpl c expr = return expr
 castsimpltop = everywhere ("castsimpl", castsimpl)
 
 --------------------------------
--- Ensure that a function that just returns another function (or rather,
--- another top-level binder) is still properly normalized. This is a temporary
--- solution, we should probably integrate this pass with lambdasimpl and
--- letsimpl instead.
+-- Return value simplification
 --------------------------------
+-- Ensure the return value of a function follows proper normal form. eta
+-- expansion ensures the body starts with lambda abstractions, this
+-- transformation ensures that the lambda abstractions always contain a
+-- recursive let and that, when the return value is representable, the
+-- let contains a local variable reference in its body.
 retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
   -- Don't extract values that are already a local variable, to prevent
   -- loops with ourselves.
