@@ -569,12 +569,9 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
         -- inlinenonrep).
         if (not wild) && repr
           then do
-            -- Create on new binder that will actually capture a value in this
+            caseexpr <- Trans.lift $ mkSelCase scrut i
+            -- Create a new binder that will actually capture a value in this
             -- case statement, and return it.
-            let bty = (Id.idType b)
-            id <- Trans.lift $ mkInternalVar "sel" bty
-            let binders = take i wildbndrs ++ [id] ++ drop (i+1) wildbndrs
-            let caseexpr = Case scrut b bty [(con, binders, Var id)]
             return (wildbndrs!!i, Just (b, caseexpr))
           else 
             -- Just leave the original binder in place, and don't generate an

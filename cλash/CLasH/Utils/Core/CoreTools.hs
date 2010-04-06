@@ -36,6 +36,7 @@ import qualified VarEnv
 -- Local imports
 import CLasH.Translator.TranslatorTypes
 import CLasH.Utils.GhcTools
+import CLasH.Utils.Core.BinderTools
 import CLasH.Utils.HsTools
 import CLasH.Utils.Pretty
 import CLasH.Utils
@@ -427,3 +428,27 @@ genUnique subst bndr = do
   -- binder.
   let subst' = VarEnv.extendVarEnv subst bndr bndr'
   return (subst', bndr')
+
+-- Create a "selector" case that selects the ith field from a datacon
+mkSelCase :: CoreSyn.CoreExpr -> Int -> TranslatorSession CoreSyn.CoreExpr
+mkSelCase scrut i = do
+  let scrut_ty = CoreUtils.exprType scrut
+  case Type.splitTyConApp_maybe scrut_ty of
+    -- The scrutinee should have a type constructor. We keep the type
+    -- arguments around so we can instantiate the field types below
+    Just (tycon, tyargs) -> case TyCon.tyConDataCons tycon of
+      -- The scrutinee type should have a single dataconstructor,
+      -- otherwise we can't construct a valid selector case.
+      [datacon] -> do
+        let field_tys = DataCon.dataConInstOrigArgTys datacon tyargs
+        -- Create a list of wild binders for the fields we don't want
+        let wildbndrs = map MkCore.mkWildBinder field_tys
+        -- Create a single binder for the field we want
+        sel_bndr <- mkInternalVar "sel" (field_tys!!i)
+        -- Create a wild binder for the scrutinee
+        let scrut_bndr = MkCore.mkWildBinder scrut_ty
+        -- Create the case expression
+        let binders = take i wildbndrs ++ [sel_bndr] ++ drop (i+1) wildbndrs
+        return $ CoreSyn.Case scrut scrut_bndr scrut_ty [(CoreSyn.DataAlt datacon, binders, CoreSyn.Var sel_bndr)]
+      dcs -> error $ "CoreTools.mkSelCase: Scrutinee type must have exactly one datacon. Extracting element " ++ (show i) ++ " from '" ++ pprString scrut ++ "' Datacons: " ++ (show dcs) ++ " Type: " ++ (pprString scrut_ty)
+    Nothing -> error $ "CoreTools.mkSelCase: Creating extractor case, but scrutinee has no tycon? Extracting element " ++ (show i) ++ " from '" ++ pprString scrut ++ "'"
