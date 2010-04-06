@@ -128,6 +128,16 @@ castsimpltop = everywhere ("castsimpl", castsimpl)
 -- transformation ensures that the lambda abstractions always contain a
 -- recursive let and that, when the return value is representable, the
 -- let contains a local variable reference in its body.
+retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
+  local_var <- Trans.lift $ is_local_var expr
+  repr <- isRepr expr
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor expr "res" 
+      change $ Let (Rec [(id, expr)]) (Var id)
+    else
+      return expr
+
 retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
   -- Don't extract values that are already a local variable, to prevent
   -- loops with ourselves.
@@ -142,15 +152,6 @@ retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
     else
       return expr
 
-retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
-  local_var <- Trans.lift $ is_local_var expr
-  repr <- isRepr expr
-  if not local_var && repr
-    then do
-      id <- Trans.lift $ mkBinderFor expr "res" 
-      change $ Let (Rec [(id, expr)]) (Var id)
-    else
-      return expr
 
 -- Leave all other expressions unchanged
 retvalsimpl c expr = return expr
