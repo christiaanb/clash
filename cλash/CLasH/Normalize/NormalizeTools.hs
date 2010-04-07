@@ -215,17 +215,17 @@ isUserDefined bndr = str `notElem` builtinIds
   where
     str = Name.getOccString bndr
 
--- Is the given binder normalizable? This means that its type signature can be
+-- | Is the given binder normalizable? This means that its type signature can be
 -- represented in hardware, which should (?) guarantee that it can be made
--- into hardware. Note that if a binder is not normalizable, it might become
--- so using argument propagation.
-isNormalizeable :: CoreBndr -> TransformMonad Bool 
-isNormalizeable bndr = Trans.lift (isNormalizeable' bndr)
-
-isNormalizeable' :: CoreBndr -> TranslatorSession Bool 
-isNormalizeable' bndr = do
+-- into hardware. This checks whether all the arguments and (optionally)
+-- the return value are
+-- representable.
+isNormalizeable :: 
+  Bool -- ^ Allow the result to be unrepresentable?
+  -> CoreBndr  -- ^ The binder to check
+  -> TranslatorSession Bool  -- ^ Is it normalizeable?
+isNormalizeable result_nonrep bndr = do
   let ty = Id.idType bndr
   let (arg_tys, res_ty) = Type.splitFunTys ty
-  -- This function is normalizable if all its arguments and return value are
-  -- representable.
-  andM $ mapM isRepr' (res_ty:arg_tys)
+  let check_tys = if result_nonrep then arg_tys else (res_ty:arg_tys) 
+  andM $ mapM isRepr' check_tys

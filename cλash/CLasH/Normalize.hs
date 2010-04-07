@@ -354,7 +354,7 @@ needsInline f = do
       (Var f, args) -> return $ Just body
       -- Body is more complicated, try normalizing it
       _ -> do
-        norm_maybe <- Trans.lift $ getNormalized_maybe f
+        norm_maybe <- Trans.lift $ getNormalized_maybe False f
         case norm_maybe of
           -- Noth normalizeable
           Nothing -> return Nothing 
@@ -798,10 +798,11 @@ transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
 getNormalized ::
-  CoreBndr -- ^ The function to get
+  Bool -- ^ Allow the result to be unrepresentable?
+  -> CoreBndr -- ^ The function to get
   -> TranslatorSession CoreExpr -- The normalized function body
-getNormalized bndr = do
-  norm <- getNormalized_maybe bndr
+getNormalized result_nonrep bndr = do
+  norm <- getNormalized_maybe result_nonrep bndr
   return $ Maybe.fromMaybe
     (error $ "Normalize.getNormalized: Unknown or non-representable function requested: " ++ show bndr)
     norm
@@ -809,27 +810,23 @@ getNormalized bndr = do
 -- | Returns the normalized version of the given function, or Nothing
 -- when the binder is not a known global binder or is not normalizeable.
 getNormalized_maybe ::
-  CoreBndr -- ^ The function to get
+  Bool -- ^ Allow the result to be unrepresentable?
+  -> CoreBndr -- ^ The function to get
   -> TranslatorSession (Maybe CoreExpr) -- The normalized function body
 
-getNormalized_maybe bndr = do
+getNormalized_maybe result_nonrep bndr = do
     expr_maybe <- getGlobalBind bndr
-    normalizeable <- isNormalizeable' bndr
+    normalizeable <- isNormalizeable result_nonrep bndr
     if not normalizeable || Maybe.isNothing expr_maybe
       then
         -- Binder not normalizeable or not found
         return Nothing
-      else if is_poly (Var bndr)
-        then
-          -- This should really only happen at the top level... TODO: Give
-          -- a different error if this happens down in the recursion.
-          error $ "\nNormalize.normalizeBind: Function " ++ show bndr ++ " is polymorphic, can't normalize"
-        else do
-          -- Binder found and is monomorphic. Normalize the expression
-          -- and cache the result.
-          normalized <- Utils.makeCached bndr tsNormalized $ 
-            normalizeExpr (show bndr) (Maybe.fromJust expr_maybe)
-          return (Just normalized)
+      else do
+        -- Binder found and is monomorphic. Normalize the expression
+        -- and cache the result.
+        normalized <- Utils.makeCached bndr tsNormalized $ 
+          normalizeExpr (show bndr) (Maybe.fromJust expr_maybe)
+        return (Just normalized)
 
 -- | Normalize an expression
 normalizeExpr ::

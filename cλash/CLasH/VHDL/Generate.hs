@@ -41,7 +41,7 @@ getEntity ::
   -> TranslatorSession Entity -- ^ The resulting entity
 
 getEntity fname = makeCached fname tsEntities $ do
-      expr <- Normalize.getNormalized fname
+      expr <- Normalize.getNormalized False fname
       -- Split the normalized expression
       let (args, binds, res) = Normalize.splitNormalized expr
       -- Generate ports for all non-empty types
@@ -109,7 +109,7 @@ getArchitecture ::
   -- ^ The architecture for this function
 
 getArchitecture fname = makeCached fname tsArchitectures $ do
-  expr <- Normalize.getNormalized fname
+  expr <- Normalize.getNormalized False fname
   -- Split the normalized expression
   let (args, binds, res) = Normalize.splitNormalized expr
   
