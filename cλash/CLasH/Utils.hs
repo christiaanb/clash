@@ -48,6 +48,12 @@ andM, orM :: (Monad m) => m [Bool] -> m Bool
 andM = Monad.liftM and
 orM = Monad.liftM or
 
+-- | Monadic versions of any and all. We reimplement them, since there
+-- is no ready-made lifting function for them.
+allM, anyM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+allM f = andM . (mapM f)
+anyM f = orM . (mapM f)
+
 mapAccumLM :: (Monad m) => (acc -> x -> m (acc, y)) -> acc -> [x] -> m (acc, [y])
 mapAccumLM _ s []        =  return (s, [])
 mapAccumLM f s (x:xs)    =  do
