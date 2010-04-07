@@ -24,6 +24,7 @@ import qualified Type
 import qualified Id
 import qualified Var
 import qualified Name
+import qualified DataCon
 import qualified VarSet
 import qualified CoreFVs
 import qualified Class
@@ -81,6 +82,48 @@ beta c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
 beta c expr = return expr
 -- Perform this transform everywhere
 betatop = everywhere ("beta", beta)
+
+--------------------------------
+-- Case of known constructor simplification
+--------------------------------
+-- If a case expressions scrutinizes a datacon application, we can
+-- determine which alternative to use and remove the case alltogether.
+-- We replace it with a let expression the binds every binder in the
+-- alternative bound to the corresponding argument of the datacon. We do
+-- this instead of substituting the binders, to prevent duplication of
+-- work and preserve sharing wherever appropriate.
+knowncase, knowncasetop :: Transform
+knowncase context expr@(Case scrut@(App _ _) bndr ty alts) | not bndr_used = do
+    case collectArgs scrut of
+      (Var f, args) -> case Id.isDataConId_maybe f of
+        -- Not a dataconstructor? Don't change anything (probably a
+        -- function, then)
+        Nothing -> return expr
+        Just dc -> do
+          let (altcon, bndrs, res) =  case List.find (\(altcon, bndrs, res) -> altcon == (DataAlt dc)) alts of
+                Just alt -> alt -- Return the alternative found
+                Nothing -> head alts -- If the datacon is not present, the first must be the default alternative
+          -- Double check if we have either the correct alternative, or
+          -- the default.
+          if altcon /= (DataAlt dc) && altcon /= DEFAULT then error ("Normalize.knowncase: Invalid core, datacon not found in alternatives and DEFAULT alternative is not first? " ++ pprString expr) else return ()
+          -- Find out how many arguments to drop (type variables and
+          -- predicates like dictionaries).
+          let (tvs, preds, _, _) = DataCon.dataConSig dc
+          let count = length tvs + length preds
+          -- Create a let expression that binds each of the binders in
+          -- this alternative to the corresponding argument of the data
+          -- constructor.
+          let binds = zip bndrs (drop count args)
+          change $ Let (Rec binds) res
+      _ -> return expr -- Scrutinee is not an application of a var
+  where
+    is_used (_, _, expr) = expr_uses_binders [bndr] expr
+    bndr_used = or $ map is_used alts
+
+-- Leave all other expressions unchanged
+knowncase c expr = return expr
+-- Perform this transform everywhere
+knowncasetop = everywhere ("knowncase", knowncase)
 
 --------------------------------
 -- Cast propagation
@@ -793,7 +836,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [inlinedicttop, inlinetopleveltop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
+transforms = [inlinedicttop, inlinetopleveltop, knowncasetop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
