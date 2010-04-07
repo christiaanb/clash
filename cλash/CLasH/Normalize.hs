@@ -20,7 +20,9 @@ import qualified Data.Map as Map
 -- GHC API
 import CoreSyn
 import qualified CoreUtils
+import qualified BasicTypes
 import qualified Type
+import qualified TysWiredIn
 import qualified Id
 import qualified Var
 import qualified Name
@@ -778,6 +780,95 @@ argprop c expr = return expr
 argproptop = everywhere ("argprop", argprop)
 
 --------------------------------
+-- Non-representable result inlining
+--------------------------------
+-- This transformation takes a function that has a non-representable
+-- result (e.g., a tuple containing a function, or an Integer. The
+-- latter can occur in some cases as the result of the fromIntegerT
+-- function) and inlines enough of the function to make the result
+-- representable again.
+--
+-- This is done by first normalizing the function and then "inlining"
+-- the result. Since no unrepresentable let bindings are allowed in
+-- normal form, we can be sure that all free variables of the result
+-- expression will be representable (Note that we probably can't
+-- guarantee that all representable parts of the expression will be free
+-- variables, so we might inline more than strictly needed).
+--
+-- The new function result will be a tuple containing all free variables
+-- of the old result, so the old result can be rebuild at the caller.
+inlinenonrepresult, inlinenonrepresulttop :: Transform
+
+-- Apply to any (application of) a reference to a top level function
+-- that is fully applied (i.e., dos not have a function type) but is not
+-- representable. We apply in any context, since non-representable
+-- expressions are generally left alone and can occur anywhere.
+inlinenonrepresult context expr | not (is_fun expr) =
+  case collectArgs expr of
+    (Var f, args) -> do
+      repr <- isRepr expr
+      if not repr
+        then do
+          body_maybe <- Trans.lift $ getNormalized_maybe True f
+          case body_maybe of
+            Just body -> do
+              let (bndrs, binds, res) = splitNormalizedNonRep body
+              -- Get the free local variables of res
+              global_bndrs <- Trans.lift getGlobalBinders
+              let interesting var = Var.isLocalVar var && (var `notElem` global_bndrs)
+              let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting res
+              let free_var_types = map Id.idType free_vars
+              let n_free_vars = length free_vars
+              -- Get a tuple datacon to wrap around the free variables
+              let fvs_datacon = TysWiredIn.tupleCon BasicTypes.Boxed n_free_vars
+              let fvs_datacon_id = DataCon.dataConWorkId fvs_datacon
+              -- Let the function now return a tuple with references to
+              -- all free variables of the old return value. First pass
+              -- all the types of the variables, since tuple
+              -- constructors are polymorphic.
+              let newres = mkApps (Var fvs_datacon_id) (map Type free_var_types ++  map Var free_vars)
+              -- Recreate the function body with the changed return value
+              let newbody = mkLams bndrs (Let (Rec binds) newres) 
+              -- Create the new function
+              f' <- Trans.lift $ mkFunction f newbody
+              trace ("New body: " ++ pprString newbody) $ return ()
+              trace ("Function type" ++ (pprString $ Id.idType f')) $ return ()
+
+              -- Call the new function
+              let newapp = mkApps (Var f') args
+              res_bndr <- Trans.lift $ mkBinderFor newapp "res"
+              -- Create extractor case expressions to extract each of the
+              -- free variables from the tuple.
+              sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr)) [0..n_free_vars-1]
+
+              -- Bind the res_bndr to the result of the new application
+              -- and each of the free variables to the corresponding
+              -- selector case. Replace the let body with the original
+              -- body of the called function (which can still access all
+              -- of its free variables, from the let).
+              let binds = (res_bndr, newapp):(zip free_vars sel_cases)
+              let letexpr = Let (Rec binds) res
+
+              -- Finally, regenarate all uniques in the new expression,
+              -- since the free variables could otherwise become
+              -- duplicated. It is not strictly necessary to regenerate
+              -- res, since we're moving that expression, but it won't
+              -- hurt.
+              letexpr_uniqued <- Trans.lift $ genUniques letexpr
+              change letexpr_uniqued
+            Nothing -> return expr
+        else
+          -- Don't touch representable expressions
+          return expr
+    -- Not a reference to or application of a top level function
+    _ -> return expr
+-- Leave all other expressions unchanged
+inlinenonrepresult c expr = return expr
+-- Perform this transform everywhere
+inlinenonrepresulttop = everywhere ("inlinenonrepresult", inlinenonrepresult)
+
+
+--------------------------------
 -- Function-typed argument extraction
 --------------------------------
 -- This transform takes any function-typed argument that cannot be propagated
@@ -836,7 +927,7 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [inlinedicttop, inlinetopleveltop, knowncasetop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
+transforms = [inlinedicttop, inlinetopleveltop, inlinenonrepresulttop, knowncasetop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
