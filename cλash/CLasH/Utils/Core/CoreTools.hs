@@ -492,4 +492,4 @@ mkSelCase scrut i = do
         let binders = take i wildbndrs ++ [sel_bndr] ++ drop (i+1) wildbndrs
         return $ CoreSyn.Case scrut scrut_bndr scrut_ty [(CoreSyn.DataAlt datacon, binders, CoreSyn.Var sel_bndr)]
       dcs -> error $ "CoreTools.mkSelCase: Scrutinee type must have exactly one datacon. Extracting element " ++ (show i) ++ " from '" ++ pprString scrut ++ "' Datacons: " ++ (show dcs) ++ " Type: " ++ (pprString scrut_ty)
-    Nothing -> error $ "CoreTools.mkSelCase: Creating extractor case, but scrutinee has no tycon? Extracting element " ++ (show i) ++ " from '" ++ pprString scrut ++ "'"
+    Nothing -> error $ "CoreTools.mkSelCase: Creating extractor case, but scrutinee has no tycon? Extracting element " ++ (show i) ++ " from '" ++ pprString scrut ++ "'" ++ " Type: " ++ (pprString scrut_ty)
