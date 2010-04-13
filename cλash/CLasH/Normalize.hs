@@ -819,47 +819,54 @@ inlinenonrepresult context expr | not (is_fun expr) =
           case body_maybe of
             Just body -> do
               let (bndrs, binds, res) = splitNormalizedNonRep body
-              -- Get the free local variables of res
-              global_bndrs <- Trans.lift getGlobalBinders
-              let interesting var = Var.isLocalVar var && (var `notElem` global_bndrs)
-              let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting res
-              let free_var_types = map Id.idType free_vars
-              let n_free_vars = length free_vars
-              -- Get a tuple datacon to wrap around the free variables
-              let fvs_datacon = TysWiredIn.tupleCon BasicTypes.Boxed n_free_vars
-              let fvs_datacon_id = DataCon.dataConWorkId fvs_datacon
-              -- Let the function now return a tuple with references to
-              -- all free variables of the old return value. First pass
-              -- all the types of the variables, since tuple
-              -- constructors are polymorphic.
-              let newres = mkApps (Var fvs_datacon_id) (map Type free_var_types ++  map Var free_vars)
-              -- Recreate the function body with the changed return value
-              let newbody = mkLams bndrs (Let (Rec binds) newres) 
-              -- Create the new function
-              f' <- Trans.lift $ mkFunction f newbody
+              if has_free_tyvars res 
+                then
+                  -- Don't touch anything with free type variables, since
+                  -- we can't return those. We'll wait until argprop
+                  -- removed those variables.
+                  return expr
+                else do
+                  -- Get the free local variables of res
+                  global_bndrs <- Trans.lift getGlobalBinders
+                  let interesting var = Var.isLocalVar var && (var `notElem` global_bndrs)
+                  let free_vars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting res
+                  let free_var_types = map Id.idType free_vars
+                  let n_free_vars = length free_vars
+                  -- Get a tuple datacon to wrap around the free variables
+                  let fvs_datacon = TysWiredIn.tupleCon BasicTypes.Boxed n_free_vars
+                  let fvs_datacon_id = DataCon.dataConWorkId fvs_datacon
+                  -- Let the function now return a tuple with references to
+                  -- all free variables of the old return value. First pass
+                  -- all the types of the variables, since tuple
+                  -- constructors are polymorphic.
+                  let newres = mkApps (Var fvs_datacon_id) (map Type free_var_types ++  map Var free_vars)
+                  -- Recreate the function body with the changed return value
+                  let newbody = mkLams bndrs (Let (Rec binds) newres) 
+                  -- Create the new function
+                  f' <- Trans.lift $ mkFunction f newbody
 
-              -- Call the new function
-              let newapp = mkApps (Var f') args
-              res_bndr <- Trans.lift $ mkBinderFor newapp "res"
-              -- Create extractor case expressions to extract each of the
-              -- free variables from the tuple.
-              sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr)) [0..n_free_vars-1]
+                  -- Call the new function
+                  let newapp = mkApps (Var f') args
+                  res_bndr <- Trans.lift $ mkBinderFor newapp "res"
+                  -- Create extractor case expressions to extract each of the
+                  -- free variables from the tuple.
+                  sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr)) [0..n_free_vars-1]
 
-              -- Bind the res_bndr to the result of the new application
-              -- and each of the free variables to the corresponding
-              -- selector case. Replace the let body with the original
-              -- body of the called function (which can still access all
-              -- of its free variables, from the let).
-              let binds = (res_bndr, newapp):(zip free_vars sel_cases)
-              let letexpr = Let (Rec binds) res
+                  -- Bind the res_bndr to the result of the new application
+                  -- and each of the free variables to the corresponding
+                  -- selector case. Replace the let body with the original
+                  -- body of the called function (which can still access all
+                  -- of its free variables, from the let).
+                  let binds = (res_bndr, newapp):(zip free_vars sel_cases)
+                  let letexpr = Let (Rec binds) res
 
-              -- Finally, regenarate all uniques in the new expression,
-              -- since the free variables could otherwise become
-              -- duplicated. It is not strictly necessary to regenerate
-              -- res, since we're moving that expression, but it won't
-              -- hurt.
-              letexpr_uniqued <- Trans.lift $ genUniques letexpr
-              change letexpr_uniqued
+                  -- Finally, regenarate all uniques in the new expression,
+                  -- since the free variables could otherwise become
+                  -- duplicated. It is not strictly necessary to regenerate
+                  -- res, since we're moving that expression, but it won't
+                  -- hurt.
+                  letexpr_uniqued <- Trans.lift $ genUniques letexpr
+                  change letexpr_uniqued
             Nothing -> return expr
         else
           -- Don't touch representable expressions or (applications of)
