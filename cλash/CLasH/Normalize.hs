@@ -831,8 +831,6 @@ inlinenonrepresult context expr | not (is_fun expr) =
               let newbody = mkLams bndrs (Let (Rec binds) newres) 
               -- Create the new function
               f' <- Trans.lift $ mkFunction f newbody
-              trace ("New body: " ++ pprString newbody) $ return ()
-              trace ("Function type" ++ (pprString $ Id.idType f')) $ return ()
 
               -- Call the new function
               let newapp = mkApps (Var f') args
