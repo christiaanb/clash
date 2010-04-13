@@ -342,13 +342,22 @@ genNoInsts wrap dst func args = do
 genVarArgs ::
   (dst -> func -> [Var.Var] -> res)
   -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
-genVarArgs wrap dst func args = wrap dst func args'
+genVarArgs wrap = genCoreArgs $ \dst func args -> let
+    args' = map exprToVar args
+  in
+    wrap dst func args'
+
+-- | A function to wrap a builder-like function that expects its arguments to
+-- be core expressions.
+genCoreArgs ::
+  (dst -> func -> [CoreSyn.CoreExpr] -> res)
+  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
+genCoreArgs wrap dst func args = wrap dst func args'
   where
-    args' = map exprToVar args''
     -- Check (rather crudely) that all arguments are CoreExprs
-    args'' = case Either.partitionEithers args of 
+    args' = case Either.partitionEithers args of 
       (exprargs, []) -> exprargs
-      (exprsargs, rest) -> error $ "\nGenerate.genVarArgs: expect varargs but found ast exprs:" ++ (show rest)
+      (exprsargs, rest) -> error $ "\nGenerate.genCoreArgs: expect core expression arguments but found ast exprs:" ++ (show rest)
 
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be Literals
