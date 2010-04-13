@@ -109,11 +109,11 @@ mkId rdr_name = do
         -- tcLookupId to find out.
         TcEnv.tcLookupId name 
 
-normaliseType ::
+normalizeType ::
   HscTypes.HscEnv
   -> Type.Type
   -> IO Type.Type
-normaliseType env ty = do
+normalizeType env ty = do
    (err, nty) <- MonadUtils.liftIO $
      -- Initialize the typechecker monad
      TcRnMonad.initTcPrintErrors env PrelNames.iNTERACTIVE $ do

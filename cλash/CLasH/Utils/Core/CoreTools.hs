@@ -53,7 +53,7 @@ type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 tfp_to_int :: Type.Type -> TypeSession Int
 tfp_to_int ty = do
   hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalise_tfp_int hscenv ty
+  let norm_ty = normalize_tfp_int hscenv ty
   case Type.splitTyConApp_maybe norm_ty of
     Just (tycon, args) -> do
       let name = Name.getOccString (TyCon.tyConName tycon)
@@ -71,7 +71,7 @@ tfp_to_int' :: Type.Type -> TypeSession Int
 tfp_to_int' ty = do
   lens <- MonadState.get tsTfpInts
   hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalise_tfp_int hscenv ty
+  let norm_ty = normalize_tfp_int hscenv ty
   let existing_len = Map.lookup (OrdType norm_ty) lens
   case existing_len of
     Just len -> return len
@@ -101,10 +101,10 @@ eval_tfp_int env ty =
     libdir = DynFlags.topDir dynflags
     dynflags = HscTypes.hsc_dflags env
 
-normalise_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
-normalise_tfp_int env ty =
+normalize_tfp_int :: HscTypes.HscEnv -> Type.Type -> Type.Type
+normalize_tfp_int env ty =
    System.IO.Unsafe.unsafePerformIO $
-     normaliseType env ty
+     normalizeType env ty
 
 -- | Get the width of a SizedWord type
 -- sized_word_len :: HscTypes.HscEnv -> Type.Type -> Int
