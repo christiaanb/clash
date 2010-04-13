@@ -13,6 +13,7 @@ import qualified UniqSupply
 import qualified Unique
 import qualified OccName
 import qualified Name
+import qualified Module
 import qualified Var
 import qualified SrcLoc
 import qualified IdInfo
@@ -81,3 +82,14 @@ mkFunction bndr body = do
   let newid = Var.setVarType id ty
   addGlobalBind newid body
   return newid
+
+-- Returns the full name of a NamedThing, in the forum
+-- modulename.occname
+getFullString :: Name.NamedThing a => a -> String
+getFullString thing = modstr ++ occstr
+  where
+    name    = Name.getName thing
+    modstr  = case Name.nameModule_maybe name of
+      Nothing -> ""
+      Just mod -> Module.moduleNameString (Module.moduleName mod) ++ "."
+    occstr  = Name.getOccString name
