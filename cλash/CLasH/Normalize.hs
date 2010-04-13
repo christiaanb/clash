@@ -782,11 +782,11 @@ argproptop = everywhere ("argprop", argprop)
 --------------------------------
 -- Non-representable result inlining
 --------------------------------
--- This transformation takes a function that has a non-representable
--- result (e.g., a tuple containing a function, or an Integer. The
--- latter can occur in some cases as the result of the fromIntegerT
--- function) and inlines enough of the function to make the result
--- representable again.
+-- This transformation takes a function (top level binding) that has a
+-- non-representable result (e.g., a tuple containing a function, or an
+-- Integer. The latter can occur in some cases as the result of the
+-- fromIntegerT function) and inlines enough of the function to make the
+-- result representable again.
 --
 -- This is done by first normalizing the function and then "inlining"
 -- the result. Since no unrepresentable let bindings are allowed in
@@ -797,6 +797,12 @@ argproptop = everywhere ("argprop", argprop)
 --
 -- The new function result will be a tuple containing all free variables
 -- of the old result, so the old result can be rebuild at the caller.
+--
+-- We take care not to inline dictionary id's, which are top level
+-- bindings with a non-representable result type as well, since those
+-- will never become VHDL signals directly. There is a separate
+-- transformation (inlinedict) that specifically inlines dictionaries
+-- only when it is useful.
 inlinenonrepresult, inlinenonrepresulttop :: Transform
 
 -- Apply to any (application of) a reference to a top level function
@@ -805,7 +811,7 @@ inlinenonrepresult, inlinenonrepresulttop :: Transform
 -- expressions are generally left alone and can occur anywhere.
 inlinenonrepresult context expr | not (is_fun expr) =
   case collectArgs expr of
-    (Var f, args) -> do
+    (Var f, args) | not (Id.isDictId f) -> do
       repr <- isRepr expr
       if not repr
         then do
@@ -856,7 +862,8 @@ inlinenonrepresult context expr | not (is_fun expr) =
               change letexpr_uniqued
             Nothing -> return expr
         else
-          -- Don't touch representable expressions
+          -- Don't touch representable expressions or (applications of)
+          -- dictionary ids.
           return expr
     -- Not a reference to or application of a top level function
     _ -> return expr
