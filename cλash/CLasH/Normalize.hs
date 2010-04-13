@@ -56,19 +56,18 @@ import CLasH.Utils.Pretty
 -- it has a function type. Eventually this will result in a function
 -- body consisting of a bunch of nested lambdas containing a
 -- non-function value (e.g., a complete application).
-eta, etatop :: Transform
+eta :: Transform
 eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
   let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   id <- Trans.lift $ mkInternalVar "param" arg_ty
   change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta c e = return e
-etatop = everywhere ("eta", eta)
 
 --------------------------------
 -- β-reduction
 --------------------------------
-beta, betatop :: Transform
+beta :: Transform
 -- Substitute arg for x in expr. For value lambda's, also clone before
 -- substitution.
 beta c (App (Lam x expr) arg) | CoreSyn.isTyVar x = setChanged >> substitute x arg c expr
@@ -82,8 +81,6 @@ beta c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
     ty' = CoreUtils.applyTypeToArg ty arg
 -- Leave all other expressions unchanged
 beta c expr = return expr
--- Perform this transform everywhere
-betatop = everywhere ("beta", beta)
 
 --------------------------------
 -- Case of known constructor simplification
@@ -94,7 +91,7 @@ betatop = everywhere ("beta", beta)
 -- alternative bound to the corresponding argument of the datacon. We do
 -- this instead of substituting the binders, to prevent duplication of
 -- work and preserve sharing wherever appropriate.
-knowncase, knowncasetop :: Transform
+knowncase :: Transform
 knowncase context expr@(Case scrut@(App _ _) bndr ty alts) | not bndr_used = do
     case collectArgs scrut of
       (Var f, args) -> case Id.isDataConId_maybe f of
@@ -124,28 +121,24 @@ knowncase context expr@(Case scrut@(App _ _) bndr ty alts) | not bndr_used = do
 
 -- Leave all other expressions unchanged
 knowncase c expr = return expr
--- Perform this transform everywhere
-knowncasetop = everywhere ("knowncase", knowncase)
 
 --------------------------------
 -- Cast propagation
 --------------------------------
 -- Try to move casts as much downward as possible.
-castprop, castproptop :: Transform
+castprop :: Transform
 castprop c (Cast (Let binds expr) ty) = change $ Let binds (Cast expr ty)
 castprop c expr@(Cast (Case scrut b _ alts) ty) = change (Case scrut b ty alts')
   where
     alts' = map (\(con, bndrs, expr) -> (con, bndrs, (Cast expr ty))) alts
 -- Leave all other expressions unchanged
 castprop c expr = return expr
--- Perform this transform everywhere
-castproptop = everywhere ("castprop", castprop)
 
 --------------------------------
 -- Cast simplification. Mostly useful for state packing and unpacking, but
 -- perhaps for others as well.
 --------------------------------
-castsimpl, castsimpltop :: Transform
+castsimpl :: Transform
 castsimpl c expr@(Cast val ty) = do
   -- Don't extract values that are already simpl
   local_var <- Trans.lift $ is_local_var val
@@ -162,8 +155,6 @@ castsimpl c expr@(Cast val ty) = do
       return expr
 -- Leave all other expressions unchanged
 castsimpl c expr = return expr
--- Perform this transform everywhere
-castsimpltop = everywhere ("castsimpl", castsimpl)
 
 --------------------------------
 -- Return value simplification
@@ -200,20 +191,16 @@ retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
 
 -- Leave all other expressions unchanged
 retvalsimpl c expr = return expr
--- Perform this transform everywhere
-retvalsimpltop = everywhere ("retvalsimpl", retvalsimpl)
 
 --------------------------------
 -- let derecursification
 --------------------------------
-letrec, letrectop :: Transform
+letrec :: Transform
 letrec c expr@(Let (NonRec bndr val) res) = 
   change $ Let (Rec [(bndr, val)]) res
 
 -- Leave all other expressions unchanged
 letrec c expr = return expr
--- Perform this transform everywhere
-letrectop = everywhere ("letrec", letrec)
 
 --------------------------------
 -- let flattening
@@ -223,7 +210,7 @@ letrectop = everywhere ("letrec", letrec)
 -- let b = (let b' = expr' in res') in res
 -- to:
 -- let b' = expr' in (let b = res' in res)
-letflat, letflattop :: Transform
+letflat :: Transform
 -- Turn a nonrec let that binds a let into two nested lets.
 letflat c (Let (NonRec b (Let binds  res')) res) = 
   change $ Let binds (Let (NonRec b res') res)
@@ -243,31 +230,27 @@ letflat c (Let (Rec binds) expr) = do
     flatbind (b, expr) = return [(b, expr)]
 -- Leave all other expressions unchanged
 letflat c expr = return expr
--- Perform this transform everywhere
-letflattop = everywhere ("letflat", letflat)
 
 --------------------------------
 -- empty let removal
 --------------------------------
 -- Remove empty (recursive) lets
-letremove, letremovetop :: Transform
+letremove :: Transform
 letremove c (Let (Rec []) res) = change res
 -- Leave all other expressions unchanged
 letremove c expr = return expr
--- Perform this transform everywhere
-letremovetop = everywhere ("letremove", letremove)
 
 --------------------------------
 -- Simple let binding removal
 --------------------------------
 -- Remove a = b bindings from let expressions everywhere
-letremovesimpletop :: Transform
-letremovesimpletop = everywhere ("letremovesimple", inlinebind (\(b, e) -> Trans.lift $ is_local_var e))
+letremovesimple :: Transform
+letremovesimple = inlinebind (\(b, e) -> Trans.lift $ is_local_var e)
 
 --------------------------------
 -- Unused let binding removal
 --------------------------------
-letremoveunused, letremoveunusedtop :: Transform
+letremoveunused :: Transform
 letremoveunused c expr@(Let (NonRec b bound) res) = do
   let used = expr_uses_binders [b] res
   if used
@@ -285,7 +268,6 @@ letremoveunused c expr@(Let (Rec binds) res) = do
       dobind (bndr, _) = any (expr_uses_binders [bndr]) (res:bound_exprs)
 -- Leave all other expressions unchanged
 letremoveunused c expr = return expr
-letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 
 {-
 --------------------------------
@@ -294,7 +276,7 @@ letremoveunusedtop = everywhere ("letremoveunused", letremoveunused)
 -- Merge two bindings in a let if they are identical 
 -- TODO: We would very much like to use GHC's CSE module for this, but that
 -- doesn't track if something changed or not, so we can't use it properly.
-letmerge, letmergetop :: Transform
+letmerge :: Transform
 letmerge c expr@(Let _ _) = do
   let (binds, res) = flattenLets expr
   binds' <- domerge binds
@@ -317,7 +299,6 @@ letmerge c expr@(Let _ _) = do
       | otherwise = return (b2, e2)
 -- Leave all other expressions unchanged
 letmerge c expr = return expr
-letmergetop = everywhere ("letmerge", letmerge)
 -}
 
 --------------------------------
@@ -334,8 +315,8 @@ letmergetop = everywhere ("letmerge", letmerge)
 -- transformations will just not work on those function-typed values at first,
 -- but the other transformations (in particular β-reduction) should make sure
 -- that the type of those values eventually becomes representable.
-inlinenonreptop :: Transform
-inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . isRepr . snd))
+inlinenonrep :: Transform
+inlinenonrep = inlinebind ((Monad.liftM not) . isRepr . snd)
 
 --------------------------------
 -- Top level function inlining
@@ -365,7 +346,7 @@ inlinenonreptop = everywhere ("inlinenonrep", inlinebind ((Monad.liftM not) . is
 -- that will eventually generate instantiations of trivial components.
 -- By not inlining any other reference, we also prevent looping problems
 -- with funextract and inlinedict.
-inlinetoplevel, inlinetopleveltop :: Transform
+inlinetoplevel :: Transform
 inlinetoplevel (LetBinding:_) expr | not (is_fun expr) =
   case collectArgs expr of
 	(Var f, args) -> do
@@ -383,8 +364,7 @@ inlinetoplevel (LetBinding:_) expr | not (is_fun expr) =
 
 -- Leave all other expressions unchanged
 inlinetoplevel c expr = return expr
-inlinetopleveltop = everywhere ("inlinetoplevel", inlinetoplevel)
-  
+
 -- | Does the given binder need to be inlined? If so, return the body to
 -- be used for inlining.
 needsInline :: CoreBndr -> TransformMonad (Maybe CoreExpr)
@@ -409,7 +389,7 @@ needsInline f = do
             (args, [bind], Var res) -> return $ Just norm
             -- More complicated function, don't inline
             _ -> return Nothing
-            
+
 --------------------------------
 -- Dictionary inlining
 --------------------------------
@@ -435,7 +415,6 @@ inlinedict c expr@(App (App (Var sel) ty) (Var dict)) | not is_builtin && is_cla
 
 -- Leave all other expressions unchanged
 inlinedict c expr = return expr
-inlinedicttop = everywhere ("inlinedict", inlinedict)
 
 --------------------------------
 -- ClassOp resolution
@@ -471,7 +450,7 @@ inlinedicttop = everywhere ("inlinedict", inlinedict)
 -- translateable. For example, when deriving ==, GHC generates code
 -- using $con2tag functions to translate a datacon to an int and compare
 -- that with GHC.Prim.==# . Better to avoid that for now.
-classopresolution, classopresolutiontop :: Transform
+classopresolution :: Transform
 classopresolution c expr@(App (App (Var sel) ty) dict) | not is_builtin =
   case Id.isClassOpId_maybe sel of
     -- Not a class op selector
@@ -498,13 +477,11 @@ classopresolution c expr@(App (App (Var sel) ty) dict) | not is_builtin =
 
 -- Leave all other expressions unchanged
 classopresolution c expr = return expr
--- Perform this transform everywhere
-classopresolutiontop = everywhere ("classopresolution", classopresolution)
 
 --------------------------------
 -- Scrutinee simplification
 --------------------------------
-scrutsimpl,scrutsimpltop :: Transform
+scrutsimpl :: Transform
 -- Don't touch scrutinees that are already simple
 scrutsimpl c expr@(Case (Var _) _ _ _) = return expr
 -- Replace all other cases with a let that binds the scrutinee and a new
@@ -521,8 +498,6 @@ scrutsimpl c expr@(Case scrut b ty alts) = do
       return expr
 -- Leave all other expressions unchanged
 scrutsimpl c expr = return expr
--- Perform this transform everywhere
-scrutsimpltop = everywhere ("scrutsimpl", scrutsimpl)
 
 --------------------------------
 -- Scrutinee binder removal
@@ -532,7 +507,7 @@ scrutsimpltop = everywhere ("scrutsimpl", scrutsimpl)
 -- arguments. Since strictness does not matter for us (rather, everything is
 -- sort of strict), this binder is ignored when generating VHDL, and must thus
 -- be wild in the normal form.
-scrutbndrremove, scrutbndrremovetop :: Transform
+scrutbndrremove :: Transform
 -- If the scrutinee is already simple, and the bndr is not wild yet, replace
 -- all occurences of the binder with the scrutinee variable.
 scrutbndrremove c (Case (Var scrut) bndr ty alts) | bndr_used = do
@@ -547,12 +522,11 @@ scrutbndrremove c (Case (Var scrut) bndr ty alts) | bndr_used = do
     wild = MkCore.mkWildBinder (Id.idType bndr)
 -- Leave all other expressions unchanged
 scrutbndrremove c expr = return expr
-scrutbndrremovetop = everywhere ("scrutbndrremove", scrutbndrremove)
 
 --------------------------------
 -- Case binder wildening
 --------------------------------
-casesimpl, casesimpltop :: Transform
+casesimpl :: Transform
 -- This is already a selector case (or, if x does not appear in bndrs, a very
 -- simple case statement that will be removed by caseremove below). Just leave
 -- it be.
@@ -643,29 +617,25 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
             return (Nothing, expr)
 -- Leave all other expressions unchanged
 casesimpl c expr = return expr
--- Perform this transform everywhere
-casesimpltop = everywhere ("casesimpl", casesimpl)
 
 --------------------------------
 -- Case removal
 --------------------------------
 -- Remove case statements that have only a single alternative and only wild
 -- binders.
-caseremove, caseremovetop :: Transform
+caseremove :: Transform
 -- Replace a useless case by the value of its single alternative
 caseremove c (Case scrut b ty [(con, bndrs, expr)]) | not usesvars = change expr
     -- Find if any of the binders are used by expr
     where usesvars = (not . VarSet.isEmptyVarSet . (CoreFVs.exprSomeFreeVars (`elem` b:bndrs))) expr
 -- Leave all other expressions unchanged
 caseremove c expr = return expr
--- Perform this transform everywhere
-caseremovetop = everywhere ("caseremove", caseremove)
 
 --------------------------------
 -- Argument extraction
 --------------------------------
 -- Make sure that all arguments of a representable type are simple variables.
-appsimpl, appsimpltop :: Transform
+appsimpl :: Transform
 -- Simplify all representable arguments. Do this by introducing a new Let
 -- that binds the argument and passing the new binder in the application.
 appsimpl c expr@(App f arg) = do
@@ -680,8 +650,6 @@ appsimpl c expr@(App f arg) = do
       return expr
 -- Leave all other expressions unchanged
 appsimpl c expr = return expr
--- Perform this transform everywhere
-appsimpltop = everywhere ("appsimpl", appsimpl)
 
 --------------------------------
 -- Function-typed argument propagation
@@ -689,7 +657,7 @@ appsimpltop = everywhere ("appsimpl", appsimpl)
 -- Remove all applications to function-typed arguments, by duplication the
 -- function called with the function-typed parameter replaced by the free
 -- variables of the argument passed in.
-argprop, argproptop :: Transform
+argprop :: Transform
 -- Transform any application of a named function (i.e., skip applications of
 -- lambda's). Also skip applications that have arguments with free type
 -- variables, since we can't inline those.
@@ -776,8 +744,6 @@ argprop c expr@(App _ _) | is_var fexpr = do
           return ([arg], [id], mkReferenceTo id) 
 -- Leave all other expressions unchanged
 argprop c expr = return expr
--- Perform this transform everywhere
-argproptop = everywhere ("argprop", argprop)
 
 --------------------------------
 -- Non-representable result inlining
@@ -803,7 +769,7 @@ argproptop = everywhere ("argprop", argprop)
 -- will never become VHDL signals directly. There is a separate
 -- transformation (inlinedict) that specifically inlines dictionaries
 -- only when it is useful.
-inlinenonrepresult, inlinenonrepresulttop :: Transform
+inlinenonrepresult :: Transform
 
 -- Apply to any (application of) a reference to a top level function
 -- that is fully applied (i.e., dos not have a function type) but is not
@@ -876,8 +842,6 @@ inlinenonrepresult context expr | not (is_fun expr) =
     _ -> return expr
 -- Leave all other expressions unchanged
 inlinenonrepresult c expr = return expr
--- Perform this transform everywhere
-inlinenonrepresulttop = everywhere ("inlinenonrepresult", inlinenonrepresult)
 
 
 --------------------------------
@@ -888,7 +852,7 @@ inlinenonrepresulttop = everywhere ("inlinenonrepresult", inlinenonrepresult)
 -- puts it in a brand new top level binder. This allows us to for example
 -- apply map to a lambda expression This will not conflict with inlinenonrep,
 -- since that only inlines local let bindings, not top level bindings.
-funextract, funextracttop :: Transform
+funextract :: Transform
 funextract c expr@(App _ _) | is_var fexpr = do
   body_maybe <- Trans.lift $ getGlobalBind f
   case body_maybe of
@@ -928,8 +892,6 @@ funextract c expr@(App _ _) | is_var fexpr = do
 
 -- Leave all other expressions unchanged
 funextract c expr = return expr
--- Perform this transform everywhere
-funextracttop = everywhere ("funextract", funextract)
 
 --------------------------------
 -- End of transformations
@@ -939,7 +901,30 @@ funextracttop = everywhere ("funextract", funextract)
 
 
 -- What transforms to run?
-transforms = [inlinedicttop, inlinetopleveltop, inlinenonrepresulttop, knowncasetop, classopresolutiontop, argproptop, funextracttop, etatop, betatop, castproptop, letremovesimpletop, letrectop, letremovetop, retvalsimpltop, letflattop, scrutsimpltop, scrutbndrremovetop, casesimpltop, caseremovetop, inlinenonreptop, appsimpltop, letremoveunusedtop, castsimpltop]
+transforms = [ ("inlinedict", inlinedict)
+             , ("inlinetoplevel", inlinetoplevel)
+             , ("inlinenonrepresult", inlinenonrepresult)
+             , ("knowncase", knowncase)
+             , ("classopresolution", classopresolution)
+             , ("argprop", argprop)
+             , ("funextract", funextract)
+             , ("eta", eta)
+             , ("beta", beta)
+             , ("castprop", castprop)
+             , ("letremovesimple", letremovesimple)
+             , ("letrec", letrec)
+             , ("letremove", letremove)
+             , ("retvalsimpl", retvalsimpl)
+             , ("letflat", letflat)
+             , ("scrutsimpl", scrutsimpl)
+             , ("scrutbndrremove", scrutbndrremove)
+             , ("casesimpl", casesimpl)
+             , ("caseremove", caseremove)
+             , ("inlinenonrep", inlinenonrep)
+             , ("appsimpl", appsimpl)
+             , ("letremoveunused", letremoveunused)
+             , ("castsimpl", castsimpl)
+             ]
 
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.

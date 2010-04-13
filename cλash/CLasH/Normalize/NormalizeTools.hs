@@ -105,9 +105,9 @@ subeverywhere trans c (Cast expr ty) = do
 subeverywhere trans c expr = error $ "\nNormalizeTools.subeverywhere: Unsupported expression: " ++ show expr
 
 -- Runs each of the transforms repeatedly inside the State monad.
-dotransforms :: [Transform] -> CoreExpr -> TranslatorSession CoreExpr
+dotransforms :: [(String, Transform)] -> CoreExpr -> TranslatorSession CoreExpr
 dotransforms transs expr = do
-  (expr', changed) <- Writer.runWriterT $ Monad.foldM (\e trans -> trans [] e) expr transs
+  (expr', changed) <- Writer.runWriterT $ Monad.foldM (\e trans -> everywhere trans [] e) expr transs
   if Monoid.getAny changed then dotransforms transs expr' else return expr'
 
 -- Inline all let bindings that satisfy the given condition
