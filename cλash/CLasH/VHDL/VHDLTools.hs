@@ -546,34 +546,6 @@ mytydecl (_, Nothing) = Nothing
 mktydecl (ty_id, Just (Left ty_def)) = Just $ AST.PDITD $ AST.TypeDec ty_id ty_def
 mktydecl (ty_id, Just (Right ty_def)) = Just $ AST.PDISD $ AST.SubtypeDec ty_id ty_def
 
-tfp_to_int :: Type.Type -> TypeSession Int
-tfp_to_int ty = do
-  hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalise_tfp_int hscenv ty
-  case Type.splitTyConApp_maybe norm_ty of
-    Just (tycon, args) -> do
-      let name = Name.getOccString (TyCon.tyConName tycon)
-      case name of
-        "Dec" ->
-          tfp_to_int' ty
-        otherwise -> do
-          MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (-1))
-          return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
-    Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
-
-tfp_to_int' :: Type.Type -> TypeSession Int
-tfp_to_int' ty = do
-  lens <- MonadState.get tsTfpInts
-  hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalise_tfp_int hscenv ty
-  let existing_len = Map.lookup (OrdType norm_ty) lens
-  case existing_len of
-    Just len -> return len
-    Nothing -> do
-      let new_len = eval_tfp_int hscenv ty
-      MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
-      return new_len
-      
 mkTupleShow :: 
   [AST.TypeMark] -- ^ type of each tuple element
   -> AST.TypeMark -- ^ type of the tuple

@@ -8,6 +8,7 @@ module CLasH.Utils.Core.CoreTools where
 --Standard modules
 import qualified Maybe
 import qualified System.IO.Unsafe
+import qualified Data.Map as Map
 
 -- GHC API
 import qualified GHC
@@ -46,7 +47,40 @@ import qualified CLasH.Utils.Core.BinderTools as BinderTools
 type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 
 -- | Evaluate a core Type representing type level int from the tfp
--- library to a real int.
+-- library to a real int. Checks if the type really is a Dec type and
+-- caches the results.
+tfp_to_int :: Type.Type -> TypeSession Int
+tfp_to_int ty = do
+  hscenv <- MonadState.get tsHscEnv
+  let norm_ty = normalise_tfp_int hscenv ty
+  case Type.splitTyConApp_maybe norm_ty of
+    Just (tycon, args) -> do
+      let name = Name.getOccString (TyCon.tyConName tycon)
+      case name of
+        "Dec" ->
+          tfp_to_int' ty
+        otherwise -> do
+          return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+    Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+
+-- | Evaluate a core Type representing type level int from the tfp
+-- library to a real int. Caches the results. Do not use directly, use
+-- tfp_to_int instead.
+tfp_to_int' :: Type.Type -> TypeSession Int
+tfp_to_int' ty = do
+  lens <- MonadState.get tsTfpInts
+  hscenv <- MonadState.get tsHscEnv
+  let norm_ty = normalise_tfp_int hscenv ty
+  let existing_len = Map.lookup (OrdType norm_ty) lens
+  case existing_len of
+    Just len -> return len
+    Nothing -> do
+      let new_len = eval_tfp_int hscenv ty
+      MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
+      return new_len
+      
+-- | Evaluate a core Type representing type level int from the tfp
+-- library to a real int. Do not use directly, use tfp_to_int instead.
 eval_tfp_int :: HscTypes.HscEnv -> Type.Type -> Int
 eval_tfp_int env ty =
   unsafeRunGhc libdir $ do
