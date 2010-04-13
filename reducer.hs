@@ -137,7 +137,7 @@ rippleBuffer ::
 rippleBuffer (State buf) (inp, shift) = (State buf', out1, out2)
   where
     -- Write value
-    next_valids              = (map fst buf) << True
+    next_valids              = (map (\(a, b) -> a) buf) << True
     buf''                    = zipWith selects buf next_valids
     selects cell next_valid  = if (not (fst cell)) && next_valid then
                                  (True, inp)
