@@ -148,23 +148,10 @@ mkComponentInst label entity_id portassigns = AST.CSISm compins
 varToVHDLExpr :: Var.Var -> TypeSession AST.Expr
 varToVHDLExpr var =
   case Id.isDataConWorkId_maybe var of
-    Just dc -> dataconToVHDLExpr dc
     -- This is a dataconstructor.
-    -- Not a datacon, just another signal. Perhaps we should check for
-    -- local/global here as well?
-    -- Sadly so.. tfp decimals are types, not data constructors, but instances
-    -- should still be translated to integer literals. It is probebly not the
-    -- best solution to translate them here.
-    -- FIXME: Find a better solution for translating instances of tfp integers
-    Nothing -> do
-        let ty  = Var.varType var
-        case Type.splitTyConApp_maybe ty of
-                Just (tycon, args) ->
-                  case Name.getOccString (TyCon.tyConName tycon) of
-                    "Dec" -> do
-                      len <- tfp_to_int ty
-                      return $ AST.PrimLit (show len)
-                    otherwise -> return $ AST.PrimName $ AST.NSimple $ varToVHDLId var
+    Just dc -> dataconToVHDLExpr dc
+    -- Not a datacon, just another signal.
+    Nothing -> return $ AST.PrimName $ AST.NSimple $ varToVHDLId var
 
 -- Turn a VHDLName into an AST expression
 vhdlNameToVHDLExpr = AST.PrimName
@@ -292,8 +279,7 @@ builtin_types :: TypeMap
 builtin_types = 
   Map.fromList [
     (BuiltinType "Bit", Just (std_logicTM, Nothing)),
-    (BuiltinType "Bool", Just (booleanTM, Nothing)), -- TysWiredIn.boolTy
-    (BuiltinType "Dec", Just (integerTM, Nothing))
+    (BuiltinType "Bool", Just (booleanTM, Nothing)) -- TysWiredIn.boolTy
   ]
 
 -- Is the given type representable at runtime?
