@@ -106,10 +106,6 @@ normalize_tfp_int env ty =
    System.IO.Unsafe.unsafePerformIO $
      normalizeType env ty
 
--- | Get the width of a SizedWord type
--- sized_word_len :: HscTypes.HscEnv -> Type.Type -> Int
--- sized_word_len env ty = eval_tfp_int env (sized_word_len_ty ty)
-    
 sized_word_len_ty :: Type.Type -> Type.Type
 sized_word_len_ty ty = len
   where
@@ -117,10 +113,6 @@ sized_word_len_ty ty = len
       Just (tycon, args) -> args
       Nothing -> error $ "\nCoreTools.sized_word_len_ty: Not a sized word type: " ++ (pprString ty)
     [len]         = args
-
--- | Get the width of a SizedInt type
--- sized_int_len :: HscTypes.HscEnv -> Type.Type -> Int
--- sized_int_len env ty = eval_tfp_int env (sized_int_len_ty ty)
 
 sized_int_len_ty :: Type.Type -> Type.Type
 sized_int_len_ty ty = len
@@ -130,10 +122,6 @@ sized_int_len_ty ty = len
       Nothing -> error $ "\nCoreTools.sized_int_len_ty: Not a sized int type: " ++ (pprString ty)
     [len]         = args
     
--- | Get the upperbound of a RangedWord type
--- ranged_word_bound :: HscTypes.HscEnv -> Type.Type -> Int
--- ranged_word_bound env ty = eval_tfp_int env (ranged_word_bound_ty ty)
-    
 ranged_word_bound_ty :: Type.Type -> Type.Type
 ranged_word_bound_ty ty = len
   where
@@ -141,26 +129,6 @@ ranged_word_bound_ty ty = len
       Just (tycon, args) -> args
       Nothing -> error $ "\nCoreTools.ranged_word_bound_ty: Not a sized word type: " ++ (pprString ty)
     [len]         = args
-
--- | Evaluate a core Type representing type level int from the TypeLevel
--- library to a real int.
--- eval_type_level_int :: Type.Type -> Int
--- eval_type_level_int ty =
---   unsafeRunGhc $ do
---     -- Automatically import modules for any fully qualified identifiers
---     setDynFlag DynFlags.Opt_ImplicitImportQualified
--- 
---     let to_int_name = mkRdrName "Data.TypeLevel.Num.Sets" "toInt"
---     let to_int = SrcLoc.noLoc $ HsExpr.HsVar to_int_name
---     let undef = hsTypedUndef $ coreToHsType ty
---     let app = HsExpr.HsApp (to_int) (undef)
--- 
---     core <- toCore [] app
---     execCore core 
-
--- | Get the length of a FSVec type
--- tfvec_len :: HscTypes.HscEnv -> Type.Type -> Int
--- tfvec_len env ty = eval_tfp_int env (tfvec_len_ty ty)
 
 tfvec_len_ty :: Type.Type -> Type.Type
 tfvec_len_ty ty = len

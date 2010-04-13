@@ -278,19 +278,11 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
       
     _ -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
 
--- Multiple case alt are be conditional assignments and have only wild
+-- Multiple case alt become conditional assignments and have only wild
 -- binders in the alts and only variables in the case values and a variable
 -- for a scrutinee. We check the constructor of the second alt, since the
 -- first is the default case, if there is any.
-
--- mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) b ty [(_, _, CoreSyn.Var false), (con, _, CoreSyn.Var true)])) = do
---   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
---   altcon <- MonadState.lift tsType $ altconToVHDLExpr con
---   let cond_expr = scrut' AST.:=: altcon
---   true_expr <- MonadState.lift tsType $ varToVHDLExpr true
---   false_expr <- MonadState.lift tsType $ varToVHDLExpr false
---   return ([mkCondAssign (Left bndr) cond_expr true_expr false_expr], [])
-mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) _ _ (alt:alts))) = do --error "\nVHDL.mkConcSm: Not in normal form: Case statement with more than two alternatives"
+mkConcSm (bndr, (CoreSyn.Case (CoreSyn.Var scrut) _ _ (alt:alts))) = do
   scrut' <- MonadState.lift tsType $ varToVHDLExpr scrut
   -- Omit first condition, which is the default
   altcons <- MonadState.lift tsType $ mapM (altconToVHDLExpr . (\(con,_,_) -> con)) alts
@@ -497,6 +489,10 @@ genSizedInt :: BuiltinBuilder
 genSizedInt = genFromInteger
 
 {-
+-- This function is useful for use with vectorTH, since that generates
+-- explicit references to the TFVec constructor (which is normally
+-- hidden). Below implementation is probably not current anymore, but
+-- kept here in case we start using vectorTH again.
 -- | Generate a Builder for the builtin datacon TFVec
 genTFVec :: BuiltinBuilder
 genTFVec (Left res) f [Left (CoreSyn.Let (CoreSyn.Rec letBinders) letRes)] = do {
