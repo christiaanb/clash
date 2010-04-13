@@ -9,6 +9,7 @@ module CLasH.Utils.Core.CoreTools where
 import qualified Maybe
 import qualified System.IO.Unsafe
 import qualified Data.Map as Map
+import qualified Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API
 import qualified GHC
@@ -261,21 +262,27 @@ get_val_args ty args = drop n args
     -- arguments, to get at the value arguments.
     n = length tyvars + length predtypes
 
-getLiterals :: HscTypes.HscEnv -> CoreSyn.CoreExpr -> [CoreSyn.CoreExpr]
-getLiterals _ app@(CoreSyn.App _ _) = literals
-  where
-    (CoreSyn.Var f, args) = CoreSyn.collectArgs app
-    literals = filter (is_lit) args
-
-getLiterals _ lit@(CoreSyn.Lit _) = [lit]
-
-getLiterals hscenv letrec@(CoreSyn.Let (CoreSyn.NonRec letBind (letExpr)) letRes) = [lit]
-  where
-    ty     = Var.varType letBind
-    litInt = eval_tfp_int hscenv ty
-    lit    = CoreSyn.Lit (Literal.mkMachInt (toInteger litInt))
-
-getLiterals _ expr = error $ "\nCoreTools.getLiterals: Not a known Lit: " ++ pprString expr
+-- Finds out what literal Integer this expression represents.
+getIntegerLiteral :: CoreSyn.CoreExpr -> TranslatorSession Integer
+getIntegerLiteral expr =
+  case CoreSyn.collectArgs expr of
+    (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachInt integer)]) 
+      | getFullString f == "GHC.Integer.smallInteger" -> return integer
+    (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachInt64 integer)]) 
+      | getFullString f == "GHC.Integer.int64ToInteger" -> return integer
+    (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachWord integer)]) 
+      | getFullString f == "GHC.Integer.wordToInteger" -> return integer
+    (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachWord64 integer)]) 
+      | getFullString f == "GHC.Integer.word64ToInteger" -> return integer
+    -- fromIntegerT returns the integer corresponding to the type of its
+    -- (third) argument. Since it is polymorphic, the type of that
+    -- argument is passed as the first argument, so we can just use that
+    -- one.
+    (CoreSyn.Var f, [CoreSyn.Type dec_ty, dec_dict, CoreSyn.Type num_ty, num_dict, arg]) 
+      | getFullString f == "Types.Data.Num.Ops.fromIntegerT" -> do
+          int <- MonadState.lift tsType $ tfp_to_int dec_ty
+          return $ toInteger int
+    _ -> error $ "CoreTools.getIntegerLiteral: Unsupported Integer literal: " ++ pprString expr
 
 reduceCoreListToHsList :: 
   [HscTypes.CoreModule] -- ^ The modules where parts of the list are hidden

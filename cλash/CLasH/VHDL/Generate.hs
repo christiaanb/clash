@@ -359,19 +359,6 @@ genCoreArgs wrap dst func args = wrap dst func args'
       (exprargs, []) -> exprargs
       (exprsargs, rest) -> error $ "\nGenerate.genCoreArgs: expect core expression arguments but found ast exprs:" ++ (show rest)
 
--- | A function to wrap a builder-like function that expects its arguments to
--- be Literals
-genLitArgs ::
-  (dst -> func -> [Literal.Literal] -> TranslatorSession [AST.ConcSm])
-  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.ConcSm])
-genLitArgs wrap dst func args = do
-  hscenv <- MonadState.lift tsType $ MonadState.get tsHscEnv
-  let (exprargs, []) = Either.partitionEithers args
-  -- FIXME: Check if we were passed an CoreSyn.App
-  let litargs = concatMap (getLiterals hscenv) exprargs
-  let args' = map exprToLit litargs
-  wrap dst func args'   
-
 -- | A function to wrap a builder-like function that produces an expression
 -- and expects it to be assigned to the destination.
 genExprRes ::
@@ -480,28 +467,29 @@ genTimes' (Left res) f [arg1,arg2] = do {
   }
 genTimes' (Right name) _ _ = error $ "\nGenerate.genTimes': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
--- FIXME: I'm calling genLitArgs which is very specific function,
--- which needs to be fixed as well
+-- fromInteger turns an Integer into a Num instance. Since Integer is
+-- not representable and is only allowed for literals, the actual
+-- Integer should be inlined entirely into the fromInteger argument.
 genFromInteger :: BuiltinBuilder
-genFromInteger = genNoInsts $ genLitArgs $ genExprRes genFromInteger'
-genFromInteger' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [Literal.Literal] -> TranslatorSession AST.Expr
-genFromInteger' (Left res) f lits = do {
-  ; let { ty = Var.varType res
-        ; (tycon, args) = Type.splitTyConApp ty
-        ; name = Name.getOccString (TyCon.tyConName tycon)
-        } ;
-  ; len <- case name of
+genFromInteger = genNoInsts $ genCoreArgs $ genExprRes genFromInteger'
+genFromInteger' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [CoreSyn.CoreExpr] -> TranslatorSession AST.Expr
+genFromInteger' (Left res) f args = do
+  let ty = Var.varType res
+  let (tycon, tyargs) = Type.splitTyConApp ty
+  let name = Name.getOccString (TyCon.tyConName tycon)
+  len <- case name of
     "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
     "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
-    "RangedWord" -> do {
-      ; bound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
-      ; return $ floor (logBase 2 (fromInteger (toInteger (bound)))) + 1
-      }
-  ; let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId ; "RangedWord" -> toUnsignedId
-  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname))
-            [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show (last lits))), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
-
-  }
+    "RangedWord" -> do
+      bound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
+      return $ floor (logBase 2 (fromInteger (toInteger (bound)))) + 1
+  let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId ; "RangedWord" -> toUnsignedId
+  case args of
+    [integer] -> do -- The type and dictionary arguments are removed by genApplication
+      literal <- getIntegerLiteral integer
+      return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId fname))
+              [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show literal)), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
+    _ -> error $ "\nGenerate.genFromInteger': Wrong number of arguments to genInteger. Applying " ++ pprString f ++ " to " ++ pprString args
 
 genFromInteger' (Right name) _ _ = error $ "\nGenerate.genFromInteger': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
