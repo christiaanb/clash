@@ -11,7 +11,6 @@ import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified "transformers" Control.Monad.Trans as Trans
 import qualified Data.Accessor.Monad.Trans.State as MonadState
--- import Debug.Trace
 
 -- GHC API
 import CoreSyn
@@ -19,8 +18,8 @@ import qualified Name
 import qualified Id
 import qualified CoreSubst
 import qualified Type
--- import qualified CoreUtils
--- import Outputable ( showSDoc, ppr, nest )
+import qualified CoreUtils
+import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
 import CLasH.Normalize.NormalizeTypes
@@ -32,29 +31,45 @@ import qualified CLasH.VHDL.VHDLTools as VHDLTools
 
 -- Apply the given transformation to all expressions in the given expression,
 -- including the expression itself.
-everywhere :: (String, Transform) -> Transform
+everywhere :: Transform -> Transform
 everywhere trans = applyboth (subeverywhere (everywhere trans)) trans
+
+data NormDbgLevel = 
+    NormDbgNone         -- ^ No debugging
+  | NormDbgFinal        -- ^ Print functions before / after normalization
+  | NormDbgApplied      -- ^ Print expressions before / after applying transformations
+  | NormDbgAll          -- ^ Print expressions when a transformation does not apply
+  deriving (Eq, Ord)
+normalize_debug = NormDbgFinal
+
+-- Applies a transform, optionally showing some debug output.
+apply :: (String, Transform) -> Transform
+apply (name, trans) ctx expr =  do
+    -- Apply the transformation and find out if it changed anything
+    (expr', any_changed) <- Writer.listen $ trans ctx expr
+    let changed = Monoid.getAny any_changed
+    -- If it changed, increase the transformation counter 
+    Monad.when changed $ Trans.lift (MonadState.modify tsTransformCounter (+1))
+    -- Prepare some debug strings
+    let before = showSDoc (nest 4 $ ppr expr) ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr) ++ "\n"
+    let context = "Context: " ++ show ctx ++ "\n"
+    let after  = showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n"
+    traceIf (normalize_debug >= NormDbgApplied && changed) ("Changes when applying transform " ++ name ++ " to:\n" ++ before ++ context ++ "Result:\n" ++ after) $ 
+     traceIf (normalize_debug >= NormDbgAll && not changed) ("No changes when applying transform " ++ name ++ " to:\n" ++ before  ++ context) $
+     return expr'
 
 -- Apply the first transformation, followed by the second transformation, and
 -- keep applying both for as long as expression still changes.
-applyboth :: Transform -> (String, Transform) -> Transform
-applyboth first (name, second) context expr = do
+applyboth :: Transform -> Transform -> Transform
+applyboth first second context expr = do
   -- Apply the first
   expr' <- first context expr
   -- Apply the second
   (expr'', changed) <- Writer.listen $ second context expr'
-  if Monoid.getAny $
-        -- trace ("Trying to apply transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n")
-        changed 
+  if Monoid.getAny $ changed
     then
-     -- trace ("Applying transform " ++ name ++ " to:\n" ++ showSDoc (nest 4 $ ppr expr') ++ "\nType: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr') ++ "\n"
-     --        ++ "Context: " ++ show context ++ "\n"
-     --        ++ "Result of applying " ++ name ++ ":\n" ++ showSDoc (nest 4 $ ppr expr'') ++ "\n" ++ "Type: \n" ++ (showSDoc $ nest 4 $ ppr $ CoreUtils.exprType expr'') ++ "\n" ) $
-      do
-        Trans.lift $ MonadState.modify tsTransformCounter (+1)
-        applyboth first (name, second) context expr'' 
+      applyboth first second context expr'' 
     else 
-      -- trace ("No changes") $
       return expr''
 
 -- Apply the given transformation to all direct subexpressions (only), not the
@@ -107,7 +122,7 @@ subeverywhere trans c expr = error $ "\nNormalizeTools.subeverywhere: Unsupporte
 -- Runs each of the transforms repeatedly inside the State monad.
 dotransforms :: [(String, Transform)] -> CoreExpr -> TranslatorSession CoreExpr
 dotransforms transs expr = do
-  (expr', changed) <- Writer.runWriterT $ Monad.foldM (\e trans -> everywhere trans [] e) expr transs
+  (expr', changed) <- Writer.runWriterT $ Monad.foldM (\e trans -> everywhere (apply trans) [] e) expr transs
   if Monoid.getAny changed then dotransforms transs expr' else return expr'
 
 -- Inline all let bindings that satisfy the given condition

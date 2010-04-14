@@ -968,13 +968,14 @@ normalizeExpr ::
 normalizeExpr what expr = do
       startcount <- MonadState.get tsTransformCounter 
       expr_uniqued <- genUniques expr
+      -- Do a debug print, if requested
+      let expr_uniqued' = Utils.traceIf (normalize_debug >= NormDbgFinal) (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") expr_uniqued
       -- Normalize this expression
-      trace (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") $ return ()
-      expr' <- dotransforms transforms expr_uniqued
+      expr' <- dotransforms transforms expr_uniqued'
       endcount <- MonadState.get tsTransformCounter 
-      trace ("\n" ++ what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr')
-             ++ "\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $
-       return expr'
+      -- Do a debug print, if requested
+      Utils.traceIf (normalize_debug >= NormDbgFinal)  (what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr') ++ "\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $
+        return expr'
 
 -- | Split a normalized expression into the argument binders, top level
 --   bindings and the result binder. This function returns an error if
