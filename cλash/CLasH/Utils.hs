@@ -7,6 +7,7 @@ import qualified Data.Accessor.Monad.Trans.State as MonadState
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.State as State
+import qualified Debug.Trace as Trace
   
 -- Make a caching version of a stateful computatation.
 makeCached :: (Monad m, Ord k) =>
@@ -60,3 +61,9 @@ mapAccumLM f s (x:xs)    =  do
   (s',  y ) <- f s x
   (s'', ys) <- mapAccumLM f s' xs
   return (s'', y:ys)
+
+-- Trace the given string if the given bool is True, do nothing
+-- otherwise.
+traceIf :: Bool -> String -> a -> a
+traceIf True = Trace.trace
+traceIf False = flip const
