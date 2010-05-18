@@ -72,15 +72,22 @@ beta :: Transform
 -- substitution.
 beta c (App (Lam x expr) arg) | CoreSyn.isTyVar x = setChanged >> substitute x arg c expr
                               | otherwise         = setChanged >> substitute_clone x arg c expr
+-- Leave all other expressions unchanged
+beta c expr = return expr
+
+--------------------------------
+-- Application propagation
+--------------------------------
+appprop :: Transform
 -- Propagate the application into the let
-beta c (App (Let binds expr) arg) = change $ Let binds (App expr arg)
+appprop c (App (Let binds expr) arg) = change $ Let binds (App expr arg)
 -- Propagate the application into each of the alternatives
-beta c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
+appprop c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
   where 
     alts' = map (\(con, bndrs, expr) -> (con, bndrs, (App expr arg))) alts
     ty' = CoreUtils.applyTypeToArg ty arg
 -- Leave all other expressions unchanged
-beta c expr = return expr
+appprop c expr = return expr
 
 --------------------------------
 -- Case of known constructor simplification
@@ -910,6 +917,7 @@ transforms = [ ("inlinedict", inlinedict)
              , ("funextract", funextract)
              , ("eta", eta)
              , ("beta", beta)
+             , ("appprop", appprop)
              , ("castprop", castprop)
              , ("letremovesimple", letremovesimple)
              , ("letrec", letrec)
