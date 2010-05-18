@@ -43,26 +43,9 @@ import CLasH.Utils.Core.CoreTools
 import CLasH.Utils.Core.BinderTools
 import CLasH.Utils.Pretty
 
---------------------------------
--- Start of transformations
---------------------------------
-
---------------------------------
--- η expansion
---------------------------------
--- Make sure all parameters to the normalized functions are named by top
--- level lambda expressions. For this we apply η expansion to the
--- function body (possibly enclosed in some lambda abstractions) while
--- it has a function type. Eventually this will result in a function
--- body consisting of a bunch of nested lambdas containing a
--- non-function value (e.g., a complete application).
-eta :: Transform
-eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
-  let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
-  id <- Trans.lift $ mkInternalVar "param" arg_ty
-  change (Lam id (App expr (Var id)))
--- Leave all other expressions unchanged
-eta c e = return e
+----------------------------------------------------------------
+-- Cleanup transformations
+----------------------------------------------------------------
 
 --------------------------------
 -- β-reduction
@@ -76,58 +59,42 @@ beta c (App (Lam x expr) arg) | CoreSyn.isTyVar x = setChanged >> substitute x a
 beta c expr = return expr
 
 --------------------------------
--- Application propagation
+-- Unused let binding removal
 --------------------------------
-appprop :: Transform
--- Propagate the application into the let
-appprop c (App (Let binds expr) arg) = change $ Let binds (App expr arg)
--- Propagate the application into each of the alternatives
-appprop c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
-  where 
-    alts' = map (\(con, bndrs, expr) -> (con, bndrs, (App expr arg))) alts
-    ty' = CoreUtils.applyTypeToArg ty arg
+letremoveunused :: Transform
+letremoveunused c expr@(Let (NonRec b bound) res) = do
+  let used = expr_uses_binders [b] res
+  if used
+    then return expr
+    else change res
+letremoveunused c expr@(Let (Rec binds) res) = do
+  -- Filter out all unused binds.
+  let binds' = filter dobind binds
+  -- Only set the changed flag if binds got removed
+  changeif (length binds' /= length binds) (Let (Rec binds') res)
+    where
+      bound_exprs = map snd binds
+      -- For each bind check if the bind is used by res or any of the bound
+      -- expressions
+      dobind (bndr, _) = any (expr_uses_binders [bndr]) (res:bound_exprs)
 -- Leave all other expressions unchanged
-appprop c expr = return expr
+letremoveunused c expr = return expr
 
 --------------------------------
--- Case of known constructor simplification
+-- empty let removal
 --------------------------------
--- If a case expressions scrutinizes a datacon application, we can
--- determine which alternative to use and remove the case alltogether.
--- We replace it with a let expression the binds every binder in the
--- alternative bound to the corresponding argument of the datacon. We do
--- this instead of substituting the binders, to prevent duplication of
--- work and preserve sharing wherever appropriate.
-knowncase :: Transform
-knowncase context expr@(Case scrut@(App _ _) bndr ty alts) | not bndr_used = do
-    case collectArgs scrut of
-      (Var f, args) -> case Id.isDataConId_maybe f of
-        -- Not a dataconstructor? Don't change anything (probably a
-        -- function, then)
-        Nothing -> return expr
-        Just dc -> do
-          let (altcon, bndrs, res) =  case List.find (\(altcon, bndrs, res) -> altcon == (DataAlt dc)) alts of
-                Just alt -> alt -- Return the alternative found
-                Nothing -> head alts -- If the datacon is not present, the first must be the default alternative
-          -- Double check if we have either the correct alternative, or
-          -- the default.
-          if altcon /= (DataAlt dc) && altcon /= DEFAULT then error ("Normalize.knowncase: Invalid core, datacon not found in alternatives and DEFAULT alternative is not first? " ++ pprString expr) else return ()
-          -- Find out how many arguments to drop (type variables and
-          -- predicates like dictionaries).
-          let (tvs, preds, _, _) = DataCon.dataConSig dc
-          let count = length tvs + length preds
-          -- Create a let expression that binds each of the binders in
-          -- this alternative to the corresponding argument of the data
-          -- constructor.
-          let binds = zip bndrs (drop count args)
-          change $ Let (Rec binds) res
-      _ -> return expr -- Scrutinee is not an application of a var
-  where
-    is_used (_, _, expr) = expr_uses_binders [bndr] expr
-    bndr_used = or $ map is_used alts
-
+-- Remove empty (recursive) lets
+letremove :: Transform
+letremove c (Let (Rec []) res) = change res
 -- Leave all other expressions unchanged
-knowncase c expr = return expr
+letremove c expr = return expr
+
+--------------------------------
+-- Simple let binding removal
+--------------------------------
+-- Remove a = b bindings from let expressions everywhere
+letremovesimple :: Transform
+letremovesimple = inlinebind (\(b, e) -> Trans.lift $ is_local_var e)
 
 --------------------------------
 -- Cast propagation
@@ -162,168 +129,6 @@ castsimpl c expr@(Cast val ty) = do
       return expr
 -- Leave all other expressions unchanged
 castsimpl c expr = return expr
-
---------------------------------
--- Return value simplification
---------------------------------
--- Ensure the return value of a function follows proper normal form. eta
--- expansion ensures the body starts with lambda abstractions, this
--- transformation ensures that the lambda abstractions always contain a
--- recursive let and that, when the return value is representable, the
--- let contains a local variable reference in its body.
-retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
-  local_var <- Trans.lift $ is_local_var expr
-  repr <- isRepr expr
-  if not local_var && repr
-    then do
-      id <- Trans.lift $ mkBinderFor expr "res" 
-      change $ Let (Rec [(id, expr)]) (Var id)
-    else
-      return expr
-
-retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
-  -- Don't extract values that are already a local variable, to prevent
-  -- loops with ourselves.
-  local_var <- Trans.lift $ is_local_var body
-  -- Don't extract values that are not representable, to prevent loops with
-  -- inlinenonrep
-  repr <- isRepr body
-  if not local_var && repr
-    then do
-      id <- Trans.lift $ mkBinderFor body "res" 
-      change $ Let (Rec ((id, body):binds)) (Var id)
-    else
-      return expr
-
-
--- Leave all other expressions unchanged
-retvalsimpl c expr = return expr
-
---------------------------------
--- let derecursification
---------------------------------
-letrec :: Transform
-letrec c expr@(Let (NonRec bndr val) res) = 
-  change $ Let (Rec [(bndr, val)]) res
-
--- Leave all other expressions unchanged
-letrec c expr = return expr
-
---------------------------------
--- let flattening
---------------------------------
--- Takes a let that binds another let, and turns that into two nested lets.
--- e.g., from:
--- let b = (let b' = expr' in res') in res
--- to:
--- let b' = expr' in (let b = res' in res)
-letflat :: Transform
--- Turn a nonrec let that binds a let into two nested lets.
-letflat c (Let (NonRec b (Let binds  res')) res) = 
-  change $ Let binds (Let (NonRec b res') res)
-letflat c (Let (Rec binds) expr) = do
-  -- Flatten each binding.
-  binds' <- Utils.concatM $ Monad.mapM flatbind binds
-  -- Return the new let. We don't use change here, since possibly nothing has
-  -- changed. If anything has changed, flatbind has already flagged that
-  -- change.
-  return $ Let (Rec binds') expr
-  where
-    -- Turns a binding of a let into a multiple bindings, or any other binding
-    -- into a list with just that binding
-    flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
-    flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
-    flatbind (b, Let (NonRec b' expr') expr) = change [(b, expr), (b', expr')]
-    flatbind (b, expr) = return [(b, expr)]
--- Leave all other expressions unchanged
-letflat c expr = return expr
-
---------------------------------
--- empty let removal
---------------------------------
--- Remove empty (recursive) lets
-letremove :: Transform
-letremove c (Let (Rec []) res) = change res
--- Leave all other expressions unchanged
-letremove c expr = return expr
-
---------------------------------
--- Simple let binding removal
---------------------------------
--- Remove a = b bindings from let expressions everywhere
-letremovesimple :: Transform
-letremovesimple = inlinebind (\(b, e) -> Trans.lift $ is_local_var e)
-
---------------------------------
--- Unused let binding removal
---------------------------------
-letremoveunused :: Transform
-letremoveunused c expr@(Let (NonRec b bound) res) = do
-  let used = expr_uses_binders [b] res
-  if used
-    then return expr
-    else change res
-letremoveunused c expr@(Let (Rec binds) res) = do
-  -- Filter out all unused binds.
-  let binds' = filter dobind binds
-  -- Only set the changed flag if binds got removed
-  changeif (length binds' /= length binds) (Let (Rec binds') res)
-    where
-      bound_exprs = map snd binds
-      -- For each bind check if the bind is used by res or any of the bound
-      -- expressions
-      dobind (bndr, _) = any (expr_uses_binders [bndr]) (res:bound_exprs)
--- Leave all other expressions unchanged
-letremoveunused c expr = return expr
-
-{-
---------------------------------
--- Identical let binding merging
---------------------------------
--- Merge two bindings in a let if they are identical 
--- TODO: We would very much like to use GHC's CSE module for this, but that
--- doesn't track if something changed or not, so we can't use it properly.
-letmerge :: Transform
-letmerge c expr@(Let _ _) = do
-  let (binds, res) = flattenLets expr
-  binds' <- domerge binds
-  return $ mkNonRecLets binds' res
-  where
-    domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
-    domerge [] = return []
-    domerge (e:es) = do 
-      es' <- mapM (mergebinds e) es
-      es'' <- domerge es'
-      return (e:es'')
-
-    -- Uses the second bind to simplify the second bind, if applicable.
-    mergebinds :: (CoreBndr, CoreExpr) -> (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
-    mergebinds (b1, e1) (b2, e2)
-      -- Identical expressions? Replace the second binding with a reference to
-      -- the first binder.
-      | CoreUtils.cheapEqExpr e1 e2 = change $ (b2, Var b1)
-      -- Different expressions? Don't change
-      | otherwise = return (b2, e2)
--- Leave all other expressions unchanged
-letmerge c expr = return expr
--}
-
---------------------------------
--- Non-representable binding inlining
---------------------------------
--- Remove a = B bindings, with B of a non-representable type, from let
--- expressions everywhere. This means that any value that we can't generate a
--- signal for, will be inlined and hopefully turned into something we can
--- represent.
---
--- This is a tricky function, which is prone to create loops in the
--- transformations. To fix this, we make sure that no transformation will
--- create a new let binding with a non-representable type. These other
--- transformations will just not work on those function-typed values at first,
--- but the other transformations (in particular β-reduction) should make sure
--- that the type of those values eventually becomes representable.
-inlinenonrep :: Transform
-inlinenonrep = inlinebind ((Monad.liftM not) . isRepr . snd)
 
 --------------------------------
 -- Top level function inlining
@@ -397,97 +202,209 @@ needsInline f = do
             -- More complicated function, don't inline
             _ -> return Nothing
 
+
+----------------------------------------------------------------
+-- Program structure transformations
+----------------------------------------------------------------
+
 --------------------------------
--- Dictionary inlining
+-- η expansion
 --------------------------------
--- Inline all top level dictionaries, that are in a position where
--- classopresolution can actually resolve them. This makes this
--- transformation look similar to classoperesolution below, but we'll
--- keep them separated for clarity. By not inlining other dictionaries,
--- we prevent expression sizes exploding when huge type level integer
--- dictionaries are inlined which can never be expanded (in casts, for
--- example).
-inlinedict c expr@(App (App (Var sel) ty) (Var dict)) | not is_builtin && is_classop = do
-  body_maybe <- Trans.lift $ getGlobalBind dict
+-- Make sure all parameters to the normalized functions are named by top
+-- level lambda expressions. For this we apply η expansion to the
+-- function body (possibly enclosed in some lambda abstractions) while
+-- it has a function type. Eventually this will result in a function
+-- body consisting of a bunch of nested lambdas containing a
+-- non-function value (e.g., a complete application).
+eta :: Transform
+eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
+  let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
+  id <- Trans.lift $ mkInternalVar "param" arg_ty
+  change (Lam id (App expr (Var id)))
+-- Leave all other expressions unchanged
+eta c e = return e
+
+--------------------------------
+-- Application propagation
+--------------------------------
+-- Move applications into let and case expressions.
+appprop :: Transform
+-- Propagate the application into the let
+appprop c (App (Let binds expr) arg) = change $ Let binds (App expr arg)
+-- Propagate the application into each of the alternatives
+appprop c (App (Case scrut b ty alts) arg) = change $ Case scrut b ty' alts'
+  where 
+    alts' = map (\(con, bndrs, expr) -> (con, bndrs, (App expr arg))) alts
+    ty' = CoreUtils.applyTypeToArg ty arg
+-- Leave all other expressions unchanged
+appprop c expr = return expr
+
+--------------------------------
+-- Let recursification
+--------------------------------
+-- Make all lets recursive, so other transformations don't need to
+-- handle non-recursive lets
+letrec :: Transform
+letrec c expr@(Let (NonRec bndr val) res) = 
+  change $ Let (Rec [(bndr, val)]) res
+
+-- Leave all other expressions unchanged
+letrec c expr = return expr
+
+--------------------------------
+-- let flattening
+--------------------------------
+-- Takes a let that binds another let, and turns that into two nested lets.
+-- e.g., from:
+-- let b = (let b' = expr' in res') in res
+-- to:
+-- let b' = expr' in (let b = res' in res)
+letflat :: Transform
+-- Turn a nonrec let that binds a let into two nested lets.
+letflat c (Let (NonRec b (Let binds  res')) res) = 
+  change $ Let binds (Let (NonRec b res') res)
+letflat c (Let (Rec binds) expr) = do
+  -- Flatten each binding.
+  binds' <- Utils.concatM $ Monad.mapM flatbind binds
+  -- Return the new let. We don't use change here, since possibly nothing has
+  -- changed. If anything has changed, flatbind has already flagged that
+  -- change.
+  return $ Let (Rec binds') expr
+  where
+    -- Turns a binding of a let into a multiple bindings, or any other binding
+    -- into a list with just that binding
+    flatbind :: (CoreBndr, CoreExpr) -> TransformMonad [(CoreBndr, CoreExpr)]
+    flatbind (b, Let (Rec binds) expr) = change ((b, expr):binds)
+    flatbind (b, Let (NonRec b' expr') expr) = change [(b, expr), (b', expr')]
+    flatbind (b, expr) = return [(b, expr)]
+-- Leave all other expressions unchanged
+letflat c expr = return expr
+
+--------------------------------
+-- Return value simplification
+--------------------------------
+-- Ensure the return value of a function follows proper normal form. eta
+-- expansion ensures the body starts with lambda abstractions, this
+-- transformation ensures that the lambda abstractions always contain a
+-- recursive let and that, when the return value is representable, the
+-- let contains a local variable reference in its body.
+
+-- Extract the return value from the body of the top level lambdas (of
+-- which ther could be zero), unless it is a let expression (in which
+-- case the next clause applies).
+retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
+  local_var <- Trans.lift $ is_local_var expr
+  repr <- isRepr expr
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor expr "res" 
+      change $ Let (Rec [(id, expr)]) (Var id)
+    else
+      return expr
+-- Extract the return value from the body of a let expression, which is
+-- itself the body of the top level lambdas (of which there could be
+-- zero).
+retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
+  -- Don't extract values that are already a local variable, to prevent
+  -- loops with ourselves.
+  local_var <- Trans.lift $ is_local_var body
+  -- Don't extract values that are not representable, to prevent loops with
+  -- inlinenonrep
+  repr <- isRepr body
+  if not local_var && repr
+    then do
+      id <- Trans.lift $ mkBinderFor body "res" 
+      change $ Let (Rec ((id, body):binds)) (Var id)
+    else
+      return expr
+-- Leave all other expressions unchanged
+retvalsimpl c expr = return expr
+
+--------------------------------
+-- Representable arguments simplification
+--------------------------------
+-- Make sure that all arguments of a representable type are simple variables.
+appsimpl :: Transform
+-- Simplify all representable arguments. Do this by introducing a new Let
+-- that binds the argument and passing the new binder in the application.
+appsimpl c expr@(App f arg) = do
+  -- Check runtime representability
+  repr <- isRepr arg
+  local_var <- Trans.lift $ is_local_var arg
+  if repr && not local_var
+    then do -- Extract representable arguments
+      id <- Trans.lift $ mkBinderFor arg "arg"
+      change $ Let (NonRec id arg) (App f (Var id))
+    else -- Leave non-representable arguments unchanged
+      return expr
+-- Leave all other expressions unchanged
+appsimpl c expr = return expr
+
+----------------------------------------------------------------
+-- Built-in function transformations
+----------------------------------------------------------------
+
+--------------------------------
+-- Function-typed argument extraction
+--------------------------------
+-- This transform takes any function-typed argument that cannot be propagated
+-- (because the function that is applied to it is a builtin function), and
+-- puts it in a brand new top level binder. This allows us to for example
+-- apply map to a lambda expression This will not conflict with inlinenonrep,
+-- since that only inlines local let bindings, not top level bindings.
+funextract :: Transform
+funextract c expr@(App _ _) | is_var fexpr = do
+  body_maybe <- Trans.lift $ getGlobalBind f
   case body_maybe of
-    -- No body available (no source available, or a local variable /
-    -- argument)
-    Nothing -> return expr
-    Just body -> change (App (App (Var sel) ty) body)
+    -- We don't have a function body for f, so we can perform this transform.
+    Nothing -> do
+      -- Find the new arguments
+      args' <- mapM doarg args
+      -- And update the arguments. We use return instead of changed, so the
+      -- changed flag doesn't get set if none of the args got changed.
+      return $ MkCore.mkCoreApps fexpr args'
+    -- We have a function body for f, leave this application to funprop
+    Just _ -> return expr
   where
-    -- Is this a builtin function / method?
-    is_builtin = elem (Name.getOccString sel) builtinIds
-    -- Are we dealing with a class operation selector?
-    is_classop = Maybe.isJust (Id.isClassOpId_maybe sel)
+    -- Find the function called and the arguments
+    (fexpr, args) = collectArgs expr
+    Var f = fexpr
+    -- Change any arguments that have a function type, but are not simple yet
+    -- (ie, a variable or application). This means to create a new function
+    -- for map (\f -> ...) b, but not for map (foo a) b.
+    --
+    -- We could use is_applicable here instead of is_fun, but I think
+    -- arguments to functions could only have forall typing when existential
+    -- typing is enabled. Not sure, though.
+    doarg arg | not (is_simple arg) && is_fun arg = do
+      -- Create a new top level binding that binds the argument. Its body will
+      -- be extended with lambda expressions, to take any free variables used
+      -- by the argument expression.
+      let free_vars = VarSet.varSetElems $ CoreFVs.exprFreeVars arg
+      let body = MkCore.mkCoreLams free_vars arg
+      id <- Trans.lift $ mkBinderFor body "fun"
+      Trans.lift $ addGlobalBind id body
+      -- Replace the argument with a reference to the new function, applied to
+      -- all vars it uses.
+      change $ MkCore.mkCoreApps (Var id) (map Var free_vars)
+    -- Leave all other arguments untouched
+    doarg arg = return arg
 
 -- Leave all other expressions unchanged
-inlinedict c expr = return expr
+funextract c expr = return expr
 
---------------------------------
--- ClassOp resolution
---------------------------------
--- Resolves any class operation to the actual operation whenever
--- possible. Class methods (as well as parent dictionary selectors) are
--- special "functions" that take a type and a dictionary and evaluate to
--- the corresponding method. A dictionary is nothing more than a
--- special dataconstructor applied to the type the dictionary is for,
--- each of the superclasses and all of the class method definitions for
--- that particular type. Since dictionaries all always inlined (top
--- levels dictionaries are inlined by inlinedict, local dictionaries are
--- inlined by inlinenonrep), we will eventually have something like:
---
---   baz
---     @ CLasH.HardwareTypes.Bit
---     (D:Baz @ CLasH.HardwareTypes.Bit bitbaz)
---
--- Here, baz is the method selector for the baz method, while
--- D:Baz is the dictionary constructor for the Baz and bitbaz is the baz
--- method defined in the Baz Bit instance declaration.
---
--- To resolve this, we can look at the ClassOp IdInfo from the baz Id,
--- which contains the Class it is defined for. From the Class, we can
--- get a list of all selectors (both parent class selectors as well as
--- method selectors). Since the arguments to D:Baz (after the type
--- argument) correspond exactly to this list, we then look up baz in
--- that list and replace the entire expression by the corresponding 
--- argument to D:Baz.
---
--- We don't resolve methods that have a builtin translation (such as
--- ==), since the actual implementation is not always (easily)
--- translateable. For example, when deriving ==, GHC generates code
--- using $con2tag functions to translate a datacon to an int and compare
--- that with GHC.Prim.==# . Better to avoid that for now.
-classopresolution :: Transform
-classopresolution c expr@(App (App (Var sel) ty) dict) | not is_builtin =
-  case Id.isClassOpId_maybe sel of
-    -- Not a class op selector
-    Nothing -> return expr
-    Just cls -> case collectArgs dict of
-      (_, []) -> return expr -- Dict is not an application (e.g., not inlined yet)
-      (Var dictdc, (ty':selectors)) | not (Maybe.isJust (Id.isDataConId_maybe dictdc)) -> return expr -- Dictionary is not a datacon yet (but e.g., a top level binder)
-                                | tyargs_neq ty ty' -> error $ "Normalize.classopresolution: Applying class selector to dictionary without matching type?\n" ++ pprString expr
-                                | otherwise ->
-        let selector_ids = Class.classSelIds cls in
-        -- Find the selector used in the class' list of selectors
-        case List.elemIndex sel selector_ids of
-          Nothing -> error $ "Normalize.classopresolution: Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
-          -- Get the corresponding argument from the dictionary
-          Just n -> change (selectors!!n)
-      (_, _) -> return expr -- Not applying a variable? Don't touch
-  where
-    -- Compare two type arguments, returning True if they are _not_
-    -- equal
-    tyargs_neq (Type ty1) (Type ty2) = not $ Type.coreEqType ty1 ty2
-    tyargs_neq _ _ = True
-    -- Is this a builtin function / method?
-    is_builtin = elem (Name.getOccString sel) builtinIds
 
--- Leave all other expressions unchanged
-classopresolution c expr = return expr
+
+
+----------------------------------------------------------------
+-- Case normalization transformations
+----------------------------------------------------------------
 
 --------------------------------
 -- Scrutinee simplification
 --------------------------------
+-- Make sure the scrutinee of a case expression is a local variable
+-- reference.
 scrutsimpl :: Transform
 -- Don't touch scrutinees that are already simple
 scrutsimpl c expr@(Case (Var _) _ _ _) = return expr
@@ -531,8 +448,14 @@ scrutbndrremove c (Case (Var scrut) bndr ty alts) | bndr_used = do
 scrutbndrremove c expr = return expr
 
 --------------------------------
--- Case binder wildening
+-- Case normalization
 --------------------------------
+-- Turn a case expression with any number of alternatives with any
+-- number of non-wild binders into as set of case and let expressions,
+-- all of which are in normal form (e.g., a bunch of extractor case
+-- expressions to extract all fields from the scrutinee, a number of let
+-- bindings to bind each alternative and a single selector case to
+-- select the right value.
 casesimpl :: Transform
 -- This is already a selector case (or, if x does not appear in bndrs, a very
 -- simple case statement that will be removed by caseremove below). Just leave
@@ -639,30 +562,74 @@ caseremove c (Case scrut b ty [(con, bndrs, expr)]) | not usesvars = change expr
 caseremove c expr = return expr
 
 --------------------------------
--- Argument extraction
+-- Case of known constructor simplification
 --------------------------------
--- Make sure that all arguments of a representable type are simple variables.
-appsimpl :: Transform
--- Simplify all representable arguments. Do this by introducing a new Let
--- that binds the argument and passing the new binder in the application.
-appsimpl c expr@(App f arg) = do
-  -- Check runtime representability
-  repr <- isRepr arg
-  local_var <- Trans.lift $ is_local_var arg
-  if repr && not local_var
-    then do -- Extract representable arguments
-      id <- Trans.lift $ mkBinderFor arg "arg"
-      change $ Let (NonRec id arg) (App f (Var id))
-    else -- Leave non-representable arguments unchanged
-      return expr
+-- If a case expressions scrutinizes a datacon application, we can
+-- determine which alternative to use and remove the case alltogether.
+-- We replace it with a let expression the binds every binder in the
+-- alternative bound to the corresponding argument of the datacon. We do
+-- this instead of substituting the binders, to prevent duplication of
+-- work and preserve sharing wherever appropriate.
+knowncase :: Transform
+knowncase context expr@(Case scrut@(App _ _) bndr ty alts) | not bndr_used = do
+    case collectArgs scrut of
+      (Var f, args) -> case Id.isDataConId_maybe f of
+        -- Not a dataconstructor? Don't change anything (probably a
+        -- function, then)
+        Nothing -> return expr
+        Just dc -> do
+          let (altcon, bndrs, res) =  case List.find (\(altcon, bndrs, res) -> altcon == (DataAlt dc)) alts of
+                Just alt -> alt -- Return the alternative found
+                Nothing -> head alts -- If the datacon is not present, the first must be the default alternative
+          -- Double check if we have either the correct alternative, or
+          -- the default.
+          if altcon /= (DataAlt dc) && altcon /= DEFAULT then error ("Normalize.knowncase: Invalid core, datacon not found in alternatives and DEFAULT alternative is not first? " ++ pprString expr) else return ()
+          -- Find out how many arguments to drop (type variables and
+          -- predicates like dictionaries).
+          let (tvs, preds, _, _) = DataCon.dataConSig dc
+          let count = length tvs + length preds
+          -- Create a let expression that binds each of the binders in
+          -- this alternative to the corresponding argument of the data
+          -- constructor.
+          let binds = zip bndrs (drop count args)
+          change $ Let (Rec binds) res
+      _ -> return expr -- Scrutinee is not an application of a var
+  where
+    is_used (_, _, expr) = expr_uses_binders [bndr] expr
+    bndr_used = or $ map is_used alts
+
 -- Leave all other expressions unchanged
-appsimpl c expr = return expr
+knowncase c expr = return expr
+
+
+
+
+----------------------------------------------------------------
+-- Unrepresentable value removal transformations
+----------------------------------------------------------------
 
 --------------------------------
--- Function-typed argument propagation
+-- Non-representable binding inlining
 --------------------------------
--- Remove all applications to function-typed arguments, by duplication the
--- function called with the function-typed parameter replaced by the free
+-- Remove a = B bindings, with B of a non-representable type, from let
+-- expressions everywhere. This means that any value that we can't generate a
+-- signal for, will be inlined and hopefully turned into something we can
+-- represent.
+--
+-- This is a tricky function, which is prone to create loops in the
+-- transformations. To fix this, we make sure that no transformation will
+-- create a new let binding with a non-representable type. These other
+-- transformations will just not work on those function-typed values at first,
+-- but the other transformations (in particular β-reduction) should make sure
+-- that the type of those values eventually becomes representable.
+inlinenonrep :: Transform
+inlinenonrep = inlinebind ((Monad.liftM not) . isRepr . snd)
+
+--------------------------------
+-- Function specialization
+--------------------------------
+-- Remove all applications to non-representable arguments, by duplicating the
+-- function called with the non-representable parameter replaced by the free
 -- variables of the argument passed in.
 argprop :: Transform
 -- Transform any application of a named function (i.e., skip applications of
@@ -850,55 +817,126 @@ inlinenonrepresult context expr | not (is_fun expr) =
 -- Leave all other expressions unchanged
 inlinenonrepresult c expr = return expr
 
-
 --------------------------------
--- Function-typed argument extraction
+-- ClassOp resolution
 --------------------------------
--- This transform takes any function-typed argument that cannot be propagated
--- (because the function that is applied to it is a builtin function), and
--- puts it in a brand new top level binder. This allows us to for example
--- apply map to a lambda expression This will not conflict with inlinenonrep,
--- since that only inlines local let bindings, not top level bindings.
-funextract :: Transform
-funextract c expr@(App _ _) | is_var fexpr = do
-  body_maybe <- Trans.lift $ getGlobalBind f
-  case body_maybe of
-    -- We don't have a function body for f, so we can perform this transform.
-    Nothing -> do
-      -- Find the new arguments
-      args' <- mapM doarg args
-      -- And update the arguments. We use return instead of changed, so the
-      -- changed flag doesn't get set if none of the args got changed.
-      return $ MkCore.mkCoreApps fexpr args'
-    -- We have a function body for f, leave this application to funprop
-    Just _ -> return expr
+-- Resolves any class operation to the actual operation whenever
+-- possible. Class methods (as well as parent dictionary selectors) are
+-- special "functions" that take a type and a dictionary and evaluate to
+-- the corresponding method. A dictionary is nothing more than a
+-- special dataconstructor applied to the type the dictionary is for,
+-- each of the superclasses and all of the class method definitions for
+-- that particular type. Since dictionaries all always inlined (top
+-- levels dictionaries are inlined by inlinedict, local dictionaries are
+-- inlined by inlinenonrep), we will eventually have something like:
+--
+--   baz
+--     @ CLasH.HardwareTypes.Bit
+--     (D:Baz @ CLasH.HardwareTypes.Bit bitbaz)
+--
+-- Here, baz is the method selector for the baz method, while
+-- D:Baz is the dictionary constructor for the Baz and bitbaz is the baz
+-- method defined in the Baz Bit instance declaration.
+--
+-- To resolve this, we can look at the ClassOp IdInfo from the baz Id,
+-- which contains the Class it is defined for. From the Class, we can
+-- get a list of all selectors (both parent class selectors as well as
+-- method selectors). Since the arguments to D:Baz (after the type
+-- argument) correspond exactly to this list, we then look up baz in
+-- that list and replace the entire expression by the corresponding 
+-- argument to D:Baz.
+--
+-- We don't resolve methods that have a builtin translation (such as
+-- ==), since the actual implementation is not always (easily)
+-- translateable. For example, when deriving ==, GHC generates code
+-- using $con2tag functions to translate a datacon to an int and compare
+-- that with GHC.Prim.==# . Better to avoid that for now.
+classopresolution :: Transform
+classopresolution c expr@(App (App (Var sel) ty) dict) | not is_builtin =
+  case Id.isClassOpId_maybe sel of
+    -- Not a class op selector
+    Nothing -> return expr
+    Just cls -> case collectArgs dict of
+      (_, []) -> return expr -- Dict is not an application (e.g., not inlined yet)
+      (Var dictdc, (ty':selectors)) | not (Maybe.isJust (Id.isDataConId_maybe dictdc)) -> return expr -- Dictionary is not a datacon yet (but e.g., a top level binder)
+                                | tyargs_neq ty ty' -> error $ "Normalize.classopresolution: Applying class selector to dictionary without matching type?\n" ++ pprString expr
+                                | otherwise ->
+        let selector_ids = Class.classSelIds cls in
+        -- Find the selector used in the class' list of selectors
+        case List.elemIndex sel selector_ids of
+          Nothing -> error $ "Normalize.classopresolution: Selector not found in class' selector list? This should not happen!\nExpression: " ++ pprString expr ++ "\nClass: " ++ show cls ++ "\nSelectors: " ++ show selector_ids
+          -- Get the corresponding argument from the dictionary
+          Just n -> change (selectors!!n)
+      (_, _) -> return expr -- Not applying a variable? Don't touch
   where
-    -- Find the function called and the arguments
-    (fexpr, args) = collectArgs expr
-    Var f = fexpr
-    -- Change any arguments that have a function type, but are not simple yet
-    -- (ie, a variable or application). This means to create a new function
-    -- for map (\f -> ...) b, but not for map (foo a) b.
-    --
-    -- We could use is_applicable here instead of is_fun, but I think
-    -- arguments to functions could only have forall typing when existential
-    -- typing is enabled. Not sure, though.
-    doarg arg | not (is_simple arg) && is_fun arg = do
-      -- Create a new top level binding that binds the argument. Its body will
-      -- be extended with lambda expressions, to take any free variables used
-      -- by the argument expression.
-      let free_vars = VarSet.varSetElems $ CoreFVs.exprFreeVars arg
-      let body = MkCore.mkCoreLams free_vars arg
-      id <- Trans.lift $ mkBinderFor body "fun"
-      Trans.lift $ addGlobalBind id body
-      -- Replace the argument with a reference to the new function, applied to
-      -- all vars it uses.
-      change $ MkCore.mkCoreApps (Var id) (map Var free_vars)
-    -- Leave all other arguments untouched
-    doarg arg = return arg
+    -- Compare two type arguments, returning True if they are _not_
+    -- equal
+    tyargs_neq (Type ty1) (Type ty2) = not $ Type.coreEqType ty1 ty2
+    tyargs_neq _ _ = True
+    -- Is this a builtin function / method?
+    is_builtin = elem (Name.getOccString sel) builtinIds
 
 -- Leave all other expressions unchanged
-funextract c expr = return expr
+classopresolution c expr = return expr
+
+--------------------------------
+-- Dictionary inlining
+--------------------------------
+-- Inline all top level dictionaries, that are in a position where
+-- classopresolution can actually resolve them. This makes this
+-- transformation look similar to classoperesolution below, but we'll
+-- keep them separated for clarity. By not inlining other dictionaries,
+-- we prevent expression sizes exploding when huge type level integer
+-- dictionaries are inlined which can never be expanded (in casts, for
+-- example).
+inlinedict c expr@(App (App (Var sel) ty) (Var dict)) | not is_builtin && is_classop = do
+  body_maybe <- Trans.lift $ getGlobalBind dict
+  case body_maybe of
+    -- No body available (no source available, or a local variable /
+    -- argument)
+    Nothing -> return expr
+    Just body -> change (App (App (Var sel) ty) body)
+  where
+    -- Is this a builtin function / method?
+    is_builtin = elem (Name.getOccString sel) builtinIds
+    -- Are we dealing with a class operation selector?
+    is_classop = Maybe.isJust (Id.isClassOpId_maybe sel)
+
+-- Leave all other expressions unchanged
+inlinedict c expr = return expr
+
+
+{-
+--------------------------------
+-- Identical let binding merging
+--------------------------------
+-- Merge two bindings in a let if they are identical 
+-- TODO: We would very much like to use GHC's CSE module for this, but that
+-- doesn't track if something changed or not, so we can't use it properly.
+letmerge :: Transform
+letmerge c expr@(Let _ _) = do
+  let (binds, res) = flattenLets expr
+  binds' <- domerge binds
+  return $ mkNonRecLets binds' res
+  where
+    domerge :: [(CoreBndr, CoreExpr)] -> TransformMonad [(CoreBndr, CoreExpr)]
+    domerge [] = return []
+    domerge (e:es) = do 
+      es' <- mapM (mergebinds e) es
+      es'' <- domerge es'
+      return (e:es'')
+
+    -- Uses the second bind to simplify the second bind, if applicable.
+    mergebinds :: (CoreBndr, CoreExpr) -> (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
+    mergebinds (b1, e1) (b2, e2)
+      -- Identical expressions? Replace the second binding with a reference to
+      -- the first binder.
+      | CoreUtils.cheapEqExpr e1 e2 = change $ (b2, Var b1)
+      -- Different expressions? Don't change
+      | otherwise = return (b2, e2)
+-- Leave all other expressions unchanged
+letmerge c expr = return expr
+-}
 
 --------------------------------
 -- End of transformations
