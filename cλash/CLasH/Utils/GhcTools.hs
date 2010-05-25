@@ -19,6 +19,7 @@ import qualified Name
 import qualified Serialized
 import qualified Var
 import qualified Outputable
+import Outputable(($+$), (<+>), nest, empty, text, vcat)
 import qualified Class
 
 -- Local Imports
@@ -26,6 +27,11 @@ import CLasH.Utils.Pretty
 import CLasH.Translator.TranslatorTypes
 import CLasH.Translator.Annotations
 import CLasH.Utils
+
+-- How far to indent the values after a Foo: header
+align = 20
+-- How far to indent all lines after the first
+indent = 5
 
 listBindings :: FilePath -> [FilePath] -> IO ()
 listBindings libdir filenames = do
@@ -37,27 +43,28 @@ listBindings libdir filenames = do
   mapM listClass classes
   return ()
 
+-- Slightly different version of hang, that always uses vcat instead of
+-- sep, so the first line of d2 preserves its nesting.
+hang' d1 n d2 = vcat [d1, nest n d2]
+
 listBinding :: (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -> IO ()
-listBinding (b, e) = do
-  putStr "\nBinder: "
-  putStr $ show b ++ "[" ++ show (Var.varUnique b) ++ "]"
-  putStr "\nType of Binder: \n"
-  putStr $ Outputable.showSDoc $ Outputable.ppr $ Var.varType b
-  putStr "\n\nExpression: \n"
-  putStr $ prettyShow e
-  putStr "\n\n"
-  putStr $ Outputable.showSDoc $ Outputable.ppr e
-  putStr "\n\nType of Expression: \n"
-  putStr $ Outputable.showSDoc $ Outputable.ppr $ CoreUtils.exprType e
-  putStr "\n\n"
+listBinding (b, e) = putStr $ Outputable.showSDoc $
+  (text "Binder:") <+> (text $ show b ++ "[" ++ show (Var.varUnique b) ++ "]")
+  $+$ nest indent (
+    hang' (text "Type of Binder:") align (Outputable.ppr $ Var.varType b)
+    $+$ hang' (text "Expression:") align (text $ prettyShow e)
+    $+$ nest align (Outputable.ppr e)
+    $+$ hang' (text "Type of Expression:") align (Outputable.ppr $ CoreUtils.exprType e)
+  )
+  $+$ (text "\n") -- Add an empty line
 
 listClass :: Class.Class -> IO ()
-listClass c = do
-  putStr "\nClass: "
-  putStr $ show (Class.className c)
-  putStr "\nSelectors: "
-  putStr $ show (Class.classSelIds c)
-  putStr "\n"
+listClass c = putStr $ Outputable.showSDoc $
+  (text "Class:") <+> (text $ show (Class.className c))
+  $+$ nest indent (
+    hang' (text "Selectors:") align (text $ show (Class.classSelIds c))
+  )
+  $+$ (text "\n") -- Add an empty line
   
 -- | Show the core structure of the given binds in the given file.
 listBind :: FilePath -> [FilePath] -> String -> IO ()
