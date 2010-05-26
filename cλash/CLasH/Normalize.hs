@@ -817,6 +817,10 @@ inlinenonrepresult context expr | not (is_fun expr) =
 -- Leave all other expressions unchanged
 inlinenonrepresult c expr = return expr
 
+----------------------------------------------------------------
+-- Type-class transformations
+----------------------------------------------------------------
+
 --------------------------------
 -- ClassOp resolution
 --------------------------------
