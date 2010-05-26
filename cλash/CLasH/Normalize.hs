@@ -406,15 +406,14 @@ funextract c expr = return expr
 -- Make sure the scrutinee of a case expression is a local variable
 -- reference.
 scrutsimpl :: Transform
--- Don't touch scrutinees that are already simple
-scrutsimpl c expr@(Case (Var _) _ _ _) = return expr
--- Replace all other cases with a let that binds the scrutinee and a new
+-- Replace a case expression with a let that binds the scrutinee and a new
 -- simple scrutinee, but only when the scrutinee is representable (to prevent
 -- loops with inlinenonrep, though I don't think a non-representable scrutinee
--- will be supported anyway...) 
+-- will be supported anyway...) and is not a local variable already.
 scrutsimpl c expr@(Case scrut b ty alts) = do
   repr <- isRepr scrut
-  if repr
+  local_var <- Trans.lift $ is_local_var scrut
+  if repr && not local_var
     then do
       id <- Trans.lift $ mkBinderFor scrut "scrut"
       change $ Let (NonRec id scrut) (Case (Var id) b ty alts)
