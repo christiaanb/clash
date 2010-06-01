@@ -2,14 +2,13 @@
 
 module CLasH.HardwareTypes
   ( module Types
-  , module Data.Param.TFVec
-  , module Data.RangedWord
-  , module Data.SizedInt
-  , module Data.SizedWord
+  , module Data.Param.Vector
+  , module Data.Param.Index
+  , module Data.Param.Signed
+  , module Data.Param.Unsigned
   , module Prelude
   , Bit(..)
   , State(..)
-  , Vector
   , resizeInt
   , resizeWord
   , hwand
@@ -26,32 +25,29 @@ import Prelude hiding (
   null, length, head, tail, last, init, take, drop, (++), map, foldl, foldr,
   zipWith, zip, unzip, concat, reverse, iterate )
 import Types
-import qualified Data.Param.TFVec as TFVec
-import Data.Param.TFVec hiding (TFVec)
-import Data.RangedWord
-import qualified Data.SizedInt as SizedInt
-import Data.SizedInt hiding (resize)
-import qualified Data.SizedWord as SizedWord
-import Data.SizedWord hiding (resize) 
+import Data.Param.Vector
+import Data.Param.Index
+import qualified Data.Param.Signed as Signed
+import Data.Param.Signed hiding (resize)
+import qualified Data.Param.Unsigned as Unsigned
+import Data.Param.Unsigned hiding (resize) 
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
 
 newtype State s = State s deriving (P.Show)
 
-type Vector = TFVec.TFVec
+resizeInt :: (NaturalT nT, NaturalT nT') => Signed nT -> Signed nT'
+resizeInt = Signed.resize
 
-resizeInt :: (NaturalT nT, NaturalT nT') => SizedInt nT -> SizedInt nT'
-resizeInt = SizedInt.resize
-
-resizeWord :: (NaturalT nT, NaturalT nT') => SizedWord nT -> SizedWord nT'
-resizeWord = SizedWord.resize
+resizeWord :: (NaturalT nT, NaturalT nT') => Unsigned nT -> Unsigned nT'
+resizeWord = Unsigned.resize
 
 -- The plain Bit type
 data Bit = High | Low
   deriving (P.Show, P.Eq, P.Read, Typeable)
 
-deriveLift1 ''Bit
+deriveLift ''Bit
 
 hwand :: Bit -> Bit -> Bit
 hwor  :: Bit -> Bit -> Bit
@@ -82,8 +78,8 @@ blockRAM ::
   ,((s :+: D1) :>: s) ~ True ) =>
   (MemState s a) -> 
   a ->
-  RangedWord s ->
-  RangedWord s ->
+  Index s ->
+  Index s ->
   Bool -> 
   ((MemState s a), a )
 blockRAM (State mem) data_in rdaddr wraddr wrenable = 

@@ -383,7 +383,7 @@ genNegation' _ f [arg] = do
   let (tycon, args) = Type.splitTyConApp ty
   let name = Name.getOccString (TyCon.tyConName tycon)
   case name of
-    "SizedInt" -> return $ AST.Neg arg1
+    "Signed" -> return $ AST.Neg arg1
     otherwise -> error $ "\nGenerate.genNegation': Negation not allowed for type: " ++ show name 
 
 -- | Generate a function call from the destination binder, function name and a
@@ -432,8 +432,8 @@ genResize' (Left res) f [arg] = do {
         ; name = Name.getOccString (TyCon.tyConName tycon)
         } ;
   ; len <- case name of
-      "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
-      "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
+      "Signed" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
+      "Unsigned" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
   ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId resizeId))
              [Nothing AST.:=>: AST.ADExpr arg, Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show len))]
   }
@@ -448,9 +448,9 @@ genTimes' (Left res) f [arg1,arg2] = do {
         ; name = Name.getOccString (TyCon.tyConName tycon)
         } ;
   ; len <- case name of
-      "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
-      "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
-      "RangedWord" -> do {  ubound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
+      "Signed" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
+      "Unsigned" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
+      "Index" -> do {  ubound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
                          ;  let bitsize = floor (logBase 2 (fromInteger (toInteger ubound)))
                          ;  return bitsize
                          }
@@ -470,12 +470,12 @@ genFromInteger' (Left res) f args = do
   let (tycon, tyargs) = Type.splitTyConApp ty
   let name = Name.getOccString (TyCon.tyConName tycon)
   len <- case name of
-    "SizedInt" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
-    "SizedWord" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
-    "RangedWord" -> do
+    "Signed" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
+    "Unsigned" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
+    "Index" -> do
       bound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
       return $ floor (logBase 2 (fromInteger (toInteger (bound)))) + 1
-  let fname = case name of "SizedInt" -> toSignedId ; "SizedWord" -> toUnsignedId ; "RangedWord" -> toUnsignedId
+  let fname = case name of "Signed" -> toSignedId ; "Unsigned" -> toUnsignedId ; "Index" -> toUnsignedId
   case args of
     [integer] -> do -- The type and dictionary arguments are removed by genApplication
       literal <- getIntegerLiteral integer
