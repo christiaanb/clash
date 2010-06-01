@@ -6,10 +6,6 @@ import qualified Prelude as P
 import CLasH.HardwareTypes hiding ((>>))
 import CLasH.Translator.Annotations
 
-type Signed   = SizedInt
-type Unsigned = SizedWord
-type Index    = RangedWord
-
 -- =======================================
 -- = System size configuration variables =
 -- =======================================
@@ -60,7 +56,7 @@ e >> v = shiftl v e
 -- =======================
 data DiscrRecord =
   DiscrR { prev_index  ::  ArrayIndex
-         , cur_discr   ::  SizedWord DiscrSize
+         , cur_discr   ::  Unsigned DiscrSize
          }
 type DiscrState = State DiscrRecord
                             
@@ -68,7 +64,7 @@ type RippleState =
   State (Vector (AdderDepthPL :+: D1) (CellType, Discr))
 
 data BlockRecord = 
-  Block { ptrs    ::  (SizedWord D4, SizedWord D4, SizedWord D4)
+  Block { ptrs    ::  (Unsigned D4, Unsigned D4, Unsigned D4)
         , buf1    ::  MemState AdderDepthPL DataInt
         , buf2    ::  MemState AdderDepthPL DataInt
         }
@@ -124,7 +120,7 @@ discriminator (State (DiscrR {..})) index = ( State DiscrR { prev_index = index
     new_discr               = index /= prev_index
     cur_discr'  | new_discr = cur_discr + 1
                 | otherwise = cur_discr
-    discr                   = fromSizedWord cur_discr'
+    discr                   = fromUnsigned cur_discr'
 
 -- ======================================================
 -- = Input Buffer: Buffers incomming inputs when needed =
@@ -166,12 +162,12 @@ blockBuffer (State (Block {..})) (inp, shift) = ( State Block { ptrs = ptrs'
     (rd_ptr1, rd_ptr2, wr_ptr) = ptrs
     ptrs'                      = (rd_ptr1', rd_ptr2', wr_ptr')
     -- Update pointers               
-    count                      = fromRangedWord shift
+    count                      = fromIndex shift
     (rd_ptr1', rd_ptr2')       = (rd_ptr1 + count, rd_ptr2 + count)
     wr_ptr'                    = wr_ptr + 1
     -- Write & Read from RAMs
-    (buf1', out1)              = blockRAM buf1 inp (fromSizedWord rd_ptr1) (fromSizedWord wr_ptr) True
-    (buf2', out2)              = blockRAM buf2 inp (fromSizedWord rd_ptr2) (fromSizedWord wr_ptr) True
+    (buf1', out1)              = blockRAM buf1 inp (fromUnsigned rd_ptr1) (fromUnsigned wr_ptr) True
+    (buf2', out2)              = blockRAM buf2 inp (fromUnsigned rd_ptr2) (fromUnsigned wr_ptr) True
     
 -- ============================================
 -- = Simulated pipelined floating point adder =
@@ -302,7 +298,7 @@ initDiscrState = DiscrR { prev_index = 255
 initRippleState :: Vector (AdderDepthPL :+: D1) (CellType, Discr)
 initRippleState = copy (False, 0)
 
-initBlockState :: (SizedWord D4, SizedWord D4, SizedWord D4)
+initBlockState :: (Unsigned D4, Unsigned D4, Unsigned D4)
 initBlockState = (0,1,0)
                      
 initPipeState :: 
