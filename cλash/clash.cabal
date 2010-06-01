@@ -17,18 +17,23 @@ maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
 Cabal-Version:      >= 1.2
 
 Library
-  build-depends:    ghc >= 6.11, pretty, vhdl > 0.1, haskell98, syb,
+  build-depends:    ghc >= 6.12, pretty, vhdl > 0.1, haskell98, syb,
                     data-accessor, containers, base >= 4, transformers,
                     filepath, template-haskell, data-accessor-template,
                     data-accessor-transformers, prettyclass, directory, 
-                    th-lift-ng, tfp, tfvec, time
+                    tfp, th-lift, time
                     
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
                     CLasH.Translator.Annotations
                     CLasH.Utils
                     
-  other-modules:    CLasH.Translator.TranslatorTypes
+  other-modules:    Data.Param.Integer
+                    Data.Param.Signed
+                    Data.Param.Unsigned
+                    Data.Param.Index
+                    Data.Param.Vector
+                    CLasH.Translator.TranslatorTypes
                     CLasH.Normalize
                     CLasH.Normalize.NormalizeTypes
                     CLasH.Normalize.NormalizeTools
@@ -44,4 +49,5 @@ Library
                     CLasH.Utils.Core.BinderTools
                     CLasH.Utils.Core.CoreShow
                     CLasH.Utils.Core.CoreTools
+                    
   

@@ -1,4 +1,3 @@
-{-# LANGUAGE PackageImports #-}
 --
 -- Functions to bring a Core expression in normal form. This module provides a
 -- top level function "normalize", and defines the actual transformation passes that
@@ -10,7 +9,7 @@ module CLasH.Normalize (getNormalized, normalizeExpr, splitNormalized) where
 import Debug.Trace
 import qualified Maybe
 import qualified List
-import qualified "transformers" Control.Monad.Trans as Trans
+import qualified Control.Monad.Trans.Class as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified Data.Accessor.Monad.Trans.State as MonadState
