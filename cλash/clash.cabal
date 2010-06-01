@@ -1,16 +1,18 @@
 name:               clash
 version:            0.1
 build-type:         Simple
-synopsis:           CAES Languege for Hardware Descriptions (CLasH)
-description:        CLasH is a toolchain/language to translate subsets of
+synopsis:           CAES Language for Synchronous Hardware (CLaSH)
+description:        CLaSH is a tool-chain/language to translate subsets of
                     Haskell to synthesizable VHDL. It does this by translating
                     the intermediate System Fc (GHC Core) representation to a
                     VHDL AST, which is then written to file.
-category:           Development
+category:           Language, Hardware
 license:            BSD3
 license-file:       LICENSE
-package-url:        http://github.com/darchon/clash/tree/master
-copyright:          Copyright (c) 2009 Christiaan Baaij & Matthijs Kooijman
+homepage:           http://clash.ewi.utwente.nl/
+package-url:        http://github.com/christiaanb/clash/tree/master/cλash
+copyright:          Copyright (c) 2009-2010 Christiaan Baaij & 
+                    Matthijs Kooijman
 author:             Christiaan Baaij & Matthijs Kooijman
 stability:          alpha
 maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
@@ -18,7 +20,7 @@ Cabal-Version:      >= 1.2
 
 Library
   build-depends:    ghc >= 6.12, pretty, vhdl > 0.1, haskell98, syb,
-                    data-accessor, containers, base >= 4, transformers,
+                    data-accessor, containers, base >= 4 && < 5, transformers,
                     filepath, template-haskell, data-accessor-template,
                     data-accessor-transformers, prettyclass, directory, 
                     tfp, th-lift, time
@@ -26,7 +28,6 @@ Library
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
                     CLasH.Translator.Annotations
-                    CLasH.Utils
                     
   other-modules:    Data.Param.Integer
                     Data.Param.Signed
@@ -43,6 +44,7 @@ Library
                     CLasH.VHDL.Testbench
                     CLasH.VHDL.VHDLTools
                     CLasH.VHDL.VHDLTypes
+                    CLasH.Utils
                     CLasH.Utils.GhcTools
                     CLasH.Utils.HsTools
                     CLasH.Utils.Pretty
