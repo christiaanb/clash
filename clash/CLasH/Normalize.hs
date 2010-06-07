@@ -216,10 +216,15 @@ needsInline f = do
 -- body consisting of a bunch of nested lambdas containing a
 -- non-function value (e.g., a complete application).
 eta :: Transform
-eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
-  let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
-  id <- Trans.lift $ mkInternalVar "param" arg_ty
-  change (Lam id (App expr (Var id)))
+eta (AppFirst:_) expr = return expr
+-- Also don't apply to arguments, since this can cause loops with
+-- funextract. This isn't the proper solution, but due to an
+-- implementation bug in notappargs, this is how it used to work so far.
+eta (AppSecond:_) expr = return expr
+eta c expr | is_fun expr && not (is_lam expr) = do
+ let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
+ id <- Trans.lift $ mkInternalVar "param" arg_ty
+ change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta c e = return e
 
@@ -947,7 +952,7 @@ letmerge c expr = return expr
 -- What transforms to run?
 transforms = [ ("inlinedict", inlinedict)
              , ("inlinetoplevel", inlinetoplevel)
-             , ("inlinenonrepresult", inlinenonrepresult)
+             -- , ("inlinenonrepresult", inlinenonrepresult)
              , ("knowncase", knowncase)
              , ("classopresolution", classopresolution)
              , ("argprop", argprop)
