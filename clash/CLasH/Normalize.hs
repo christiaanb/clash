@@ -753,7 +753,7 @@ inlinenonrepresult :: Transform
 -- that is fully applied (i.e., dos not have a function type) but is not
 -- representable. We apply in any context, since non-representable
 -- expressions are generally left alone and can occur anywhere.
-inlinenonrepresult context expr | not (is_fun expr) =
+inlinenonrepresult context expr | not (is_applicable expr) && not (has_free_tyvars expr) =
   case collectArgs expr of
     (Var f, args) | not (Id.isDictId f) -> do
       repr <- isRepr expr
@@ -952,7 +952,7 @@ letmerge c expr = return expr
 -- What transforms to run?
 transforms = [ ("inlinedict", inlinedict)
              , ("inlinetoplevel", inlinetoplevel)
-             -- , ("inlinenonrepresult", inlinenonrepresult)
+             , ("inlinenonrepresult", inlinenonrepresult)
              , ("knowncase", knowncase)
              , ("classopresolution", classopresolution)
              , ("argprop", argprop)
