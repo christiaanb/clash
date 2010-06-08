@@ -34,23 +34,6 @@ import CLasH.VHDL
 import CLasH.VHDL.VHDLTools
 import CLasH.VHDL.Testbench
 
--- | Turn Haskell to VHDL, Usings Strings to indicate the Top Entity, Initial
---   State and Test Inputs.
--- makeVHDLStrings :: 
---   FilePath      -- ^ The GHC Library Dir
---   -> [FilePath] -- ^ The FileNames
---   -> String     -- ^ The TopEntity
---   -> String     -- ^ The InitState
---   -> String     -- ^ The TestInput
---   -> IO ()
--- makeVHDLStrings libdir filenames topentity initstate testinput = do
---   makeVHDL libdir filenames finder
---     where
---       finder = findSpec (hasVarName topentity)
---                         (hasVarName initstate)
---                         (isCLasHAnnotation isInitState)
---                         (hasVarName testinput)
-
 -- | Turn Haskell to VHDL, Using the Annotations for Top Entity, Initial State
 --   and Test Inputs found in the Files. 
 makeVHDLAnnotations :: 

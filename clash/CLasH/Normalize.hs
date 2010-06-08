@@ -1,4 +1,3 @@
-{-# LANGUAGE PackageImports #-}
 --
 -- Functions to bring a Core expression in normal form. This module provides a
 -- top level function "normalize", and defines the actual transformation passes that
@@ -10,7 +9,7 @@ module CLasH.Normalize (getNormalized, normalizeExpr, splitNormalized) where
 import Debug.Trace
 import qualified Maybe
 import qualified List
-import qualified "transformers" Control.Monad.Trans as Trans
+import qualified Control.Monad.Trans.Class as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified Data.Accessor.Monad.Trans.State as MonadState
@@ -217,10 +216,15 @@ needsInline f = do
 -- body consisting of a bunch of nested lambdas containing a
 -- non-function value (e.g., a complete application).
 eta :: Transform
-eta c expr | is_fun expr && not (is_lam expr) && all (== LambdaBody) c = do
-  let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
-  id <- Trans.lift $ mkInternalVar "param" arg_ty
-  change (Lam id (App expr (Var id)))
+eta (AppFirst:_) expr = return expr
+-- Also don't apply to arguments, since this can cause loops with
+-- funextract. This isn't the proper solution, but due to an
+-- implementation bug in notappargs, this is how it used to work so far.
+eta (AppSecond:_) expr = return expr
+eta c expr | is_fun expr && not (is_lam expr) = do
+ let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
+ id <- Trans.lift $ mkInternalVar "param" arg_ty
+ change (Lam id (App expr (Var id)))
 -- Leave all other expressions unchanged
 eta c e = return e
 
@@ -376,7 +380,7 @@ funextract c expr@(App _ _) | is_var fexpr = do
     -- We could use is_applicable here instead of is_fun, but I think
     -- arguments to functions could only have forall typing when existential
     -- typing is enabled. Not sure, though.
-    doarg arg | not (is_simple arg) && is_fun arg = do
+    doarg arg | not (is_simple arg) && is_fun arg && not (has_free_tyvars arg) = do
       -- Create a new top level binding that binds the argument. Its body will
       -- be extended with lambda expressions, to take any free variables used
       -- by the argument expression.
@@ -748,7 +752,7 @@ inlinenonrepresult :: Transform
 -- that is fully applied (i.e., dos not have a function type) but is not
 -- representable. We apply in any context, since non-representable
 -- expressions are generally left alone and can occur anywhere.
-inlinenonrepresult context expr | not (is_fun expr) =
+inlinenonrepresult context expr | not (is_applicable expr) && not (has_free_tyvars expr) =
   case collectArgs expr of
     (Var f, args) | not (Id.isDictId f) -> do
       repr <- isRepr expr

@@ -1,4 +1,3 @@
-{-# LANGUAGE PackageImports #-}
 -- 
 -- This module provides functions for program transformations.
 --
@@ -9,7 +8,7 @@ import qualified Data.Monoid as Monoid
 import qualified Data.Either as Either
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
-import qualified "transformers" Control.Monad.Trans as Trans
+import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Accessor.Monad.Trans.State as MonadState
 
 -- GHC API

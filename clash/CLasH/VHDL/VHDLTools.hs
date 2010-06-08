@@ -322,7 +322,7 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
         (Just x) -> return $ Right $ BuiltinType name
         Nothing ->
           case name of
-                "TFVec" -> do
+                "Vector" -> do
                   let el_ty = tfvec_elem ty
                   elem_htype_either <- mkHTypeEither el_ty
                   case elem_htype_either of
@@ -333,13 +333,13 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                     -- Could not create element type
                     Left err -> return $ Left $ 
                       "\nVHDLTools.mkHTypeEither': Can not construct vectortype for elementtype: " ++ pprString el_ty ++ err
-                "SizedWord" -> do
+                "Unsigned" -> do
                   len <- tfp_to_int (sized_word_len_ty ty)
                   return $ Right $ SizedWType len
-                "SizedInt" -> do
+                "Signed" -> do
                   len <- tfp_to_int (sized_word_len_ty ty)
                   return $ Right $ SizedIType len
-                "RangedWord" -> do
+                "Index" -> do
                   bound <- tfp_to_int (ranged_word_bound_ty ty)
                   return $ Right $ RangedWType bound
                 otherwise ->

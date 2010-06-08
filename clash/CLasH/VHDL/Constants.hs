@@ -301,10 +301,10 @@ minusId = "-"
 
 -- | convert sizedword to ranged
 fromSizedWordId :: String
-fromSizedWordId = "fromSizedWord"
+fromSizedWordId = "fromUnsigned"
 
 fromRangedWordId :: String
-fromRangedWordId = "fromRangedWord"
+fromRangedWordId = "fromIndex"
 
 toIntegerId :: String
 toIntegerId = "to_integer"
@@ -331,10 +331,10 @@ smallIntegerId :: String
 smallIntegerId = "smallInteger"
 
 sizedIntId :: String
-sizedIntId = "SizedInt"
+sizedIntId = "Signed"
 
 tfvecId :: String
-tfvecId = "TFVec"
+tfvecId = "Vector"
 
 blockRAMId :: String
 blockRAMId = "blockRAM"

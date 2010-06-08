@@ -1,34 +1,40 @@
 name:               clash
-version:            0.1
+version:            0.1.0.1
 build-type:         Simple
-synopsis:           CAES Languege for Hardware Descriptions (CLasH)
-description:        CLasH is a toolchain/language to translate subsets of
+synopsis:           CAES Language for Synchronous Hardware (CLaSH)
+description:        CLaSH is a tool-chain/language to translate subsets of
                     Haskell to synthesizable VHDL. It does this by translating
                     the intermediate System Fc (GHC Core) representation to a
                     VHDL AST, which is then written to file.
-category:           Development
+category:           Language, Hardware
 license:            BSD3
 license-file:       LICENSE
-package-url:        http://github.com/darchon/clash/tree/master
-copyright:          Copyright (c) 2009 Christiaan Baaij & Matthijs Kooijman
+homepage:           http://clash.ewi.utwente.nl/
+package-url:        http://github.com/christiaanb/clash/tree/master/cλash
+copyright:          Copyright (c) 2009-2010 Christiaan Baaij & 
+                    Matthijs Kooijman
 author:             Christiaan Baaij & Matthijs Kooijman
 stability:          alpha
 maintainer:         christiaan.baaij@gmail.com & matthijs@stdin.nl
 Cabal-Version:      >= 1.2
 
 Library
-  build-depends:    ghc >= 6.11, pretty, vhdl > 0.1, haskell98, syb,
-                    data-accessor, containers, base >= 4, transformers,
-                    filepath, template-haskell, data-accessor-template,
-                    data-accessor-transformers, prettyclass, directory, 
-                    th-lift-ng, tfp, tfvec, time
+  build-depends:    ghc >= 6.12 && < 6.13, pretty, vhdl > 0.1, haskell98, syb,
+                    data-accessor >= 0.2.1.3, containers, base >= 4 && < 5, 
+                    transformers >= 0.2, filepath, template-haskell, 
+                    data-accessor-template, data-accessor-transformers, 
+                    prettyclass, directory, tfp, th-lift, time
                     
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
                     CLasH.Translator.Annotations
-                    CLasH.Utils
                     
-  other-modules:    CLasH.Translator.TranslatorTypes
+  other-modules:    Data.Param.Integer
+                    Data.Param.Signed
+                    Data.Param.Unsigned
+                    Data.Param.Index
+                    Data.Param.Vector
+                    CLasH.Translator.TranslatorTypes
                     CLasH.Normalize
                     CLasH.Normalize.NormalizeTypes
                     CLasH.Normalize.NormalizeTools
@@ -38,10 +44,12 @@ Library
                     CLasH.VHDL.Testbench
                     CLasH.VHDL.VHDLTools
                     CLasH.VHDL.VHDLTypes
+                    CLasH.Utils
                     CLasH.Utils.GhcTools
                     CLasH.Utils.HsTools
                     CLasH.Utils.Pretty
                     CLasH.Utils.Core.BinderTools
                     CLasH.Utils.Core.CoreShow
                     CLasH.Utils.Core.CoreTools
+                    
   
