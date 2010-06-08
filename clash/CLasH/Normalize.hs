@@ -380,7 +380,7 @@ funextract c expr@(App _ _) | is_var fexpr = do
     -- We could use is_applicable here instead of is_fun, but I think
     -- arguments to functions could only have forall typing when existential
     -- typing is enabled. Not sure, though.
-    doarg arg | not (is_simple arg) && is_fun arg = do
+    doarg arg | not (is_simple arg) && is_fun arg && not (has_free_tyvars arg) = do
       -- Create a new top level binding that binds the argument. Its body will
       -- be extended with lambda expressions, to take any free variables used
       -- by the argument expression.
