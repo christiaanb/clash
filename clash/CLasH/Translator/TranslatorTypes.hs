@@ -45,8 +45,14 @@ instance Eq OrdType where
 instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.tcCmpType a b
 
-data HType = AggrType String [HType] |
+data HType = AggrType String (Maybe (String, HType)) [[(String, HType)]] |
+             -- ^ A type containing multiple fields. Arguments: Type
+             -- name, an optional EnumType for the constructors (if > 1)
+             -- and a list containing a list of fields (name, htype) for
+             -- each constructor.
              EnumType String [String] |
+             -- ^ A type containing no fields and multiple constructors.
+             -- Arguments: Type name, a list of possible values.
              VecType Int HType |
              UVecType HType |
              SizedWType Int |
