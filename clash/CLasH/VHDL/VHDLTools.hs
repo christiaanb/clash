@@ -162,6 +162,11 @@ idToVHDLExpr = vhdlNameToVHDLExpr . AST.NSimple
 -- Turn a Core expression into an AST expression
 exprToVHDLExpr core = varToVHDLExpr (exprToVar core)
 
+-- Turn a String into a VHDL expr containing an id
+stringToVHDLExpr :: String -> AST.Expr
+stringToVHDLExpr = idToVHDLExpr . mkVHDLExtId 
+
+
 -- Turn a alternative constructor into an AST expression. For
 -- dataconstructors, this is only the constructor itself, not any arguments it
 -- has. Should not be called with a DEFAULT constructor.
