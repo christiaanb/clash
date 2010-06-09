@@ -489,7 +489,9 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
   -- Wilden the binders of one alt, producing a list of bindings as a
   -- sideeffect.
   doalt :: CoreAlt -> TransformMonad ([(CoreBndr, CoreExpr)], CoreAlt)
-  doalt (con, bndrs, expr) = do
+  doalt (LitAlt _, _, _) = error $ "Don't know how to handle LitAlt in case expression: " ++ pprString expr
+  doalt alt@(DEFAULT, [], expr) = return ([], alt)
+  doalt (DataAlt dc, bndrs, expr) = do
     -- Make each binder wild, if possible
     bndrs_res <- Monad.zipWithM dobndr bndrs [0..]
     let (newbndrs, bindings_maybe) = unzip bndrs_res
@@ -499,7 +501,7 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
     let uses_bndrs = not $ VarSet.isEmptyVarSet $ CoreFVs.exprSomeFreeVars (`elem` newbndrs) expr
     (exprbinding_maybe, expr') <- doexpr expr uses_bndrs
     -- Create a new alternative
-    let newalt = (con, newbndrs, expr')
+    let newalt = (DataAlt dc, newbndrs, expr')
     let bindings = Maybe.catMaybes (bindings_maybe ++ [exprbinding_maybe])
     return (bindings, newalt)
     where
@@ -521,7 +523,8 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
         -- inlinenonrep).
         if (not wild) && repr
           then do
-            caseexpr <- Trans.lift $ mkSelCase scrut i
+            let dc_i = datacon_index (CoreUtils.exprType scrut) dc
+            caseexpr <- Trans.lift $ mkSelCase scrut dc_i i
             -- Create a new binder that will actually capture a value in this
             -- case statement, and return it.
             return (wildbndrs!!i, Just (b, caseexpr))
@@ -793,7 +796,7 @@ inlinenonrepresult context expr | not (is_applicable expr) && not (has_free_tyva
                   res_bndr <- Trans.lift $ mkBinderFor newapp "res"
                   -- Create extractor case expressions to extract each of the
                   -- free variables from the tuple.
-                  sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr)) [0..n_free_vars-1]
+                  sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr) 0) [0..n_free_vars-1]
 
                   -- Bind the res_bndr to the result of the new application
                   -- and each of the free variables to the corresponding
