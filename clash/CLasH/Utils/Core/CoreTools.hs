@@ -7,6 +7,7 @@ module CLasH.Utils.Core.CoreTools where
 
 --Standard modules
 import qualified Maybe
+import qualified List
 import qualified System.IO.Unsafe
 import qualified Data.Map as Map
 import qualified Data.Accessor.Monad.Trans.State as MonadState
@@ -34,6 +35,7 @@ import qualified CoreFVs
 import qualified Literal
 import qualified MkCore
 import qualified VarEnv
+import qualified Outputable
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -146,6 +148,20 @@ tfvec_elem ty = el_ty
       Just (tycon, args) -> args
       Nothing -> error $ "\nCoreTools.tfvec_len: Not a vector type: " ++ (pprString ty)
     [len, el_ty] = args
+
+-- | Gets the index of the given datacon in the given typed thing.
+-- Errors out if it does not occur or if the type is not an ADT.
+datacon_index :: TypedThing t => t -> DataCon.DataCon -> Int
+datacon_index tt dc =
+  case getType tt of
+    Nothing -> error $ "Getting datacon index of untyped thing? " ++ pprString tt
+    Just ty -> case Type.splitTyConApp_maybe ty of
+      Nothing -> error $ "Trying to find datacon in a type without a tycon?" ++ pprString ty
+      Just (tycon, _) -> case TyCon.tyConDataCons_maybe tycon of
+        Nothing -> error $ "Trying to find datacon in a type without datacons?" ++ pprString ty
+        Just dcs -> case List.elemIndex dc dcs of
+          Nothing -> error $ "Datacon " ++ pprString dc ++ " does not occur in type: " ++ pprString ty
+          Just i -> i
 
 -- Is the given core expression a lambda abstraction?
 is_lam :: CoreSyn.CoreExpr -> Bool
@@ -347,7 +363,7 @@ mkNonRecLets bindings expr = MkCore.mkCoreLets binds expr
 
 -- | A class of things that (optionally) have a core Type. The type is
 -- optional, since Type expressions don't have a type themselves.
-class TypedThing t where
+class Outputable.Outputable t => TypedThing t where
   getType :: t -> Maybe Type.Type
 
 instance TypedThing CoreSyn.CoreExpr where
