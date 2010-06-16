@@ -158,7 +158,7 @@ castsimpl c expr = return expr
 -- By not inlining any other reference, we also prevent looping problems
 -- with funextract and inlinedict.
 inlinetoplevel :: Transform
-inlinetoplevel (LetBinding:_) expr | not (is_fun expr) =
+inlinetoplevel c expr | not (null c) && is_letbinding_ctx (head c) && not (is_fun expr) =
   case collectArgs expr of
 	(Var f, args) -> do
 	  body_maybe <- needsInline f
@@ -216,12 +216,12 @@ needsInline f = do
 -- body consisting of a bunch of nested lambdas containing a
 -- non-function value (e.g., a complete application).
 eta :: Transform
-eta (AppFirst:_) expr = return expr
+eta c expr | not (null c) && is_appfirst_ctx (head c) = return expr
 -- Also don't apply to arguments, since this can cause loops with
 -- funextract. This isn't the proper solution, but due to an
 -- implementation bug in notappargs, this is how it used to work so far.
-eta (AppSecond:_) expr = return expr
-eta c expr | is_fun expr && not (is_lam expr) = do
+           | not (null c) && is_appsecond_ctx (head c) = return expr
+           | is_fun expr && not (is_lam expr) = do
  let arg_ty = (fst . Type.splitFunTy . CoreUtils.exprType) expr
  id <- Trans.lift $ mkInternalVar "param" arg_ty
  change (Lam id (App expr (Var id)))
@@ -296,7 +296,7 @@ letflat c expr = return expr
 -- Extract the return value from the body of the top level lambdas (of
 -- which ther could be zero), unless it is a let expression (in which
 -- case the next clause applies).
-retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let expr) = do
+retvalsimpl c expr | all is_lambdabody_ctx c && not (is_lam expr) && not (is_let expr) = do
   local_var <- Trans.lift $ is_local_var expr
   repr <- isRepr expr
   if not local_var && repr
@@ -308,7 +308,7 @@ retvalsimpl c expr | all (== LambdaBody) c && not (is_lam expr) && not (is_let e
 -- Extract the return value from the body of a let expression, which is
 -- itself the body of the top level lambdas (of which there could be
 -- zero).
-retvalsimpl c expr@(Let (Rec binds) body) | all (== LambdaBody) c = do
+retvalsimpl c expr@(Let (Rec binds) body) | all is_lambdabody_ctx c = do
   -- Don't extract values that are already a local variable, to prevent
   -- loops with ourselves.
   local_var <- Trans.lift $ is_local_var body
