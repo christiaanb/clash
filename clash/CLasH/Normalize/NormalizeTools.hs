@@ -80,22 +80,30 @@ subeverywhere trans c (App a b) = do
   return $ App a' b'
 
 subeverywhere trans c (Let (NonRec b bexpr) expr) = do
-  bexpr' <- trans (LetBinding:c) bexpr
-  expr' <- trans (LetBody:c) expr
+  -- In the binding of a non-recursive let binding, no extra binders are
+  -- in scope.
+  bexpr' <- trans (LetBinding []:c) bexpr
+  -- In the body of a non-recursive let binding, the bound binder is in
+  -- scope.
+  expr' <- trans ((LetBody [b]):c) expr
   return $ Let (NonRec b bexpr') expr'
 
 subeverywhere trans c (Let (Rec binds) expr) = do
-  expr' <- trans (LetBody:c) expr
+  -- In the body of a recursive let, all binders are in scope
+  expr' <- trans ((LetBody bndrs):c) expr
   binds' <- mapM transbind binds
   return $ Let (Rec binds') expr'
   where
+    bndrs = map fst binds
     transbind :: (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
     transbind (b, e) = do
-      e' <- trans (LetBinding:c) e
+      -- In the bindings of a recursive let, all binders are in scope
+      e' <- trans ((LetBinding bndrs):c) e
       return (b, e')
 
 subeverywhere trans c (Lam x expr) = do
-  expr' <- trans (LambdaBody:c) expr
+  -- In the body of a lambda, the bound binder is in scope.
+  expr' <- trans ((LambdaBody x):c) expr
   return $ Lam x expr'
 
 subeverywhere trans c (Case scrut b t alts) = do
@@ -154,12 +162,15 @@ inlinebind condition context expr@(Let (Rec binds) res) = do
       reps' <- mapM (subs_bind bndr val) reps
       -- And then perform the remaining substitutions
       do_substitute reps' expr'
+
+    -- All binders bound in the transformed recursive let
+    bndrs = map fst binds
    
     -- Replace the given binder with the given expression in the
     -- expression oft the given let binding
     subs_bind :: CoreBndr -> CoreExpr -> (CoreBndr, CoreExpr) -> TransformMonad (CoreBndr, CoreExpr)
     subs_bind bndr expr (b, v) = do
-      v' <- substitute_clone  bndr expr (LetBinding:context) v
+      v' <- substitute_clone  bndr expr ((LetBinding bndrs):context) v
       return (b, v')
 
 

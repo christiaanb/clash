@@ -21,12 +21,15 @@ data CoreContext = AppFirst        -- ^ The expression is the first
                  | AppSecond       -- ^ The expression is the second
                                    --   argument of an application
                                    --   (i.e., something is applied to it)
-                 | LetBinding      -- ^ The expression is bound in a
+                 | LetBinding [CoreSyn.CoreBndr]
+                                   -- ^ The expression is bound in a
                                    --   (recursive or non-recursive) let
                                    --   expression.
-                 | LetBody         -- ^ The expression is the body of a
+                 | LetBody [CoreSyn.CoreBndr]
+                                   -- ^ The expression is the body of a
                                    --   let expression
-                 | LambdaBody      -- ^ The expression is the body of a
+                 | LambdaBody CoreSyn.CoreBndr
+                                   -- ^ The expression is the body of a
                                    --   lambda abstraction
                  | Other           -- ^ Another context
   deriving (Eq, Show)
@@ -43,11 +46,11 @@ is_appfirst_ctx _ = False
 is_appsecond_ctx AppSecond = True
 is_appsecond_ctx _ = False
 
-is_letbinding_ctx LetBinding = True
+is_letbinding_ctx (LetBinding _) = True
 is_letbinding_ctx _ = False
 
-is_letbody_ctx LetBody = True
+is_letbody_ctx (LetBody _) = True
 is_letbody_ctx _ = False
 
-is_lambdabody_ctx LambdaBody = True
+is_lambdabody_ctx (LambdaBody _) = True
 is_lambdabody_ctx _ = False
