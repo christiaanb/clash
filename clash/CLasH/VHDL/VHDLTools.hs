@@ -370,8 +370,8 @@ mkTyConHType tycon args =
           let real_arg_tyss_nostate = map (filter (\x -> not (isStateType x))) real_arg_tyss
           elem_htyss_either <- mapM (mapM mkHTypeEither) real_arg_tyss_nostate
           let (errors, elem_htyss) = unzip (map Either.partitionEithers elem_htyss_either)
-          case errors of
-            [] -> case (dcs, concat elem_htyss) of
+          case (all null errors) of
+            True -> case (dcs, concat elem_htyss) of
                 -- A single constructor with a single (non-state) field?
                 ([dc], [elem_hty]) -> return $ Right elem_hty
                 -- If we get here, then all of the argument types were state
@@ -390,8 +390,8 @@ mkTyConHType tycon args =
                   -- Create the AggrType HType
                   return $ Right $ AggrType name enum_ty_part fieldss
                 -- There were errors in element types
-            errors -> return $ Left $
-              "\nVHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n"
+            False -> return $ Left $
+              "\nVHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n" 
               ++ (concat $ concat errors)
   where
     name = (nameToString (TyCon.tyConName tycon))
