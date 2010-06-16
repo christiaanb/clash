@@ -113,7 +113,7 @@ subeverywhere trans c (Case scrut b t alts) = do
   where
     transalt :: CoreAlt -> TransformMonad CoreAlt
     transalt (con, binders, expr) = do
-      expr' <- trans (Other:c) expr
+      expr' <- trans ((CaseAlt b):c) expr
       return (con, binders, expr')
 
 subeverywhere trans c (Var x) = return $ Var x

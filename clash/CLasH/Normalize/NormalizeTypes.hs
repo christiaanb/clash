@@ -31,6 +31,9 @@ data CoreContext = AppFirst        -- ^ The expression is the first
                  | LambdaBody CoreSyn.CoreBndr
                                    -- ^ The expression is the body of a
                                    --   lambda abstraction
+                 | CaseAlt CoreSyn.CoreBndr
+                                   -- ^ The expression is the body of a
+                                   --   case alternative.
                  | Other           -- ^ Another context
   deriving (Eq, Show)
 -- | Transforms a CoreExpr and keeps track if it has changed.
