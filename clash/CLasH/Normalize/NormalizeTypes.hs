@@ -32,3 +32,22 @@ data CoreContext = AppFirst        -- ^ The expression is the first
   deriving (Eq, Show)
 -- | Transforms a CoreExpr and keeps track if it has changed.
 type Transform = [CoreContext] -> CoreSyn.CoreExpr -> TransformMonad CoreSyn.CoreExpr
+
+-- Predicates for each of the context types
+is_appfirst_ctx, is_appsecond_ctx, is_letbinding_ctx, is_letbody_ctx, is_lambdabody_ctx
+ :: CoreContext -> Bool
+
+is_appfirst_ctx AppFirst = True
+is_appfirst_ctx _ = False
+
+is_appsecond_ctx AppSecond = True
+is_appsecond_ctx _ = False
+
+is_letbinding_ctx LetBinding = True
+is_letbinding_ctx _ = False
+
+is_letbody_ctx LetBody = True
+is_letbody_ctx _ = False
+
+is_lambdabody_ctx LambdaBody = True
+is_lambdabody_ctx _ = False
