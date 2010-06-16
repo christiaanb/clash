@@ -581,6 +581,17 @@ getFieldLabels ::
   -> [AST.VHDLId]      -- ^ The labels
 getFieldLabels htype dc_i = ((map mkVHDLBasicId) . (map fst)) (getFields htype dc_i)
 
+-- Finds the field label for the constructor field, if any.
+getConstructorFieldLabel ::
+  HType
+  -> Maybe AST.VHDLId
+getConstructorFieldLabel (AggrType _ (Just con) _) =
+	Just $ mkVHDLBasicId (fst con)
+getConstructorFieldLabel (AggrType _ Nothing _) =
+	Nothing
+getConstructorFieldLabel htype =
+	error $ "Can't get constructor field label from non-aggregate HType: " ++ show htype
+
 mktydecl :: (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn)) -> Maybe AST.PackageDecItem
 mytydecl (_, Nothing) = Nothing
 mktydecl (ty_id, Just (Left ty_def)) = Just $ AST.PDITD $ AST.TypeDec ty_id ty_def
