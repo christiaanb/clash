@@ -1071,26 +1071,40 @@ genApplication dst f args = do
             Left bndr -> do
               -- We have the bndr, so we can get at the type
               htype_either <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-              let argsNostate = filter (\x -> not (either hasStateType (\x -> False) x)) args
-              case argsNostate of
-                [arg] -> do
+              let argsNoState = filter (\x -> not (either hasStateType (\x -> False) x)) args
+              let dcs = datacons_for bndr
+              case (dcs, argsNoState) of
+                -- This is a type with a single datacon and a single
+                -- argument, so no record is created (the type of the
+                -- binder becomes the type of the single argument).
+                ([_], [arg]) -> do
                   [arg'] <- argsToVHDLExprs [arg]
                   return ([mkUncondAssign dst arg'], [])
-                otherwise ->
-                  case htype_either of
-                    Right htype@(AggrType _ _ _) -> do
-                      let dc_i = datacon_index (Var.varType bndr) dc
-                      let labels = getFieldLabels htype dc_i
-                      args' <- argsToVHDLExprs argsNostate
-                      return (zipWith mkassign labels args', [])
-                      where
-                        mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
-                        mkassign label arg =
-                          let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
-                          mkUncondAssign (Right sel_name) arg
-                    _ -> do -- error $ "DIE!"
-                      args' <- argsToVHDLExprs argsNostate
-                      return ([mkUncondAssign dst (head args')], [])            
+                -- In all other cases, a record type is created.
+                _ -> case htype_either of
+                  Right htype@(AggrType _ _ _) -> do
+                    let dc_i = datacon_index (Var.varType bndr) dc
+                    let labels = getFieldLabels htype dc_i
+                    arg_exprs <- argsToVHDLExprs argsNoState
+                    let (final_labels, final_exprs) = case getConstructorFieldLabel htype of
+                          -- Only a single constructor
+                          Nothing -> 
+                            (labels, arg_exprs)
+                          -- Multiple constructors, so assign the
+                          -- constructor used to the constructor field as
+                          -- well.
+                          Just dc_label ->
+                            let dc_expr = AST.PrimName $ AST.NSimple $ mkVHDLExtId $ varToString f in
+                            (dc_label:labels, dc_expr:arg_exprs)
+                    return (zipWith mkassign final_labels final_exprs, [])
+                    where
+                      mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
+                      mkassign label arg =
+                        let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
+                        mkUncondAssign (Right sel_name) arg
+                  Right _ -> error $ "Datacon application does not result in a aggregate type? datacon: " ++ pprString f ++ " Args: " ++ show args
+                  Left _ -> error $ "Unrepresentable result type in datacon application?  datacon: " ++ pprString f ++ " Args: " ++ show args
+
             Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
           IdInfo.DataConWrapId dc -> case dst of
             -- It's a datacon. Create a record from its arguments.
