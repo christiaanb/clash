@@ -152,16 +152,23 @@ tfvec_elem ty = el_ty
 -- | Gets the index of the given datacon in the given typed thing.
 -- Errors out if it does not occur or if the type is not an ADT.
 datacon_index :: TypedThing t => t -> DataCon.DataCon -> Int
-datacon_index tt dc =
+datacon_index tt dc = case List.elemIndex dc dcs of
+    Nothing -> error $ "Datacon " ++ pprString dc ++ " does not occur in typed thing: " ++ pprString tt
+    Just i -> i
+  where
+    dcs = datacons_for tt
+
+-- | Gets all datacons for the given typed thing. Errors out if the
+-- typed thing is not ADT typed.
+datacons_for :: TypedThing t => t -> [DataCon.DataCon]
+datacons_for tt =
   case getType tt of
     Nothing -> error $ "Getting datacon index of untyped thing? " ++ pprString tt
     Just ty -> case Type.splitTyConApp_maybe ty of
       Nothing -> error $ "Trying to find datacon in a type without a tycon?" ++ pprString ty
       Just (tycon, _) -> case TyCon.tyConDataCons_maybe tycon of
         Nothing -> error $ "Trying to find datacon in a type without datacons?" ++ pprString ty
-        Just dcs -> case List.elemIndex dc dcs of
-          Nothing -> error $ "Datacon " ++ pprString dc ++ " does not occur in type: " ++ pprString ty
-          Just i -> i
+        Just dcs -> dcs
 
 -- Is the given core expression a lambda abstraction?
 is_lam :: CoreSyn.CoreExpr -> Bool
