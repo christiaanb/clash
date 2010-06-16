@@ -1102,8 +1102,21 @@ genApplication dst f args = do
                       mkassign label arg =
                         let sel_name = mkSelectedName ((either varToVHDLName id) dst) label in
                         mkUncondAssign (Right sel_name) arg
+                  -- Enumeration types have no arguments and are just
+                  -- simple assignments
+                  Right (EnumType _ _) ->
+                    simple_assign
+                  -- These builtin types are also enumeration types
+                  Right (BuiltinType tyname) | tyname `elem` ["Bit", "Bool"] ->
+                    simple_assign
                   Right _ -> error $ "Datacon application does not result in a aggregate type? datacon: " ++ pprString f ++ " Args: " ++ show args
                   Left _ -> error $ "Unrepresentable result type in datacon application?  datacon: " ++ pprString f ++ " Args: " ++ show args
+                  where
+                    -- Simple uncoditional assignment, for (built-in)
+                    -- enumeration types
+                    simple_assign = do
+                      expr <- MonadState.lift tsType $ dataconToVHDLExpr dc
+                      return ([mkUncondAssign dst expr], [])
 
             Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
           IdInfo.DataConWrapId dc -> case dst of
