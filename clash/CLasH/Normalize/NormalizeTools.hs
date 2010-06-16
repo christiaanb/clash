@@ -216,7 +216,10 @@ isRepr' tything = case CoreTools.getType tything of
 is_local_var :: CoreSyn.CoreExpr -> TranslatorSession Bool
 is_local_var (CoreSyn.Var v) = do
   bndrs <- getGlobalBinders
-  return $ v `notElem` bndrs
+  -- A datacon id is not a global binder, but not a local variable
+  -- either.
+  let is_dc = Id.isDataConWorkId v
+  return $ not is_dc && v `notElem` bndrs
 is_local_var _ = return False
 
 -- Is the given binder defined by the user?
