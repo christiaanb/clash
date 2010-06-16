@@ -464,7 +464,7 @@ mkSelCase scrut dc_i i = do
     Just (tycon, tyargs) -> case TyCon.tyConDataCons_maybe tycon of
       -- The scrutinee type should have a single dataconstructor,
       -- otherwise we can't construct a valid selector case.
-      Just dcs | i < 0 || i >= length dcs -> error $ "\nCoreTools.mkSelCase: Creating extractor case, but datacon index is invalid." ++ error_msg
+      Just dcs | dc_i < 0 || dc_i >= length dcs -> error $ "\nCoreTools.mkSelCase: Creating extractor case, but datacon index is invalid." ++ error_msg
                | otherwise -> do
         let datacon = (dcs!!dc_i)
         let field_tys = DataCon.dataConInstOrigArgTys datacon  tyargs
