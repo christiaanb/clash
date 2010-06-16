@@ -68,20 +68,17 @@ _ `hwxor` _      = Low
 hwnot High = Low
 hwnot Low  = High
 
-type RAM s a          = Vector (s :+: D1) a
-
-type MemState s a      = State (RAM s a)
+type RAM s a          = Vector s a
+type MemState s a     = State (RAM s a)
 
 blockRAM :: 
-  (NaturalT s
-  ,PositiveT (s :+: D1)
-  ,((s :+: D1) :>: s) ~ True ) =>
-  (MemState s a) -> 
+  PositiveT s  =>
+  MemState s a -> 
   a ->
   Index s ->
   Index s ->
   Bool -> 
-  ((MemState s a), a )
+  (MemState s a, a )
 blockRAM (State mem) data_in rdaddr wraddr wrenable = 
   ((State mem'), data_out)
   where

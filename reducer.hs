@@ -15,7 +15,7 @@ type DiscrSize      = D7
 type AdderDepth     = D12
 
 -- Derived configuration variables
-type DiscrRange     = (Pow2 DiscrSize) :-: D1
+type DiscrRange     = Pow2 DiscrSize
 type AdderDepthPL   = AdderDepth :+: D3
 
 -- =================
@@ -65,8 +65,8 @@ type RippleState =
 
 data BlockRecord = 
   Block { ptrs    ::  (Unsigned D4, Unsigned D4, Unsigned D4)
-        , buf1    ::  MemState AdderDepthPL DataInt
-        , buf2    ::  MemState AdderDepthPL DataInt
+        , buf1    ::  MemState (AdderDepthPL :+: D1) DataInt
+        , buf2    ::  MemState (AdderDepthPL :+: D1) DataInt
         }
 type BlockState = State BlockRecord
 

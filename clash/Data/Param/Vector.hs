@@ -109,16 +109,14 @@ fromVector (Vector xs) = xs
 null :: Vector D0 a -> Bool
 null _ = True
 
-(!) ::  ( PositiveT s
-        , NaturalT u
-        , (s :>: u) ~ True) => Vector s a -> Index u -> a
+(!) :: PositiveT s => Vector s a -> Index s -> a
 (Vector xs) ! i = xs !! (fromInteger (toInteger i))
 
 -- ==========================
 -- = Transforming functions =
 -- ==========================
-replace :: (PositiveT s, NaturalT u, (s :>: u) ~ True) =>
-  Vector s a -> Index u -> a -> Vector s a
+replace :: PositiveT s =>
+  Vector s a -> Index s -> a -> Vector s a
 replace (Vector xs) i y = Vector $ replace' xs (toInteger i) y
   where replace' []     _ _ = []
         replace' (_:xs) 0 y = (y:xs)

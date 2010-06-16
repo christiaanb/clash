@@ -10,4 +10,4 @@ newtype (NaturalT nT) => Signed nT = Signed Integer
 
 newtype (NaturalT nT) => Unsigned nT = Unsigned Integer
 
-newtype (NaturalT upper) => Index upper = Index Integer
+newtype (PositiveT upper) => Index upper = Index Integer
