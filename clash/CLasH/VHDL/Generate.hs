@@ -20,6 +20,7 @@ import qualified IdInfo
 import qualified Literal
 import qualified Name
 import qualified TyCon
+import qualified CoreUtils
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -229,13 +230,13 @@ mkConcSm (bndr, CoreSyn.Cast expr ty) = mkConcSm (bndr, expr)
 -- Simple a = b assignments are just like applications, but without arguments.
 -- We can't just generate an unconditional assignment here, since b might be a
 -- top level binding (e.g., a function with no arguments).
-mkConcSm (bndr, CoreSyn.Var v) =
-  genApplication (Left bndr) v []
+mkConcSm (bndr, CoreSyn.Var v) = do
+  genApplication (Left bndr, Var.varType bndr) v []
 
 mkConcSm (bndr, app@(CoreSyn.App _ _))= do
   let (CoreSyn.Var f, args) = CoreSyn.collectArgs app
   let valargs = get_val_args (Var.varType f) args
-  genApplication (Left bndr) f (map Left valargs)
+  genApplication (Left bndr, Var.varType bndr) f (zip (map Left valargs) (map CoreUtils.exprType valargs))
 
 -- A single alt case must be a selector. This means the scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
@@ -323,8 +324,8 @@ mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let exp
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be expressions.
 genExprArgs wrap dst func args = do
-  args' <- argsToVHDLExprs args
-  wrap dst func args'
+  args' <- argsToVHDLExprs (map fst args)
+  wrap dst func (zip args' (map snd args))
 
 -- | Turn the all lefts into VHDL Expressions.
 argsToVHDLExprs :: [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.Expr]
@@ -353,23 +354,23 @@ genNoInsts wrap dst func args = do
 
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be variables.
-genVarArgs ::
-  (dst -> func -> [Var.Var] -> res)
-  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
-genVarArgs wrap = genCoreArgs $ \dst func args -> let
-    args' = map exprToVar args
-  in
-    wrap dst func args'
+-- genVarArgs ::
+--   (dst -> func -> [Var.Var] -> res)
+--   -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
+-- genVarArgs wrap = genCoreArgs $ \dst func args -> let
+--     args' = map exprToVar args
+--   in
+--     wrap dst func args'
 
 -- | A function to wrap a builder-like function that expects its arguments to
 -- be core expressions.
 genCoreArgs ::
   (dst -> func -> [CoreSyn.CoreExpr] -> res)
-  -> (dst -> func -> [Either CoreSyn.CoreExpr AST.Expr] -> res)
+  -> (dst -> func -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> res)
 genCoreArgs wrap dst func args = wrap dst func args'
   where
     -- Check (rather crudely) that all arguments are CoreExprs
-    args' = case Either.partitionEithers args of 
+    args' = case Either.partitionEithers (map fst args) of 
       (exprargs, []) -> exprargs
       (exprsargs, rest) -> error $ "\nGenerate.genCoreArgs: expect core expression arguments but found ast exprs:" ++ (show rest)
 
@@ -386,23 +387,22 @@ genExprRes wrap dst func args = do
 -- constructor from the AST.Expr type, e.g. AST.And.
 genOperator2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> BuiltinBuilder 
 genOperator2 op = genNoInsts $ genExprArgs $ genExprRes (genOperator2' op)
-genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genOperator2' op _ f [arg1, arg2] = return $ op arg1 arg2
+genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genOperator2' op _ f [(arg1,_), (arg2,_)] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
 genOperator1 :: (AST.Expr -> AST.Expr) -> BuiltinBuilder 
 genOperator1 op = genNoInsts $ genExprArgs $ genExprRes (genOperator1' op)
-genOperator1' :: (AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genOperator1' op _ f [arg] = return $ op arg
+genOperator1' :: (AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genOperator1' op _ f [(arg,_)] = return $ op arg
 
 -- | Generate a unary operator application
 genNegation :: BuiltinBuilder 
-genNegation = genNoInsts $ genVarArgs $ genExprRes genNegation'
-genNegation' :: dst -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession AST.Expr
-genNegation' _ f [arg] = do
-  arg1 <- MonadState.lift tsType $ varToVHDLExpr arg
-  let ty = Var.varType arg
-  let (tycon, args) = Type.splitTyConApp ty
+genNegation = genNoInsts $ genExprRes genNegation'
+genNegation' :: dst -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genNegation' _ f [(arg,argType)] = do
+  [arg1] <-  argsToVHDLExprs [arg]
+  let (tycon, args) = Type.splitTyConApp argType
   let name = Name.getOccString (TyCon.tyConName tycon)
   case name of
     "Signed" -> return $ AST.Neg arg1
@@ -412,19 +412,19 @@ genNegation' _ f [arg] = do
 -- list of expressions (its arguments)
 genFCall :: Bool -> BuiltinBuilder 
 genFCall switch = genNoInsts $ genExprArgs $ genExprRes (genFCall' switch)
-genFCall' :: Bool -> Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
+genFCall' :: Bool -> Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genFCall' switch (Left res) f args = do
   let fname = varToString f
   let el_ty = if switch then (Var.varType res) else ((tfvec_elem . Var.varType) res)
   id <- MonadState.lift tsType $ vectorFunId el_ty fname
   return $ AST.PrimFCall $ AST.FCall (AST.NSimple id)  $
-             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) args
+             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) (map fst args)
 genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
 genFromSizedWord :: BuiltinBuilder
 genFromSizedWord = genNoInsts $ genExprArgs genFromSizedWord'
-genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession [AST.ConcSm]
-genFromSizedWord' (Left res) f args@[arg] =
+genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genFromSizedWord' (Left res) f args@[(arg,_)] =
   return [mkUncondAssign (Left res) arg]
   -- let fname = varToString f
   -- return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toIntegerId))  $
@@ -433,8 +433,8 @@ genFromSizedWord' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cann
 
 genFromRangedWord :: BuiltinBuilder
 genFromRangedWord = genNoInsts $ genExprArgs $ genExprRes genFromRangedWord'
-genFromRangedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genFromRangedWord' (Left res) f [arg] = do {
+genFromRangedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genFromRangedWord' (Left res) f [(arg,_)] = do {
   ; let { ty = Var.varType res
         ; (tycon, args) = Type.splitTyConApp ty
         ; name = Name.getOccString (TyCon.tyConName tycon)
@@ -447,8 +447,8 @@ genFromRangedWord' (Right name) _ _ = error $ "\nGenerate.genFromRangedWord': Ca
 
 genResize :: BuiltinBuilder
 genResize = genNoInsts $ genExprArgs $ genExprRes genResize'
-genResize' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genResize' (Left res) f [arg] = do {
+genResize' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genResize' (Left res) f [(arg,_)] = do {
   ; let { ty = Var.varType res
         ; (tycon, args) = Type.splitTyConApp ty
         ; name = Name.getOccString (TyCon.tyConName tycon)
@@ -463,8 +463,8 @@ genResize' (Right name) _ _ = error $ "\nGenerate.genFromSizedWord': Cannot gene
 
 genTimes :: BuiltinBuilder
 genTimes = genNoInsts $ genExprArgs $ genExprRes genTimes'
-genTimes' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession AST.Expr
-genTimes' (Left res) f [arg1,arg2] = do {
+genTimes' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genTimes' (Left res) f [(arg1,_),(arg2,_)] = do {
   ; let { ty = Var.varType res
         ; (tycon, args) = Type.splitTyConApp ty
         ; name = Name.getOccString (TyCon.tyConName tycon)
@@ -587,13 +587,14 @@ genTFVec (Right name) _ _ = error $ "\nGenerate.genTFVec: Cannot generate TFVec 
 -}
 -- | Generate a generate statement for the builtin function "map"
 genMap :: BuiltinBuilder
-genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
+genMap (Left res) f [(Left mapped_f, _), (Left (CoreSyn.Var arg), _)] = do {
   -- mapped_f must be a CoreExpr (since we can't represent functions as VHDL
   -- expressions). arg must be a CoreExpr (and should be a CoreSyn.Var), since
   -- we must index it (which we couldn't if it was a VHDL Expr, since only
   -- VHDLNames can be indexed).
   -- Setup the generate scheme
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
+  ; let res_type = (tfvec_elem . Var.varType) res
           -- TODO: Use something better than varToString
   ; let { label       = mkVHDLExtId ("mapVector" ++ (varToString res))
         ; n_id        = mkVHDLBasicId "n"
@@ -605,9 +606,9 @@ genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
         ; resname     = mkIndexedName (varToVHDLName res) n_expr
         ; argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
         ; (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs mapped_f
-        ; valargs = get_val_args (Var.varType real_f) already_mapped_args
-        } ;
-  ; (app_concsms, used) <- genApplication (Right resname) real_f (map Left valargs ++ [Right argexpr])
+        ; valargs     = get_val_args (Var.varType real_f) already_mapped_args
+        } ;   
+  ; (app_concsms, used) <- genApplication (Right resname,res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr, (tfvec_elem . Var.varType) arg)])
     -- Return the generate statement
   ; return ([AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms], used)
   }
@@ -615,9 +616,10 @@ genMap (Left res) f [Left mapped_f, Left (CoreSyn.Var arg)] = do {
 genMap' (Right name) _ _ = error $ "\nGenerate.genMap': Cannot generate map function call assigned to a VHDLName: " ++ show name
     
 genZipWith :: BuiltinBuilder
-genZipWith (Left res) f args@[Left zipped_f, Left (CoreSyn.Var arg1), Left (CoreSyn.Var arg2)] = do {
+genZipWith (Left res) f args@[(Left zipped_f, _), (Left (CoreSyn.Var arg1), _), (Left (CoreSyn.Var arg2), _)] = do {
   -- Setup the generate scheme
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
+  ; let res_type = (tfvec_elem . Var.varType) res
           -- TODO: Use something better than varToString
   ; let { label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
         ; n_id        = mkVHDLBasicId "n"
@@ -632,7 +634,7 @@ genZipWith (Left res) f args@[Left zipped_f, Left (CoreSyn.Var arg1), Left (Core
         ; argexpr1    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
         ; argexpr2    = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
         } ;
-  ; (app_concsms, used) <- genApplication (Right resname) real_f (map Left valargs ++ [Right argexpr1, Right argexpr2])
+  ; (app_concsms, used) <- genApplication (Right resname,res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr1, (tfvec_elem . Var.varType) arg1), (Right argexpr2, (tfvec_elem . Var.varType) arg2)])
     -- Return the generate functions
   ; return ([AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms], used)
   }
@@ -644,34 +646,32 @@ genFoldr :: BuiltinBuilder
 genFoldr = genFold False
 
 genFold :: Bool -> BuiltinBuilder
-genFold left = genVarArgs (genFold' left)
+genFold left res f args@[folded_f, start, (vec, vecType)] = do
+  len <- MonadState.lift tsType $ tfp_to_int (tfvec_len_ty vecType)
+  genFold' len left res f args
 
-genFold' :: Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
-genFold' left res f args@[folded_f , start ,vec]= do
-  len <- MonadState.lift tsType $ tfp_to_int (tfvec_len_ty (Var.varType vec))
-  genFold'' len left res f args
-
-genFold'' :: Int -> Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
+genFold' :: Int -> Bool -> BuiltinBuilder
 -- Special case for an empty input vector, just assign start to res
-genFold'' len left (Left res) _ [_, start, vec] | len == 0 = do
-  arg <- MonadState.lift tsType $ varToVHDLExpr start
+genFold' len left (Left res) _ [_, (start, _), vec] | len == 0 = do
+  [arg] <- argsToVHDLExprs [start]
   return ([mkUncondAssign (Left res) arg], [])
     
-genFold'' len left (Left res) f [folded_f, start, vec] = do
+genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecType)] = do
+  [vecExpr] <- argsToVHDLExprs [vec]
   -- The vector length
   --len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vec
   -- An expression for len-1
   let len_min_expr = (AST.PrimLit $ show (len-1))
   -- evec is (TFVec n), so it still needs an element type
-  let (nvec, _) = Type.splitAppTy (Var.varType vec)
+  let (nvec, _) = Type.splitAppTy vecType
   -- Put the type of the start value in nvec, this will be the type of our
   -- temporary vector
-  let tmp_ty = Type.mkAppTy nvec (Var.varType start)
+  let tmp_ty = Type.mkAppTy nvec startType
   let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
   -- TODO: Handle Nothing
   Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
-  let gen_label = mkVHDLExtId ("foldlVector" ++ (varToString vec))
+  let gen_label = mkVHDLExtId ("foldlVector" ++ (show vecExpr))
   let block_label = mkVHDLExtId ("foldlVector" ++ (varToString res))
   let gen_range = if left then AST.ToRange (AST.PrimLit "0") len_min_expr
                   else AST.DownRange len_min_expr (AST.PrimLit "0")
@@ -701,7 +701,9 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
     -- Generate parts of the fold
     genFirstCell, genOtherCell :: TranslatorSession (AST.GenerateSm, [CoreSyn.CoreBndr])
     genFirstCell = do
-      len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vec
+      [AST.PrimName vecName, argexpr1] <- argsToVHDLExprs [vec,start]
+      let res_type = (tfvec_elem . Var.varType) res
+      len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty vecType
       let cond_label = mkVHDLExtId "firstcell"
       -- if n == 0 or n == len-1
       let cond_scheme = AST.IfGn $ n_cur AST.:=: (if left then (AST.PrimLit "0")
@@ -709,19 +711,21 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
       -- Output to tmp[current n]
       let resname = mkIndexedName tmp_name n_cur
       -- Input from start
-      argexpr1 <- MonadState.lift tsType $ varToVHDLExpr start
+      -- argexpr1 <- MonadState.lift tsType $ varToVHDLExpr start
       -- Input from vec[current n]
-      let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName vec) n_cur
-      (app_concsms, used) <- genApplication (Right resname) folded_f  ( if left then
-                                                                  [Right argexpr1, Right argexpr2]
+      let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName vecName n_cur
+      (app_concsms, used) <- genApplication (Right resname,res_type) (exprToVar folded_f)  ( if left then
+                                                                  [(Right argexpr1, startType), (Right argexpr2, tfvec_elem vecType)]
                                                                 else
-                                                                  [Right argexpr2, Right argexpr1]
+                                                                  [(Right argexpr2, tfvec_elem vecType), (Right argexpr1, startType)]
                                                               )
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
     genOtherCell = do
-      len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vec
+      [AST.PrimName vecName] <- argsToVHDLExprs [vec]
+      let res_type = (tfvec_elem . Var.varType) res
+      len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty vecType
       let cond_label = mkVHDLExtId "othercell"
       -- if n > 0 or n < len-1
       let cond_scheme = AST.IfGn $ n_cur AST.:/=: (if left then (AST.PrimLit "0")
@@ -731,23 +735,24 @@ genFold'' len left (Left res) f [folded_f, start, vec] = do
       -- Input from tmp[previous n]
       let argexpr1 = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
       -- Input from vec[current n]
-      let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName vec) n_cur
-      (app_concsms, used) <- genApplication (Right resname) folded_f  ( if left then
-                                                                  [Right argexpr1, Right argexpr2]
+      let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName vecName n_cur
+      (app_concsms, used) <- genApplication (Right resname,res_type) (exprToVar folded_f)  ( if left then
+                                                                  [(Right argexpr1, startType), (Right argexpr2, tfvec_elem vecType)]
                                                                 else
-                                                                  [Right argexpr2, Right argexpr1]
+                                                                  [(Right argexpr2, tfvec_elem vecType), (Right argexpr1, startType)]
                                                               )
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
 -- | Generate a generate statement for the builtin function "zip"
 genZip :: BuiltinBuilder
-genZip = genNoInsts $ genVarArgs genZip'
-genZip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genZip' (Left res) f args@[arg1, arg2] = do {
+genZip = genNoInsts genZip'
+genZip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genZip' (Left res) f args@[(arg1,_), (arg2,_)] = do {
     -- Setup the generate scheme
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genZip: Invalid result type" (tfvec_elem (Var.varType res))
+  ; [AST.PrimName argName1, AST.PrimName argName2] <- argsToVHDLExprs [arg1,arg2] 
           -- TODO: Use something better than varToString
   ; let { label           = mkVHDLExtId ("zipVector" ++ (varToString res))
         ; n_id            = mkVHDLBasicId "n"
@@ -755,8 +760,8 @@ genZip' (Left res) f args@[arg1, arg2] = do {
         ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
         ; genScheme       = AST.ForGn n_id range
         ; resname'        = mkIndexedName (varToVHDLName res) n_expr
-        ; argexpr1        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg1) n_expr
-        ; argexpr2        = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg2) n_expr
+        ; argexpr1        = vhdlNameToVHDLExpr $ mkIndexedName argName1 n_expr
+        ; argexpr2        = vhdlNameToVHDLExpr $ mkIndexedName argName2 n_expr
         ; labels          = getFieldLabels res_htype 0
         }
   ; let { resnameA    = mkSelectedName resname' (labels!!0)
@@ -770,15 +775,15 @@ genZip' (Left res) f args@[arg1, arg2] = do {
   
 -- | Generate a generate statement for the builtin function "fst"
 genFst :: BuiltinBuilder
-genFst = genNoInsts $ genVarArgs genFst'
-genFst' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genFst' (Left res) f args@[arg] = do {
-  ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genFst: Invalid argument type" (Var.varType arg)
+genFst = genNoInsts genFst'
+genFst' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genFst' res f args@[(arg,argType)] = do {
+  ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genFst: Invalid argument type" argType
+  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg] 
   ; let { 
         ; labels      = getFieldLabels arg_htype 0
-        ; argexpr'    = varToVHDLName arg
-        ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (labels!!0)
-        ; assign      = mkUncondAssign (Left res) argexprA
+        ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argExpr (labels!!0)
+        ; assign      = mkUncondAssign res argexprA
         } ;
     -- Return the generate functions
   ; return [assign]
@@ -786,14 +791,14 @@ genFst' (Left res) f args@[arg] = do {
   
 -- | Generate a generate statement for the builtin function "snd"
 genSnd :: BuiltinBuilder
-genSnd = genNoInsts $ genVarArgs genSnd'
-genSnd' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genSnd' (Left res) f args@[arg] = do {
-  ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSnd: Invalid argument type" (Var.varType arg)
+genSnd = genNoInsts genSnd'
+genSnd' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genSnd' (Left res) f args@[(arg,argType)] = do {
+  ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSnd: Invalid argument type" argType
+  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg] 
   ; let { 
         ; labels      = getFieldLabels arg_htype 0
-        ; argexpr'    = varToVHDLName arg
-        ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argexpr' (labels!!1)
+        ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argExpr (labels!!1)
         ; assign      = mkUncondAssign (Left res) argexprB
         } ;
     -- Return the generate functions
@@ -802,11 +807,11 @@ genSnd' (Left res) f args@[arg] = do {
     
 -- | Generate a generate statement for the builtin function "unzip"
 genUnzip :: BuiltinBuilder
-genUnzip = genNoInsts $ genVarArgs genUnzip'
-genUnzip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genUnzip' (Left res) f args@[arg] = do
-  let error_msg = "\nGenerate.genUnzip: Cannot generate unzip call: " ++ pprString res ++ " = " ++ pprString f ++ " " ++ pprString arg
-  htype <- MonadState.lift tsType $ mkHType error_msg (Var.varType arg)
+genUnzip = genNoInsts genUnzip'
+genUnzip' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genUnzip' (Left res) f args@[(arg,argType)] = do
+  let error_msg = "\nGenerate.genUnzip: Cannot generate unzip call: " ++ pprString res ++ " = " ++ pprString f ++ " " ++ show arg
+  htype <- MonadState.lift tsType $ mkHType error_msg argType
   -- Prepare a unconditional assignment, for the case when either part
   -- of the unzip is a state variable, which will disappear in the
   -- resulting VHDL, making the the unzip no longer required.
@@ -814,9 +819,10 @@ genUnzip' (Left res) f args@[arg] = do
     -- A normal vector containing two-tuples
     VecType _ (AggrType _ _ [_, _]) -> do {
         -- Setup the generate scheme
-      ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
-      ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid argument type" (Var.varType arg)
+      ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty argType
+      ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid argument type" argType
       ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid result type" (Var.varType res)
+      ; [AST.PrimName arg'] <- argsToVHDLExprs [arg]
         -- TODO: Use something better than varToString
       ; let { label           = mkVHDLExtId ("unzipVector" ++ (varToString res))
             ; n_id            = mkVHDLBasicId "n"
@@ -824,7 +830,7 @@ genUnzip' (Left res) f args@[arg] = do
             ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
             ; genScheme       = AST.ForGn n_id range
             ; resname'        = varToVHDLName res
-            ; argexpr'        = mkIndexedName (varToVHDLName arg) n_expr
+            ; argexpr'        = mkIndexedName arg' n_expr
             ; reslabels       = getFieldLabels res_htype 0
             ; arglabels       = getFieldLabels arg_htype 0
             } ;
@@ -842,19 +848,19 @@ genUnzip' (Left res) f args@[arg] = do
     -- need to do anything
     VecType _ (AggrType _ _ []) -> return []
     -- A vector containing aggregates with more than two elements?
-    VecType _ (AggrType _ _ _) -> error $ "Unzipping a value that is not a vector of two-tuples? Value: " ++ pprString arg ++ "\nType: " ++ pprString (Var.varType arg)
+    VecType _ (AggrType _ _ _) -> error $ "Unzipping a value that is not a vector of two-tuples? Value: " ++ show arg ++ "\nType: " ++ pprString argType
     -- One of the elements of the tuple was state, so there won't be a
     -- tuple (record) in the VHDL output. We can just do a plain
     -- assignment, then.
     VecType _ _ -> do
-      argexpr <- MonadState.lift tsType $ varToVHDLExpr arg
+      [argexpr] <- argsToVHDLExprs [arg]
       return [mkUncondAssign (Left res) argexpr]
-    _ -> error $ "Unzipping a value that is not a vector? Value: " ++ pprString arg ++ "\nType: " ++ pprString (Var.varType arg) ++ "\nhtype: " ++ show htype
+    _ -> error $ "Unzipping a value that is not a vector? Value: " ++ show arg ++ "\nType: " ++ pprString argType ++ "\nhtype: " ++ show htype
 
 genCopy :: BuiltinBuilder 
 genCopy = genNoInsts genCopy'
-genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [Either CoreSyn.CoreExpr AST.Expr] -> TranslatorSession [AST.ConcSm]
-genCopy' (Left res) f [arg] = do {
+genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genCopy' (Left res) f [(arg,argType)] = do {
   ; [arg'] <- argsToVHDLExprs [arg]
   ; let { resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) arg']
         ; out_assign = mkUncondAssign (Left res) resExpr
@@ -863,13 +869,14 @@ genCopy' (Left res) f [arg] = do {
   }
     
 genConcat :: BuiltinBuilder
-genConcat = genNoInsts $ genVarArgs genConcat'
-genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genConcat' (Left res) f args@[arg] = do {
+genConcat = genNoInsts genConcat'
+genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genConcat' (Left res) f args@[(arg,argType)] = do {
     -- Setup the generate scheme
-  ; len1 <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) arg
-  ; let (_, nvec) = Type.splitAppTy (Var.varType arg)
+  ; len1 <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty argType
+  ; let (_, nvec) = Type.splitAppTy argType
   ; len2 <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty nvec
+  ; [AST.PrimName argName] <- argsToVHDLExprs [arg]
           -- TODO: Use something better than varToString
   ; let { label       = mkVHDLExtId ("concatVector" ++ (varToString res))
         ; n_id        = mkVHDLBasicId "n"
@@ -881,7 +888,7 @@ genConcat' (Left res) f args@[arg] = do {
         ; toRange     = (n_expr AST.:*: (AST.PrimLit $ show len2)) AST.:+: (AST.PrimLit $ show (len2-1))
         ; range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len1-1))
         ; resname     = vecSlice fromRange toRange
-        ; argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
+        ; argexpr     = vhdlNameToVHDLExpr $ mkIndexedName argName n_expr
         ; out_assign  = mkUncondAssign (Right resname) argexpr
         } ;
     -- Return the generate statement
@@ -904,18 +911,15 @@ genGenerate :: BuiltinBuilder
 genGenerate = genIterateOrGenerate False
 
 genIterateOrGenerate :: Bool -> BuiltinBuilder
-genIterateOrGenerate iter = genVarArgs (genIterateOrGenerate' iter)
-
-genIterateOrGenerate' :: Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
-genIterateOrGenerate' iter (Left res) f args = do
+genIterateOrGenerate iter (Left res) f args = do
   len <- MonadState.lift tsType $ tfp_to_int ((tfvec_len_ty . Var.varType) res)
-  genIterateOrGenerate'' len iter (Left res) f args
+  genIterateOrGenerate' len iter (Left res) f args
 
-genIterateOrGenerate'' :: Int -> Bool -> (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
+genIterateOrGenerate' :: Int -> Bool -> BuiltinBuilder
 -- Special case for an empty input vector, just assign start to res
-genIterateOrGenerate'' len iter (Left res) _ [app_f, start] | len == 0 = return ([mkUncondAssign (Left res) (AST.PrimLit "\"\"")], [])
+genIterateOrGenerate' len iter (Left res) _ [app_f, start] | len == 0 = return ([mkUncondAssign (Left res) (AST.PrimLit "\"\"")], [])
 
-genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
+genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] = do
   -- The vector length
   -- len <- MonadState.lift tsType $ tfp_to_int ((tfvec_len_ty . Var.varType) res)
   -- An expression for len-1
@@ -929,7 +933,8 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
   -- TODO: Handle Nothing
   Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
-  let gen_label = mkVHDLExtId ("iterateVector" ++ (varToString start))
+  [startExpr] <- argsToVHDLExprs [start]
+  let gen_label = mkVHDLExtId ("iterateVector" ++ (show startExpr))
   let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
   let gen_range = AST.ToRange (AST.PrimLit "0") len_min_expr
   let gen_scheme   = AST.ForGn n_id gen_range
@@ -955,15 +960,16 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
     -- Generate parts of the fold
     genFirstCell, genOtherCell :: TranslatorSession (AST.GenerateSm, [CoreSyn.CoreBndr])
     genFirstCell = do
+      let res_type = (tfvec_elem . Var.varType) res
       let cond_label = mkVHDLExtId "firstcell"
       -- if n == 0 or n == len-1
       let cond_scheme = AST.IfGn $ n_cur AST.:=: (AST.PrimLit "0")
       -- Output to tmp[current n]
       let resname = mkIndexedName tmp_name n_cur
       -- Input from start
-      argexpr <- MonadState.lift tsType $ varToVHDLExpr start
+      [argexpr] <- argsToVHDLExprs [start]
       let startassign = mkUncondAssign (Right resname) argexpr
-      (app_concsms, used) <- genApplication (Right resname) app_f  [Right argexpr]
+      (app_concsms, used) <- genApplication (Right resname, res_type) (exprToVar app_f)  [(Right argexpr, startType)]
       -- Return the conditional generate part
       let gensm = AST.GenerateSm cond_label cond_scheme [] (if iter then 
                                                           [startassign]
@@ -973,6 +979,7 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
       return (gensm, used)
 
     genOtherCell = do
+      let res_type = (tfvec_elem . Var.varType) res
       let cond_label = mkVHDLExtId "othercell"
       -- if n > 0 or n < len-1
       let cond_scheme = AST.IfGn $ n_cur AST.:/=: (AST.PrimLit "0")
@@ -980,14 +987,14 @@ genIterateOrGenerate'' len iter (Left res) f [app_f, start] = do
       let resname = mkIndexedName tmp_name n_cur
       -- Input from tmp[previous n]
       let argexpr = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
-      (app_concsms, used) <- genApplication (Right resname) app_f [Right argexpr]
+      (app_concsms, used) <- genApplication (Right resname, res_type) (exprToVar app_f) [(Right argexpr, res_type)]
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
 genBlockRAM :: BuiltinBuilder
 genBlockRAM = genNoInsts $ genExprArgs genBlockRAM'
 
-genBlockRAM' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [AST.Expr] -> TranslatorSession [AST.ConcSm]
+genBlockRAM' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(AST.Expr,Type.Type)] -> TranslatorSession [AST.ConcSm]
 genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   -- Get the ram type
   let (tup,data_out) = Type.splitAppTy (Var.varType res)
@@ -1001,7 +1008,7 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   -- reslabels <- MonadState.lift tsType $ getFieldLabels (Var.varType res)
   let resname = varToVHDLName res
   -- let resname = mkSelectedName resname' (reslabels!!0)
-  let rdaddr_int = genExprFCall (mkVHDLBasicId toIntegerId) rdaddr
+  let rdaddr_int = genExprFCall (mkVHDLBasicId toIntegerId) $ fst rdaddr
   let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr_int
   let assign = mkUncondAssign (Right resname) argexpr
   let block_label = mkVHDLExtId ("blockRAM" ++ (varToString res))
@@ -1014,23 +1021,24 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
       where
         proclabel   = mkVHDLBasicId "updateRAM"
         rising_edge = mkVHDLBasicId "rising_edge"
-        wraddr_int  = genExprFCall (mkVHDLBasicId toIntegerId) wraddr
+        wraddr_int  = genExprFCall (mkVHDLBasicId toIntegerId) $ fst wraddr
         ramloc      = mkIndexedName (AST.NSimple ram_id) wraddr_int
-        wform       = AST.Wform [AST.WformElem data_in Nothing]
+        wform       = AST.Wform [AST.WformElem (fst data_in) Nothing]
         ramassign      = AST.SigAssign ramloc wform
         rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
-        statement   = AST.IfSm (AST.And rising_edge_clk wrenable) [ramassign] [] Nothing
+        statement   = AST.IfSm (AST.And rising_edge_clk $ fst wrenable) [ramassign] [] Nothing
         
 genSplit :: BuiltinBuilder
-genSplit = genNoInsts $ genVarArgs genSplit'
+genSplit = genNoInsts genSplit'
 
-genSplit' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [Var.Var] -> TranslatorSession [AST.ConcSm]
-genSplit' (Left res) f args@[vecIn] = do {
-  ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) vecIn
+genSplit' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
+  ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty vecInType
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSplit': Invalid result type" (Var.varType res)
+  ; [argExpr] <- argsToVHDLExprs [vecIn]
   ; let { 
         ; labels    = getFieldLabels res_htype 0
-        ; block_label = mkVHDLExtId ("split" ++ (varToString vecIn))
+        ; block_label = mkVHDLExtId ("split" ++ show argExpr)
         ; halflen   = round ((fromIntegral len) / 2)
         ; rangeL    = vecSlice (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
         ; rangeR    = vecSlice (AST.PrimLit $ show halflen) (AST.PrimLit $ show (len - 1))
@@ -1612,7 +1620,7 @@ genUnconsVectorFuns elemTM vectorTM  =
 type BuiltinBuilder = 
   (Either CoreSyn.CoreBndr AST.VHDLName) -- ^ The destination signal and it's original type
   -> CoreSyn.CoreBndr -- ^ The function called
-  -> [Either CoreSyn.CoreExpr AST.Expr] -- ^ The value arguments passed (excluding type and
+  -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -- ^ The value arguments passed (excluding type and
                     --   dictionary arguments).
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
   -- ^ The corresponding VHDL concurrent statements and entities
