@@ -714,11 +714,13 @@ genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecTy
       -- argexpr1 <- MonadState.lift tsType $ varToVHDLExpr start
       -- Input from vec[current n]
       let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName vecName n_cur
-      (app_concsms, used) <- genApplication (Right resname,res_type) (exprToVar folded_f)  ( if left then
+      let (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs folded_f
+      let valargs     = get_val_args (Var.varType real_f) already_mapped_args
+      (app_concsms, used) <- genApplication (Right resname,res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ ( if left then
                                                                   [(Right argexpr1, startType), (Right argexpr2, tfvec_elem vecType)]
                                                                 else
                                                                   [(Right argexpr2, tfvec_elem vecType), (Right argexpr1, startType)]
-                                                              )
+                                                              ))
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
@@ -736,11 +738,13 @@ genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecTy
       let argexpr1 = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
       -- Input from vec[current n]
       let argexpr2 = vhdlNameToVHDLExpr $ mkIndexedName vecName n_cur
-      (app_concsms, used) <- genApplication (Right resname,res_type) (exprToVar folded_f)  ( if left then
+      let (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs folded_f
+      let valargs     = get_val_args (Var.varType real_f) already_mapped_args
+      (app_concsms, used) <- genApplication (Right resname,res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++  ( if left then
                                                                   [(Right argexpr1, startType), (Right argexpr2, tfvec_elem vecType)]
                                                                 else
                                                                   [(Right argexpr2, tfvec_elem vecType), (Right argexpr1, startType)]
-                                                              )
+                                                              ))
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
@@ -969,7 +973,9 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
       -- Input from start
       [argexpr] <- argsToVHDLExprs [start]
       let startassign = mkUncondAssign (Right resname) argexpr
-      (app_concsms, used) <- genApplication (Right resname, res_type) (exprToVar app_f)  [(Right argexpr, startType)]
+      let (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs app_f
+      let valargs     = get_val_args (Var.varType real_f) already_mapped_args
+      (app_concsms, used) <- genApplication (Right resname, res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr, startType)])
       -- Return the conditional generate part
       let gensm = AST.GenerateSm cond_label cond_scheme [] (if iter then 
                                                           [startassign]
@@ -987,7 +993,9 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
       let resname = mkIndexedName tmp_name n_cur
       -- Input from tmp[previous n]
       let argexpr = vhdlNameToVHDLExpr $ mkIndexedName tmp_name n_prev
-      (app_concsms, used) <- genApplication (Right resname, res_type) (exprToVar app_f) [(Right argexpr, res_type)]
+      let (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs app_f
+      let valargs     = get_val_args (Var.varType real_f) already_mapped_args
+      (app_concsms, used) <- genApplication (Right resname, res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr, res_type)])
       -- Return the conditional generate part
       return (AST.GenerateSm cond_label cond_scheme [] app_concsms, used)
 
