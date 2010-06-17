@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, FlexibleContexts, TypeFamilies, TypeOperators #-}
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable #-}
 
 module CLasH.HardwareTypes
   ( module Types
@@ -9,8 +9,6 @@ module CLasH.HardwareTypes
   , module Prelude
   , Bit(..)
   , State(..)
-  , resizeInt
-  , resizeWord
   , hwand
   , hwor
   , hwxor
@@ -21,31 +19,21 @@ module CLasH.HardwareTypes
   ) where
 
 import qualified Prelude as P
-import Prelude hiding (
-  null, length, head, tail, last, init, take, drop, (++), map, foldl, foldr,
-  zipWith, zip, unzip, concat, reverse, iterate )
+import Prelude (Bool(..),Num(..),Eq(..),Ord(..),snd,fst,otherwise,(&&),(||),not)
 import Types
 import Data.Param.Vector
 import Data.Param.Index
-import qualified Data.Param.Signed as Signed
-import Data.Param.Signed hiding (resize)
-import qualified Data.Param.Unsigned as Unsigned
-import Data.Param.Unsigned hiding (resize) 
+import Data.Param.Signed
+import Data.Param.Unsigned 
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
 
 newtype State s = State s deriving (P.Show)
 
-resizeInt :: (NaturalT nT, NaturalT nT') => Signed nT -> Signed nT'
-resizeInt = Signed.resize
-
-resizeWord :: (NaturalT nT, NaturalT nT') => Unsigned nT -> Unsigned nT'
-resizeWord = Unsigned.resize
-
 -- The plain Bit type
 data Bit = High | Low
-  deriving (P.Show, P.Eq, P.Read, Typeable)
+  deriving (P.Show, Eq, P.Read, Typeable)
 
 deriveLift ''Bit
 

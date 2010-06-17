@@ -155,11 +155,11 @@ dropId = "drop"
 
 -- | shiftl function identifier
 shiftlId :: String
-shiftlId = "shiftl"
+shiftlId = "shiftIntoL"
 
 -- | shiftr function identifier
 shiftrId :: String
-shiftrId = "shiftr"
+shiftrId = "shiftIntoR"
 
 -- | rotl function identifier
 rotlId :: String

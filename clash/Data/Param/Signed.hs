@@ -1,7 +1,7 @@
 {-# LANGUAGE  TypeFamilies, TypeOperators, ScopedTypeVariables, FlexibleInstances, TemplateHaskell, Rank2Types, FlexibleContexts #-}
 module Data.Param.Signed
   ( Signed
-  , resize
+  , resizeSigned
   ) where
 
 import Language.Haskell.TH
@@ -18,8 +18,8 @@ instance NaturalT nT => Lift (Signed nT) where
 decSignedT :: Integer -> Q Type
 decSignedT n = appT (conT (''Signed)) (decLiteralT n)
 
-resize :: (NaturalT nT, NaturalT nT') => Signed nT -> Signed nT'
-resize a = fromInteger (toInteger a)
+resizeSigned :: (NaturalT nT, NaturalT nT') => Signed nT -> Signed nT'
+resizeSigned a = fromInteger (toInteger a)
 
 sizeT :: Signed nT
       -> nT

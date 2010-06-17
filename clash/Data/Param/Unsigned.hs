@@ -1,7 +1,7 @@
 {-# LANGUAGE  TypeFamilies, TypeOperators, ScopedTypeVariables, FlexibleInstances, TemplateHaskell, Rank2Types, FlexibleContexts #-}
 module Data.Param.Unsigned
     ( Unsigned
-    , resize
+    , resizeUnsigned
     , fromIndex
     ) where
 
@@ -27,8 +27,8 @@ fromIndex ::
   ) => Index nT -> Unsigned nT'
 fromIndex index = Unsigned (toInteger index)
 
-resize :: (NaturalT nT, NaturalT nT') => Unsigned nT -> Unsigned nT'
-resize a = fromInteger (toInteger a)
+resizeUnsigned :: (NaturalT nT, NaturalT nT') => Unsigned nT -> Unsigned nT'
+resizeUnsigned a = fromInteger (toInteger a)
 
 sizeT :: Unsigned nT
       -> nT

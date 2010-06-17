@@ -28,8 +28,8 @@ module Data.Param.Vector
   , foldr
   , zip
   , unzip
-  , shiftl
-  , shiftr
+  , shiftIntoL
+  , shiftIntoR
   , rotl
   , rotr
   , concat
@@ -179,13 +179,13 @@ zip = liftV2 P.zip
 unzip :: Vector s (a, b) -> (Vector s a, Vector s b)
 unzip (Vector xs) = let (a,b) = P.unzip xs in (Vector a, Vector b)
 
-shiftl :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
-          Vector s a -> a -> Vector s a
-shiftl xs x = x +> init xs
+shiftIntoL :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
+              Vector s a -> a -> Vector s a
+shiftIntoL xs x = x +> init xs
 
-shiftr :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
-          Vector s a -> a -> Vector s a
-shiftr xs x = tail xs <+ x
+shiftIntoR :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
+              Vector s a -> a -> Vector s a
+shiftIntoR xs x = tail xs <+ x
   
 rotl :: forall s a . NaturalT s => Vector s a -> Vector s a
 rotl = liftV rotl'
