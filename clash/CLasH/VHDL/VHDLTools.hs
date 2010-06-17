@@ -346,7 +346,8 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                   return $ Right $ SizedIType len
                 "Index" -> do
                   bound <- tfp_to_int (ranged_word_bound_ty ty)
-                  return $ Right $ RangedWType bound
+                  -- Upperbound is exclusive, hence the -1
+                  return $ Right $ RangedWType (bound - 1)
                 otherwise ->
                   mkTyConHType tycon args
     Nothing -> return $ Left $ "\nVHDLTools.mkHTypeEither': Do not know what to do with type: " ++ pprString ty
