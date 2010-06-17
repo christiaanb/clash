@@ -1060,13 +1060,13 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
 genApplication ::
-  (Either CoreSyn.CoreBndr AST.VHDLName) -- ^ Where to store the result?
+  (Either CoreSyn.CoreBndr AST.VHDLName, Type.Type) -- ^ Where to store the result?
   -> CoreSyn.CoreBndr -- ^ The function to apply
-  -> [Either CoreSyn.CoreExpr AST.Expr] -- ^ The arguments to apply
+  -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -- ^ The arguments to apply
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
-genApplication dst f args = do
+genApplication (dst, dsttype) f args = do
   nonemptydst <- case dst of
     Left bndr -> hasNonEmptyType bndr 
     Right _ -> return True
@@ -1074,13 +1074,13 @@ genApplication dst f args = do
     then
       if Var.isGlobalId f then
         case Var.idDetails f of
-          IdInfo.DataConWorkId dc -> case dst of
+          IdInfo.DataConWorkId dc -> do -- case dst of
             -- It's a datacon. Create a record from its arguments.
-            Left bndr -> do
+            --Left bndr -> do
               -- We have the bndr, so we can get at the type
-              htype_either <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
-              let argsNoState = filter (\x -> not (either hasStateType (\x -> False) x)) args
-              let dcs = datacons_for bndr
+              htype_either <- MonadState.lift tsType $ mkHTypeEither dsttype
+              let argsNoState = filter (\x -> not (either hasStateType (\x -> False) x)) (map fst args)
+              let dcs = datacons_for dsttype
               case (dcs, argsNoState) of
                 -- This is a type with a single datacon and a single
                 -- argument, so no record is created (the type of the
@@ -1091,7 +1091,7 @@ genApplication dst f args = do
                 -- In all other cases, a record type is created.
                 _ -> case htype_either of
                   Right htype@(AggrType _ _ _) -> do
-                    let dc_i = datacon_index (Var.varType bndr) dc
+                    let dc_i = datacon_index dsttype dc
                     let labels = getFieldLabels htype dc_i
                     arg_exprs <- argsToVHDLExprs argsNoState
                     let (final_labels, final_exprs) = case getConstructorFieldLabel htype of
@@ -1125,8 +1125,10 @@ genApplication dst f args = do
                     simple_assign = do
                       expr <- MonadState.lift tsType $ dataconToVHDLExpr dc
                       return ([mkUncondAssign dst expr], [])
-
-            Right _ -> error "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder"
+            -- 
+            -- Right _ -> do
+            --   let dcs = datacons_for dsttype
+            --   error $ "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder" ++ show dcs
           IdInfo.DataConWrapId dc -> case dst of
             -- It's a datacon. Create a record from its arguments.
             Left bndr ->
@@ -1157,7 +1159,7 @@ genApplication dst f args = do
                     -- Local binder that references a top level binding.  Generate a
                     -- component instantiation.
                     signature <- getEntity f
-                    args' <- argsToVHDLExprs args
+                    args' <- argsToVHDLExprs (map fst args)
                     let entity_id = ent_id signature
                     -- TODO: Using show here isn't really pretty, but we'll need some
                     -- unique-ish value...
@@ -1196,7 +1198,7 @@ genApplication dst f args = do
                -- Local binder that references a top level binding.  Generate a
                -- component instantiation.
                signature <- getEntity f
-               args' <- argsToVHDLExprs args
+               args' <- argsToVHDLExprs (map fst args)
                let entity_id = ent_id signature
                -- TODO: Using show here isn't really pretty, but we'll need some
                -- unique-ish value...
