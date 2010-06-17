@@ -1064,6 +1064,21 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   where
     vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res) 
                             (AST.ToRange init last))
+                            
+genSll :: BuiltinBuilder
+genSll = genNoInsts $ genExprArgs $ genExprRes genSll'
+genSll' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genSll' res f [(arg1,_),(arg2,_)] = do {
+  ; return $ (AST.Sll arg1 (genExprFCall (mkVHDLBasicId toIntegerId) arg2))
+  }
+
+genSra :: BuiltinBuilder
+genSra = genNoInsts $ genExprArgs $ genExprRes genSra'
+genSra' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genSra' res f [(arg1,_),(arg2,_)] = do {
+  ; return $ (AST.Sra arg1 (genExprFCall (mkVHDLBasicId toIntegerId) arg2))
+  }
+
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -1275,8 +1290,8 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (ltplusId, (AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet],[]))  
   , (plusplusId, (AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet],[]))
   , (lengthTId, (AST.SubProgBody lengthTSpec [] [lengthTExpr],[]))
-  , (shiftlId, (AST.SubProgBody shiftlSpec [AST.SPVD shiftlVar] [shiftlExpr, shiftlRet], [initId]))
-  , (shiftrId, (AST.SubProgBody shiftrSpec [AST.SPVD shiftrVar] [shiftrExpr, shiftrRet], [tailId]))
+  , (shiftIntoLId, (AST.SubProgBody shiftlSpec [AST.SPVD shiftlVar] [shiftlExpr, shiftlRet], [initId]))
+  , (shiftIntoRId, (AST.SubProgBody shiftrSpec [AST.SPVD shiftrVar] [shiftrExpr, shiftrRet], [tailId]))
   , (nullId, (AST.SubProgBody nullSpec [] [nullExpr], []))
   , (rotlId, (AST.SubProgBody rotlSpec [AST.SPVD rotlVar] [rotlExpr, rotlRet], [nullId, lastId, initId]))
   , (rotrId, (AST.SubProgBody rotrSpec [AST.SPVD rotrVar] [rotrExpr, rotrRet], [nullId, tailId, headId]))
@@ -1504,7 +1519,7 @@ genUnconsVectorFuns elemTM vectorTM  =
     lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
     lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))
-    shiftlSpec = AST.Function (mkVHDLExtId shiftlId) [AST.IfaceVarDec vecPar vectorTM,
+    shiftlSpec = AST.Function (mkVHDLExtId shiftIntoLId) [AST.IfaceVarDec vecPar vectorTM,
                                    AST.IfaceVarDec aPar   elemTM  ] vectorTM 
     -- variable res : fsvec_x (0 to vec'length-1);
     shiftlVar = 
@@ -1522,7 +1537,7 @@ genUnconsVectorFuns elemTM vectorTM  =
                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))  
                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
     shiftlRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)       
-    shiftrSpec = AST.Function (mkVHDLExtId shiftrId) [AST.IfaceVarDec vecPar vectorTM,
+    shiftrSpec = AST.Function (mkVHDLExtId shiftIntoRId) [AST.IfaceVarDec vecPar vectorTM,
                                        AST.IfaceVarDec aPar   elemTM  ] vectorTM 
     -- variable res : fsvec_x (0 to vec'length-1);
     shiftrVar = 
@@ -1662,8 +1677,8 @@ globalNameTable = Map.fromList
   , (foldrId          , (3, genFoldr                ) )
   , (zipId            , (2, genZip                  ) )
   , (unzipId          , (1, genUnzip                ) )
-  , (shiftlId         , (2, genFCall False          ) )
-  , (shiftrId         , (2, genFCall False          ) )
+  , (shiftIntoLId     , (2, genFCall False          ) )
+  , (shiftIntoRId     , (2, genFCall False          ) )
   , (rotlId           , (1, genFCall False          ) )
   , (rotrId           , (1, genFCall False          ) )
   , (concatId         , (1, genConcat               ) )
@@ -1706,6 +1721,9 @@ globalNameTable = Map.fromList
   , (sndId            , (1, genSnd                  ) )
   , (blockRAMId       , (5, genBlockRAM             ) )
   , (splitId          , (1, genSplit                ) )
+  , (xorId            , (2, genOperator2 AST.Xor    ) )
+  , (shiftLId         , (2, genSll                  ) )
+  , (shiftRId         , (2, genSra                  ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

@@ -8,14 +8,14 @@ import qualified Language.VHDL.AST as AST
 -- circular dependencie.
 builtinIds = [ exId, replaceId, headId, lastId, tailId, initId, takeId, dropId
              , selId, plusgtId, ltplusId, plusplusId, mapId, zipWithId, foldlId
-             , foldrId, zipId, unzipId, shiftlId, shiftrId, rotlId, rotrId
+             , foldrId, zipId, unzipId, shiftIntoLId, shiftIntoRId, rotlId, rotrId
              , concatId, reverseId, iteratenId, iterateId, generatenId, generateId
              , emptyId, singletonId, copynId, copyId, lengthTId, nullId
              , hwxorId, hwandId, hworId, hwnotId, equalityId, inEqualityId, ltId
              , lteqId, gtId, gteqId, boolOrId, boolAndId, plusId, timesId
              , negateId, minusId, fromSizedWordId, fromIntegerId, resizeWordId
              , resizeIntId, sizedIntId, smallIntegerId, fstId, sndId, blockRAMId
-             , splitId, minimumId, fromRangedWordId 
+             , splitId, minimumId, fromRangedWordId, xorId, shiftLId , shiftRId
              ]
 --------------
 -- Identifiers
@@ -154,12 +154,12 @@ dropId :: String
 dropId = "drop"
 
 -- | shiftl function identifier
-shiftlId :: String
-shiftlId = "shiftIntoL"
+shiftIntoLId :: String
+shiftIntoLId = "shiftIntoL"
 
 -- | shiftr function identifier
-shiftrId :: String
-shiftrId = "shiftIntoR"
+shiftIntoRId :: String
+shiftIntoRId = "shiftIntoR"
 
 -- | rotl function identifier
 rotlId :: String
@@ -240,6 +240,15 @@ hwnotId = "hwnot"
 -- | hwand function identifier
 hwandId :: String
 hwandId = "hwand"
+
+xorId :: String
+xorId = "xor"
+
+shiftLId :: String
+shiftLId = "shiftL"
+
+shiftRId :: String
+shiftRId = "shiftR"
 
 lengthTId :: String
 lengthTId = "lengthT"

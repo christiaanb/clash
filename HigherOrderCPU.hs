@@ -18,9 +18,9 @@ fu1 = fu (+)
 fu2 = fu (-)
 fu3 = fu (*)
 
-data Opcode = Shift | Xor | Equal
+data Opcode = ShiftL | Xor | Equal
 
-multiop Shift   = shift
+multiop ShiftL  = shiftL
 multiop Xor     = xor
 multiop Equal   = \a b -> if a == b then 1 else 0
 
@@ -40,16 +40,5 @@ cpu (State s) (x,opc,addrs) = (State s', out)
               (fu3     inputs (addrs!3)) +> empty)))
     out     = last s
 
-
-
-
-
-
-
--- Some minor details
 cpuState :: Vector D4 (Signed D16)
 cpuState = copy 0
-
-const a b = a
-xor = const
-shift = const

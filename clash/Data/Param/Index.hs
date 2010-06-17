@@ -8,7 +8,7 @@ module Data.Param.Index
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Lift(..))    
-import Data.Bits
+import qualified Data.Bits as B
 import Types
 import Types.Data.Num.Decimal.Literals.TH
 

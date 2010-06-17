@@ -7,7 +7,7 @@ module Data.Param.Unsigned
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Lift(..))
-import Data.Bits
+import qualified Data.Bits as B
 import Types
 import Types.Data.Num.Decimal.Literals.TH
 
@@ -37,7 +37,7 @@ sizeT _ = undefined
 mask :: forall nT . NaturalT nT
      => nT
      -> Integer
-mask _ = bit (fromIntegerT (undefined :: nT)) - 1
+mask _ = B.bit (fromIntegerT (undefined :: nT)) - 1
 
 instance NaturalT nT => Eq (Unsigned nT) where
     (Unsigned x) == (Unsigned y) = x == y
@@ -57,7 +57,7 @@ instance NaturalT nT => Ord (Unsigned nT) where
 
 instance NaturalT nT => Bounded (Unsigned nT) where
     minBound = 0
-    maxBound = Unsigned $ (1 `shiftL` (fromIntegerT (undefined :: nT))) - 1
+    maxBound = Unsigned $ (1 `B.shiftL` (fromIntegerT (undefined :: nT))) - 1
 
 instance NaturalT nT => Enum (Unsigned nT) where
     succ x
@@ -88,13 +88,13 @@ instance NaturalT nT => Num (Unsigned nT) where
     (Unsigned a) * (Unsigned b) =
         fromInteger $ a * b
     negate s@(Unsigned n) =
-        fromInteger $ (n `xor` mask (sizeT s)) + 1
+        fromInteger $ (n `B.xor` mask (sizeT s)) + 1
     a - b =
         a + (negate b)
 
     fromInteger n
       | n > 0 =
-        Unsigned $ n .&. mask (undefined :: nT)
+        Unsigned $ n B..&. mask (undefined :: nT)
     fromInteger n
       | n < 0 =
         negate $ fromInteger $ negate n
@@ -128,30 +128,34 @@ instance NaturalT nT => Integral (Unsigned nT) where
         in (fromInteger div, fromInteger mod)
     toInteger s@(Unsigned x) = x
 
-instance NaturalT nT => Bits (Unsigned nT) where
-    (Unsigned a) .&. (Unsigned b) = Unsigned $ a .&. b
-    (Unsigned a) .|. (Unsigned b) = Unsigned $ a .|. b
-    (Unsigned a) `xor` Unsigned b = Unsigned $ a `xor` b
-    complement (Unsigned x) = Unsigned $ x `xor` mask (undefined :: nT)
+instance NaturalT nT => B.Bits (Unsigned nT) where
+    (Unsigned a) .&. (Unsigned b) = Unsigned $ a B..&. b
+    (Unsigned a) .|. (Unsigned b) = Unsigned $ a B..|. b
+    (Unsigned a) `xor` Unsigned b = Unsigned $ a `B.xor` b
+    complement (Unsigned x) = Unsigned $ x `B.xor` mask (undefined :: nT)
     s@(Unsigned x) `shiftL` b
-      | b < 0 = error $ "Bits.shiftL{Unsigned " ++ show (bitSize s) ++ "}: tried to shift by negative amount"
+      | b < 0 = error $ "Bits.shiftL{Unsigned " ++ show (B.bitSize s) ++ "}: tried to shift by negative amount"
       | otherwise =
-        Unsigned $ mask (undefined :: nT) .&. (x `shiftL` b)
+        Unsigned $ mask (undefined :: nT) B..&. (x `B.shiftL` b)
     s@(Unsigned x) `shiftR` b
-      | b < 0 = error $ "Bits.shiftR{Unsigned " ++ show (bitSize s) ++ "}: tried to shift by negative amount"
+      | b < 0 = error $ "Bits.shiftR{Unsigned " ++ show (B.bitSize s) ++ "}: tried to shift by negative amount"
       | otherwise =
-        Unsigned $ (x `shiftR` b)
+        Unsigned $ (x `B.shiftR` b)
     s@(Unsigned x) `rotateL` b
       | b < 0 =
-        error $ "Bits.rotateL{Unsigned " ++ show (bitSize s) ++ "}: tried to rotate by negative amount"
+        error $ "Bits.rotateL{Unsigned " ++ show (B.bitSize s) ++ "}: tried to rotate by negative amount"
       | otherwise =
-        Unsigned $ mask (undefined :: nT) .&.
-            ((x `shiftL` b) .|. (x `shiftR` (bitSize s - b)))
+        Unsigned $ mask (undefined :: nT) B..&.
+            ((x `B.shiftL` b) B..|. (x `B.shiftR` (B.bitSize s - b)))
     s@(Unsigned x) `rotateR` b
       | b < 0 =
-        error $ "Bits.rotateR{Unsigned " ++ show (bitSize s) ++ "}: tried to rotate by negative amount"
+        error $ "Bits.rotateR{Unsigned " ++ show (B.bitSize s) ++ "}: tried to rotate by negative amount"
       | otherwise =
-        Unsigned $ mask (undefined :: nT) .&.
-            ((x `shiftR` b) .|. (x `shiftL` (bitSize s - b)))
+        Unsigned $ mask (undefined :: nT) B..&.
+            ((x `B.shiftR` b) B..|. (x `B.shiftL` (B.bitSize s - b)))
     bitSize _ = fromIntegerT (undefined :: nT)
     isSigned _ = False
+
+instance NaturalT nT => HWBits (Unsigned nT) where
+  a `shiftL` b = a `B.shiftL` (fromInteger (toInteger b))
+  a `shiftR` b = a `B.shiftR` (fromInteger (toInteger b))

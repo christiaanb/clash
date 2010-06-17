@@ -6,7 +6,7 @@ module Data.Param.Signed
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Lift(..))
-import Data.Bits
+import qualified Data.Bits as B
 import Types
 import Types.Data.Num.Decimal.Literals.TH
 
@@ -28,7 +28,7 @@ sizeT _ = undefined
 mask :: forall nT . NaturalT nT
      => nT
      -> Integer
-mask _ = bit (fromIntegerT (undefined :: nT)) - 1
+mask _ = B.bit (fromIntegerT (undefined :: nT)) - 1
 
 signBit :: forall nT . NaturalT nT
         => nT
@@ -39,7 +39,7 @@ isNegative :: forall nT . NaturalT nT
            => Signed nT
            -> Bool
 isNegative (Signed x) =
-    testBit x $ signBit (undefined :: nT)
+    B.testBit x $ signBit (undefined :: nT)
 
 instance NaturalT nT => Eq (Signed nT) where
     (Signed x) == (Signed y) = x == y
@@ -58,8 +58,8 @@ instance NaturalT nT => Ord (Signed nT) where
     a `compare` b = toInteger a `compare` toInteger b
 
 instance NaturalT nT => Bounded (Signed nT) where
-    minBound = Signed $ negate $ 1 `shiftL` (fromIntegerT (undefined :: nT) - 1)
-    maxBound = Signed $ (1 `shiftL` (fromIntegerT (undefined :: nT) - 1)) - 1
+    minBound = Signed $ negate $ 1 `B.shiftL` (fromIntegerT (undefined :: nT) - 1)
+    maxBound = Signed $ (1 `B.shiftL` (fromIntegerT (undefined :: nT) - 1)) - 1
 
 instance NaturalT nT => Enum (Signed nT) where
     succ x
@@ -91,13 +91,13 @@ instance NaturalT nT => Num (Signed nT) where
     (Signed a) * (Signed b) =
         fromInteger $ a * b
     negate (Signed n) =
-        fromInteger $ (n `xor` mask (undefined :: nT)) + 1
+        fromInteger $ (n `B.xor` mask (undefined :: nT)) + 1
     a - b =
         a + (negate b)
     
     fromInteger n
       | n > 0 =
-        Signed $ n .&. mask (undefined :: nT)
+        Signed $ n B..&. mask (undefined :: nT)
     fromInteger n
       | n < 0 =
         negate $ fromInteger $ negate n
@@ -140,33 +140,37 @@ instance NaturalT nT => Integral (Signed nT) where
            then let Signed x' = negate s in negate x'
            else x
 
-instance NaturalT nT => Bits (Signed nT) where
-    (Signed a) .&. (Signed b) = Signed $ a .&. b
-    (Signed a) .|. (Signed b) = Signed $ a .|. b
-    (Signed a) `xor` Signed b = Signed $ a `xor` b
-    complement (Signed x) = Signed $ x `xor` mask (undefined :: nT)
+instance NaturalT nT => B.Bits (Signed nT) where
+    (Signed a) .&. (Signed b) = Signed $ a B..&. b
+    (Signed a) .|. (Signed b) = Signed $ a B..|. b
+    (Signed a) `xor` Signed b = Signed $ a `B.xor` b
+    complement (Signed x) = Signed $ x `B.xor` mask (undefined :: nT)
     (Signed x) `shiftL` b
       | b < 0 = error $ "Bits.shiftL{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to shift by negative amount"
       | otherwise =
-        Signed $ mask (undefined :: nT) .&. (x `shiftL` b)
+        Signed $ mask (undefined :: nT) B..&. (x `B.shiftL` b)
     s@(Signed x) `shiftR` b
       | b < 0 = error $ "Bits.shiftR{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to shift by negative amount"
       | isNegative s =
-        Signed $ mask (undefined :: nT) .&.
-            ((x `shiftR` b) .|. (mask (undefined :: nT) `shiftL` (fromIntegerT (undefined :: nT) - b)))
+        Signed $ mask (undefined :: nT) B..&.
+            ((x `B.shiftR` b) B..|. (mask (undefined :: nT) `B.shiftL` (fromIntegerT (undefined :: nT) - b)))
       | otherwise =
-        Signed $ (mask (undefined :: nT)) .&. (x `shiftR` b)
+        Signed $ (mask (undefined :: nT)) B..&. (x `B.shiftR` b)
     (Signed a) `rotateL` b
       | b < 0 =
         error $ "Bits.rotateL{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to rotate by negative amount"
       | otherwise =
-        Signed $ mask (undefined :: nT) .&.
-            ((a `shiftL` b) .|. (a `shiftR` (fromIntegerT (undefined :: nT) - b)))
+        Signed $ mask (undefined :: nT) B..&.
+            ((a `B.shiftL` b) B..|. (a `B.shiftR` (fromIntegerT (undefined :: nT) - b)))
     (Signed a) `rotateR` b
       | b < 0 =
         error $ "Bits.rotateR{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to rotate by negative amount"
       | otherwise =
-        Signed $ mask (undefined :: nT) .&.
-            ((a `shiftR` b) .|. (a `shiftL` (fromIntegerT (undefined :: nT) - b)))
+        Signed $ mask (undefined :: nT) B..&.
+            ((a `B.shiftR` b) B..|. (a `B.shiftL` (fromIntegerT (undefined :: nT) - b)))
     bitSize _ = fromIntegerT (undefined :: nT)
     isSigned _ = True
+
+instance NaturalT nT => HWBits (Signed nT) where
+  a `shiftL` b = a `B.shiftL` (fromInteger (toInteger b))
+  a `shiftR` b = a `B.shiftR` (fromInteger (toInteger b))

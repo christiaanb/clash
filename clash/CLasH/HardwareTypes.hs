@@ -2,11 +2,13 @@
 
 module CLasH.HardwareTypes
   ( module Types
+  , module Data.Param.Integer
   , module Data.Param.Vector
   , module Data.Param.Index
   , module Data.Param.Signed
   , module Data.Param.Unsigned
   , module Prelude
+  , module Data.Bits
   , Bit(..)
   , State(..)
   , hwand
@@ -21,10 +23,12 @@ module CLasH.HardwareTypes
 import qualified Prelude as P
 import Prelude (Bool(..),Num(..),Eq(..),Ord(..),snd,fst,otherwise,(&&),(||),not)
 import Types
+import Data.Param.Integer (HWBits(..))
 import Data.Param.Vector
 import Data.Param.Index
 import Data.Param.Signed
 import Data.Param.Unsigned 
+import Data.Bits hiding (shiftL,shiftR)
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
