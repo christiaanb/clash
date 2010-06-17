@@ -571,8 +571,8 @@ getFields ::
 getFields htype dc_i = case htype of
   (AggrType name _ fieldss) 
     | dc_i >= 0 && dc_i < length fieldss -> fieldss!!dc_i
-    | otherwise -> error $ "Invalid constructor index: " ++ (show dc_i) ++ ". No such constructor in HType: " ++ (show htype)
-  _ -> error $ "Can't get fields from non-aggregate HType: " ++ show htype
+    | otherwise -> error $ "VHDLTool.getFields: Invalid constructor index: " ++ (show dc_i) ++ ". No such constructor in HType: " ++ (show htype)
+  _ -> error $ "VHDLTool.getFields: Can't get fields from non-aggregate HType: " ++ show htype
 
 -- Finds the field labels for an aggregation type, as VHDLIds.
 getFieldLabels ::
