@@ -543,7 +543,7 @@ mkNaturalTy ::
 mkNaturalTy min_bound max_bound = do
   let bitsize = floor (logBase 2 (fromInteger (toInteger max_bound)))
   let ty_id = mkVHDLExtId $ "natural_" ++ (show min_bound) ++ "_to_" ++ (show max_bound)
-  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit $ show min_bound) (AST.PrimLit $ show bitsize)]
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.DownRange (AST.PrimLit $ show bitsize) (AST.PrimLit $ show min_bound)]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
   return (Just (ty_id, Just $ Right ty_def))
 
@@ -551,8 +551,8 @@ mkUnsignedTy ::
   Int -- ^ Haskell type of the unsigned integer
   -> TypeSession TypeMapRec
 mkUnsignedTy size = do
-  let ty_id = mkVHDLExtId $ "unsigned_" ++ show (size - 1)
-  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
+  let ty_id = mkVHDLExtId $ "unsigned_" ++ show size
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.DownRange (AST.PrimLit $ show (size - 1)) (AST.PrimLit "0")]
   let ty_def = AST.SubtypeIn unsignedTM (Just range)
   return (Just (ty_id, Just $ Right ty_def))
   
@@ -560,8 +560,8 @@ mkSignedTy ::
   Int -- ^ Haskell type of the signed integer
   -> TypeSession TypeMapRec
 mkSignedTy size = do
-  let ty_id = mkVHDLExtId $ "signed_" ++ show (size - 1)
-  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (size - 1))]
+  let ty_id = mkVHDLExtId $ "signed_" ++ show size
+  let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.DownRange (AST.PrimLit $ show (size - 1)) (AST.PrimLit "0")]
   let ty_def = AST.SubtypeIn signedTM (Just range)
   return (Just (ty_id, Just $ Right ty_def))
 
