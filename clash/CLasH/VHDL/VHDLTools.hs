@@ -488,8 +488,10 @@ mkTyconTy htype =
           let enum_decs = Maybe.maybeToList enum_dec_maybe
           let enum_tys = Maybe.maybeToList enum_ty_maybe
           let ty_def = AST.TDR $ AST.RecordTypeDef (enum_decs ++ concat elemss)
-          let tupshow = mkTupleShow (enum_tys ++ concat elem_tyss) ty_id
-          MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, tupshow)
+          let aggrshow = case enum_field_maybe of 
+                          Nothing -> mkTupleShow (enum_tys ++ concat elem_tyss) ty_id
+                          Just (conLbl, EnumType tycon dcs) -> mkAdtShow conLbl dcs (map (map fst) fieldss) ty_id
+          MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, aggrshow)
           return $ Just (ty_id, Just $ Left ty_def)
     (EnumType tycon dcs) -> do
       let ty_id = mkVHDLExtId tycon
@@ -635,6 +637,29 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
     recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
     tupSize = length elemTMs
 
+mkAdtShow ::
+  String
+  -> [String] -- Constructors
+  -> [[String]] -- Fields for every constructor
+  -> AST.TypeMark
+  -> AST.SubProgBody
+mkAdtShow conLbl conIds elemIdss adtTM = AST.SubProgBody showSpec [] [showExpr]
+  where  
+    adtPar   = AST.unsafeVHDLBasicId "adt"
+    showSpec  = AST.Function showId [AST.IfaceVarDec adtPar adtTM] stringTM
+    showExpr  = AST.CaseSm (AST.PrimName $ AST.NSelected $ (AST.NSimple adtPar) AST.:.: (AST.SSimple $ (mkVHDLBasicId conLbl)))
+                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] [AST.ReturnSm (Just $ ((AST.PrimLit $ '"':(conIds!!x)++[' ','"'])) AST.:&: showFields x)] | x <- [0..(length conIds) -1]]
+    showFields i = if (null (elemIdss!!i)) then
+        AST.PrimLit "''"
+      else
+        foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "' '" AST.:&: e2) $
+              map ((genExprFCall showId).
+                    AST.PrimName .
+                    AST.NSelected .
+                    (AST.NSimple adtPar AST.:.:).
+                    tupVHDLSuffix)
+                  (map mkVHDLBasicId (elemIdss!!i))              
+    
 mkEnumShow ::
   [String]
   -> AST.TypeMark
