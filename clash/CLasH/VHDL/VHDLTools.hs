@@ -649,7 +649,7 @@ mkAdtShow conLbl conIds elemIdss adtTM = AST.SubProgBody showSpec [] [showExpr]
                   [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] 
                     [AST.ReturnSm (Just $ ((genExprFCall showId) . (selectedName adtPar) $ mkVHDLBasicId conLbl) AST.:&: showFields x)] | x <- [0..(length conIds) -1]]
     showFields i = if (null (elemIdss!!i)) then
-        AST.PrimLit "''"
+        AST.PrimLit "nul"
       else
         foldr1 (\e1 e2 -> e1 AST.:&: e2) $
               map ((AST.PrimLit "' '" AST.:&:) . (genExprFCall showId) . (selectedName adtPar))
