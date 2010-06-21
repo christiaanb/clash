@@ -291,12 +291,12 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
   (enums, cmp) <- case htype of
     EnumType _ enums -> do
       -- Enumeration type, compare with the scrutinee directly
-      return (map stringToVHDLExpr enums, scrut_expr)
+      return (map (AST.PrimLit . show) [0..(length enums)-1], scrut_expr)
     AggrType _ (Just (name, EnumType _ enums)) _ -> do
       -- Extract the enumeration field from the aggregation
       let sel_name = mkSelectedName (varToVHDLName scrut) (mkVHDLBasicId name)
       let sel_expr = AST.PrimName sel_name
-      return (map stringToVHDLExpr enums, sel_expr)
+      return (map (AST.PrimLit . show) [0..(length enums)-1], sel_expr)
     (BuiltinType "Bit") -> do
       let enums = [AST.PrimLit "'1'", AST.PrimLit "'0'"]
       return (enums, scrut_expr)

@@ -495,7 +495,7 @@ mkTyconTy htype =
           return $ Just (ty_id, Just $ Left ty_def)
     (EnumType tycon dcs) -> do
       let ty_id = mkVHDLExtId tycon
-      let range = AST.SubTypeRange (AST.PrimLit "0") (AST.PrimLit $ show (length dcs))
+      let range = AST.SubTypeRange (AST.PrimLit "0") (AST.PrimLit $ show ((length dcs) - 1))
       let ty_def = AST.TDI $ AST.IntegerTypeDef range
       let enumShow = mkEnumShow dcs ty_id
       MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
