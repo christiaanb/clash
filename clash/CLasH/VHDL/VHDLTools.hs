@@ -492,12 +492,14 @@ mkTyconTy htype =
           MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, tupshow)
           return $ Just (ty_id, Just $ Left ty_def)
     (EnumType tycon dcs) -> do
-      let elems = map mkVHDLExtId dcs
       let ty_id = mkVHDLExtId tycon
-      let ty_def = AST.TDE $ AST.EnumTypeDef elems
-      let enumShow = mkEnumShow elems ty_id
+      let possibilaties = case (length dcs) of 1 -> 1; x -> (x-1)
+      let bitsize = floor (logBase 2 (fromInteger (toInteger possibilaties)))
+      let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.DownRange (AST.PrimLit $ show bitsize) (AST.PrimLit "0")]
+      let ty_def = AST.SubtypeIn unsignedTM (Just range)
+      let enumShow = mkEnumShow dcs ty_id
       MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
-      return $ Just (ty_id, Just $ Left ty_def)
+      return $ Just (ty_id, Just $ Right ty_def)
     otherwise -> error $ "\nVHDLTools.mkTyconTy: Called for HType that is neiter a AggrType or EnumType: " ++ show htype
 
 -- | Create a VHDL vector type
@@ -593,6 +595,17 @@ getConstructorFieldLabel (AggrType _ Nothing _) =
 getConstructorFieldLabel htype =
 	error $ "Can't get constructor field label from non-aggregate HType: " ++ show htype
 
+
+getConstructorIndex ::
+  HType ->
+  String ->
+  Int
+getConstructorIndex (EnumType etype cons) dc = case List.elemIndex dc cons of
+  Just (index) -> index
+  Nothing -> error $ "VHDLTools.getConstructor: constructor: " ++ show dc ++ " is not part of type: " ++ show etype ++ ", which only has constructors: " ++ show cons
+getConstructorIndex htype _ = error $ "Can't get constructor index for non-Enum type: " ++ show htype
+
+
 mktydecl :: (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn)) -> Maybe AST.PackageDecItem
 mytydecl (_, Nothing) = Nothing
 mktydecl (ty_id, Just (Left ty_def)) = Just $ AST.PDITD $ AST.TypeDec ty_id ty_def
@@ -623,15 +636,16 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
     tupSize = length elemTMs
 
 mkEnumShow ::
-  [AST.VHDLId]
+  [String]
   -> AST.TypeMark
   -> AST.SubProgBody
 mkEnumShow elemIds enumTM = AST.SubProgBody showSpec [] [showExpr]
-  where
-    enumPar    = AST.unsafeVHDLBasicId "enum"
+  where  
+    enumPar   = AST.unsafeVHDLBasicId "enum"
     showSpec  = AST.Function showId [AST.IfaceVarDec enumPar enumTM] stringTM
-    showExpr  = AST.ReturnSm (Just $
-                  AST.PrimLit (show $ tail $ init $ AST.fromVHDLId enumTM))
+    showExpr  = AST.CaseSm (AST.PrimName $ AST.NSimple enumPar)
+                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] [AST.ReturnSm (Just $ AST.PrimLit $ '"':(elemIds!!x)++['"'])] | x <- [0..(length elemIds) -1]]
+            
 
 mkVectorShow ::
   AST.TypeMark -- ^ elemtype

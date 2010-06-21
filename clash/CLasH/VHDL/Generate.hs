@@ -1113,7 +1113,7 @@ genApplication (dst, dsttype) f args = do
                   return ([mkUncondAssign dst arg'], [])
                 -- In all other cases, a record type is created.
                 _ -> case htype_either of
-                  Right htype@(AggrType _ _ _) -> do
+                  Right htype@(AggrType _ etype _) -> do
                     let dc_i = datacon_index dsttype dc
                     let labels = getFieldLabels htype dc_i
                     arg_exprs <- argsToVHDLExprs argsNoState
@@ -1125,8 +1125,9 @@ genApplication (dst, dsttype) f args = do
                           -- constructor used to the constructor field as
                           -- well.
                           Just dc_label ->
-                            let dc_expr = AST.PrimName $ AST.NSimple $ mkVHDLExtId $ varToString f in
-                            (dc_label:labels, dc_expr:arg_exprs)
+                            let { dc_index = getConstructorIndex (snd $ Maybe.fromJust etype) (varToString f)
+                                ; dc_expr = AST.PrimLit $ show dc_index 
+                                } in (dc_label:labels, dc_expr:arg_exprs)
                     return (zipWith mkassign final_labels final_exprs, [])
                     where
                       mkassign :: AST.VHDLId -> AST.Expr -> AST.ConcSm
