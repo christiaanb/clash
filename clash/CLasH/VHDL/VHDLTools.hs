@@ -645,18 +645,16 @@ mkAdtShow conLbl conIds elemIdss adtTM = AST.SubProgBody showSpec [] [showExpr]
   where  
     adtPar   = AST.unsafeVHDLBasicId "adt"
     showSpec  = AST.Function showId [AST.IfaceVarDec adtPar adtTM] stringTM
-    showExpr  = AST.CaseSm (AST.PrimName $ AST.NSelected $ (AST.NSimple adtPar) AST.:.: (AST.SSimple $ (mkVHDLBasicId conLbl)))
-                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] [AST.ReturnSm (Just $ ((AST.PrimLit $ '"':(conIds!!x)++[' ','"'])) AST.:&: showFields x)] | x <- [0..(length conIds) -1]]
+    showExpr  = AST.CaseSm ((selectedName adtPar) (mkVHDLBasicId conLbl))
+                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] 
+                    [AST.ReturnSm (Just $ ((genExprFCall showId) . (selectedName adtPar) $ mkVHDLBasicId conLbl) AST.:&: showFields x)] | x <- [0..(length conIds) -1]]
     showFields i = if (null (elemIdss!!i)) then
         AST.PrimLit "''"
       else
-        foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "' '" AST.:&: e2) $
-              map ((genExprFCall showId).
-                    AST.PrimName .
-                    AST.NSelected .
-                    (AST.NSimple adtPar AST.:.:).
-                    tupVHDLSuffix)
-                  (map mkVHDLBasicId (elemIdss!!i))              
+        foldr1 (\e1 e2 -> e1 AST.:&: e2) $
+              map ((AST.PrimLit "' '" AST.:&:) . (genExprFCall showId) . (selectedName adtPar))
+                  (map mkVHDLBasicId (elemIdss!!i))
+    selectedName par = (AST.PrimName . AST.NSelected . (AST.NSimple par AST.:.:) . tupVHDLSuffix)       
     
 mkEnumShow ::
   [String]
