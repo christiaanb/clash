@@ -192,7 +192,7 @@ dataconToVHDLExpr dc = do
           let existing_ty = Monad.liftM (fmap fst) $ Map.lookup htype typemap
           case existing_ty of
             Just ty -> do
-              let lit    = idToVHDLExpr $ mkVHDLExtId $ Name.getOccString dcname
+              let lit    = AST.PrimLit $ show $ getConstructorIndex htype $ Name.getOccString dcname
               return lit
             Nothing -> error $ "\nVHDLTools.dataconToVHDLExpr: Trying to make value for non-representable DataCon: " ++ pprString dc
     -- Error when constructing htype
