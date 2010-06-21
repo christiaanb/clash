@@ -9,6 +9,7 @@ module CLasH.HardwareTypes
   , module Data.Param.Unsigned
   , module Prelude
   , module Data.Bits
+  , module Language.Haskell.TH.Lift
   , Bit(..)
   , State(..)
   , hwand
