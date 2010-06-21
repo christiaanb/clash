@@ -495,13 +495,11 @@ mkTyconTy htype =
           return $ Just (ty_id, Just $ Left ty_def)
     (EnumType tycon dcs) -> do
       let ty_id = mkVHDLExtId tycon
-      let possibilaties = case (length dcs) of 1 -> 1; x -> (x-1)
-      let bitsize = floor (logBase 2 (fromInteger (toInteger possibilaties)))
-      let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.DownRange (AST.PrimLit $ show bitsize) (AST.PrimLit "0")]
-      let ty_def = AST.SubtypeIn unsignedTM (Just range)
+      let range = AST.SubTypeRange (AST.PrimLit "0") (AST.PrimLit $ show (length dcs))
+      let ty_def = AST.TDI $ AST.IntegerTypeDef range
       let enumShow = mkEnumShow dcs ty_id
       MonadState.modify tsTypeFuns $ Map.insert (htype, showIdString) (showId, enumShow)
-      return $ Just (ty_id, Just $ Right ty_def)
+      return $ Just (ty_id, Just $ Left ty_def)
     otherwise -> error $ "\nVHDLTools.mkTyconTy: Called for HType that is neiter a AggrType or EnumType: " ++ show htype
 
 -- | Create a VHDL vector type
