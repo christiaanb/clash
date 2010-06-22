@@ -618,7 +618,8 @@ mkTupleShow ::
 mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
   where
     tupPar    = AST.unsafeVHDLBasicId "tup"
-    showSpec  = AST.Function showId [AST.IfaceVarDec tupPar tupleTM] stringTM
+    parenPar  = AST.unsafeVHDLBasicId "paren"
+    showSpec  = AST.Function showId [AST.IfaceVarDec tupPar tupleTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     showExpr  = AST.ReturnSm (Just $
                   AST.PrimLit "'('" AST.:&: showMiddle AST.:&: AST.PrimLit "')'")
       where
@@ -626,14 +627,11 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
             AST.PrimLit "''"
           else
             foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "','" AST.:&: e2) $
-              map ((genExprFCall showId).
-                    AST.PrimName .
-                    AST.NSelected .
-                    (AST.NSimple tupPar AST.:.:).
-                    tupVHDLSuffix)
+              map ((genExprFCall2 showId) . (\x -> (selectedName tupPar x, AST.PrimLit "false")))
                   (take tupSize recordlabels)
     recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
     tupSize = length elemTMs
+    selectedName par = (AST.PrimName . AST.NSelected . (AST.NSimple par AST.:.:) . tupVHDLSuffix)
 
 mkAdtShow ::
   String
@@ -644,17 +642,27 @@ mkAdtShow ::
 mkAdtShow conLbl conIds elemIdss adtTM = AST.SubProgBody showSpec [] [showExpr]
   where  
     adtPar   = AST.unsafeVHDLBasicId "adt"
-    showSpec  = AST.Function showId [AST.IfaceVarDec adtPar adtTM] stringTM
+    parenPar = AST.unsafeVHDLBasicId "paren"
+    showSpec  = AST.Function showId [AST.IfaceVarDec adtPar adtTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     showExpr  = AST.CaseSm ((selectedName adtPar) (mkVHDLBasicId conLbl))
-                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] 
-                    [AST.ReturnSm (Just $ ((genExprFCall showId) . (selectedName adtPar) $ mkVHDLBasicId conLbl) AST.:&: showFields x)] | x <- [0..(length conIds) -1]]
+                  [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] (
+                    if (null (elemIdss!!x)) then
+                        [AST.ReturnSm (Just $ ((genExprFCall2 showId) . (\x -> (selectedName adtPar x, AST.PrimLit "false")) $ mkVHDLBasicId conLbl) AST.:&: showFields x)]
+                      else
+                        [addParens (((genExprFCall2 showId) . (\x -> (selectedName adtPar x, AST.PrimLit "false")) $ mkVHDLBasicId conLbl) AST.:&: showFields x)]
+                    ) | x <- [0..(length conIds) -1]]
     showFields i = if (null (elemIdss!!i)) then
-        AST.PrimLit "nul"
+        AST.PrimLit "\"\""
       else
         foldr1 (\e1 e2 -> e1 AST.:&: e2) $
-              map ((AST.PrimLit "' '" AST.:&:) . (genExprFCall showId) . (selectedName adtPar))
+              map ((AST.PrimLit "' '" AST.:&:) . (genExprFCall2 showId) . (\x -> (selectedName adtPar x, AST.PrimLit "true")))
                   (map mkVHDLBasicId (elemIdss!!i))
-    selectedName par = (AST.PrimName . AST.NSelected . (AST.NSimple par AST.:.:) . tupVHDLSuffix)       
+    selectedName par = (AST.PrimName . AST.NSelected . (AST.NSimple par AST.:.:) . tupVHDLSuffix)
+    addParens :: AST.Expr -> AST.SeqSm
+    addParens k = AST.IfSm (AST.PrimName (AST.NSimple parenPar))
+                    [AST.ReturnSm (Just (AST.PrimLit "'('" AST.:&: k AST.:&: AST.PrimLit "')'" ))]
+                    []
+                    (Just $ AST.Else [AST.ReturnSm (Just k)])
     
 mkEnumShow ::
   [String]
@@ -663,7 +671,8 @@ mkEnumShow ::
 mkEnumShow elemIds enumTM = AST.SubProgBody showSpec [] [showExpr]
   where  
     enumPar   = AST.unsafeVHDLBasicId "enum"
-    showSpec  = AST.Function showId [AST.IfaceVarDec enumPar enumTM] stringTM
+    parenPar  = AST.unsafeVHDLBasicId "paren"
+    showSpec  = AST.Function showId [AST.IfaceVarDec enumPar enumTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     showExpr  = AST.CaseSm (AST.PrimName $ AST.NSimple enumPar)
                   [AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit $ show x] [AST.ReturnSm (Just $ AST.PrimLit $ '"':(elemIds!!x)++['"'])] | x <- [0..(length elemIds) -1]]
             
@@ -680,6 +689,7 @@ mkVectorShow elemTM vectorTM =
   where
     vecPar  = AST.unsafeVHDLBasicId "vec"
     resId   = AST.unsafeVHDLBasicId "res"
+    parenPar = AST.unsafeVHDLBasicId "paren"
     headSpec = AST.Function (mkVHDLExtId headId) [AST.IfaceVarDec vecPar vectorTM] elemTM
     -- return vec(0);
     headExpr = AST.ReturnSm (Just (AST.PrimName $ AST.NIndexed (AST.IndexedName 
@@ -706,7 +716,7 @@ mkVectorShow elemTM vectorTM =
                                   AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
                                                              AST.:-: AST.PrimLit "1"))
     tailRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    showSpec  = AST.Function showId [AST.IfaceVarDec vecPar vectorTM] stringTM
+    showSpec  = AST.Function showId [AST.IfaceVarDec vecPar vectorTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     doShowId  = AST.unsafeVHDLExtId "doshow"
     doShowDef = AST.SubProgBody doShowSpec [] [doShowRet]
       where doShowSpec = AST.Function doShowId [AST.IfaceVarDec vecPar vectorTM] 
@@ -724,12 +734,12 @@ mkVectorShow elemTM vectorTM =
                          [AST.ReturnSm (Just $ AST.PrimLit "\"\"")],
                AST.CaseSmAlt [AST.ChoiceE $ AST.PrimLit "1"] 
                          [AST.ReturnSm (Just $ 
-                          genExprFCall showId 
-                               (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar)) )],
+                          genExprFCall2 showId 
+                               (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar),AST.PrimLit "false") )],
                AST.CaseSmAlt [AST.Others] 
                          [AST.ReturnSm (Just $ 
-                           genExprFCall showId 
-                             (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar)) AST.:&:
+                           genExprFCall2 showId 
+                             (genExprFCall (mkVHDLExtId headId) (AST.PrimName $ AST.NSimple vecPar), AST.PrimLit "false") AST.:&:
                            AST.PrimLit "','" AST.:&:
                            genExprFCall doShowId 
                              (genExprFCall (mkVHDLExtId tailId) (AST.PrimName $ AST.NSimple vecPar)) ) ]]
@@ -750,26 +760,27 @@ mkBuiltInShow = [ AST.SubProgBody showBitSpec [] [showBitExpr]
     boolPar     = AST.unsafeVHDLBasicId "b"
     signedPar   = AST.unsafeVHDLBasicId "sint"
     unsignedPar = AST.unsafeVHDLBasicId "uint"
+    parenPar    = AST.unsafeVHDLBasicId "paren"
     -- naturalPar  = AST.unsafeVHDLBasicId "nat"
-    showBitSpec = AST.Function showId [AST.IfaceVarDec bitPar std_logicTM] stringTM
+    showBitSpec = AST.Function showId [AST.IfaceVarDec bitPar std_logicTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     -- if s = '1' then return "'1'" else return "'0'"
     showBitExpr = AST.IfSm (AST.PrimName (AST.NSimple bitPar) AST.:=: AST.PrimLit "'1'")
                         [AST.ReturnSm (Just $ AST.PrimLit "\"High\"")]
                         []
                         (Just $ AST.Else [AST.ReturnSm (Just $ AST.PrimLit "\"Low\"")])
-    showBoolSpec = AST.Function showId [AST.IfaceVarDec boolPar booleanTM] stringTM
+    showBoolSpec = AST.Function showId [AST.IfaceVarDec boolPar booleanTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     -- if b then return "True" else return "False"
     showBoolExpr = AST.IfSm (AST.PrimName (AST.NSimple boolPar))
                         [AST.ReturnSm (Just $ AST.PrimLit "\"True\"")]
                         []
                         (Just $ AST.Else [AST.ReturnSm (Just $ AST.PrimLit "\"False\"")])
-    showSingedSpec = AST.Function showId [AST.IfaceVarDec signedPar signedTM] stringTM
+    showSingedSpec = AST.Function showId [AST.IfaceVarDec signedPar signedTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     showSignedExpr =  AST.ReturnSm (Just $
                         AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
                         (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [signToInt]) Nothing )
                       where
                         signToInt = genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple signedPar)
-    showUnsignedSpec =  AST.Function showId [AST.IfaceVarDec unsignedPar unsignedTM] stringTM
+    showUnsignedSpec =  AST.Function showId [AST.IfaceVarDec unsignedPar unsignedTM, AST.IfaceVarDec parenPar booleanTM] stringTM
     showUnsignedExpr =  AST.ReturnSm (Just $
                           AST.PrimName $ AST.NAttribute $ AST.AttribName (AST.NSimple integerId) 
                           (AST.NIndexed $ AST.IndexedName (AST.NSimple imageId) [unsignToInt]) Nothing )
@@ -785,6 +796,11 @@ genExprFCall :: AST.VHDLId -> AST.Expr -> AST.Expr
 genExprFCall fName args = 
    AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [args] 
+
+genExprFCall2 :: AST.VHDLId -> (AST.Expr, AST.Expr) -> AST.Expr
+genExprFCall2 fName (arg1, arg2) = 
+   AST.PrimFCall $ AST.FCall (AST.NSimple fName)  $
+             map (\exp -> Nothing AST.:=>: AST.ADExpr exp) [arg1,arg2] 
 
 genExprPCall2 :: AST.VHDLId -> AST.Expr -> AST.Expr -> AST.SeqSm             
 genExprPCall2 entid arg1 arg2 =

@@ -170,4 +170,4 @@ createOutputProc outs =
        writeOut outSig suffix = 
          genExprPCall2 writeId
                         (AST.PrimName $ AST.NSimple outputId)
-                        ((genExprFCall showId (AST.PrimName $ AST.NSimple outSig)) AST.:&: suffix)
+                        ((genExprFCall2 showId (AST.PrimName $ AST.NSimple outSig, AST.PrimLit "false")) AST.:&: suffix)
