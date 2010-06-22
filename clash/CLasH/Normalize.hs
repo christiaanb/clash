@@ -490,7 +490,21 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
   -- sideeffect.
   doalt :: CoreAlt -> TransformMonad ([(CoreBndr, CoreExpr)], CoreAlt)
   doalt (LitAlt _, _, _) = error $ "Don't know how to handle LitAlt in case expression: " ++ pprString expr
-  doalt alt@(DEFAULT, [], expr) = return ([], alt)
+  doalt alt@(DEFAULT, [], expr) = do
+    local_var <- Trans.lift $ is_local_var expr
+    repr <- isRepr expr
+    (exprbinding_maybe, expr') <- if (not local_var) && repr
+      then do
+        id <- Trans.lift $ mkBinderFor expr "caseval"
+        -- We don't flag a change here, since casevalsimpl will do that above
+        -- based on Just we return here.
+        return (Just (id, expr), Var id)
+      else
+        -- Don't simplify anything else
+        return (Nothing, expr)
+    let newalt = (DEFAULT, [], expr')
+    let bindings = Maybe.catMaybes [exprbinding_maybe]
+    return (bindings, newalt)
   doalt (DataAlt dc, bndrs, expr) = do
     -- Make each binder wild, if possible
     bndrs_res <- Monad.zipWithM dobndr bndrs [0..]
