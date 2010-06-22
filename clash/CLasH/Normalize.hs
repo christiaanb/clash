@@ -493,6 +493,8 @@ casesimpl c expr@(Case scrut bndr ty alts) | not bndr_used = do
   doalt alt@(DEFAULT, [], expr) = do
     local_var <- Trans.lift $ is_local_var expr
     repr <- isRepr expr
+    -- Extract any expressions that is not a local var already and is 
+    -- representable (to prevent loops with inlinenonrep).
     (exprbinding_maybe, expr') <- if (not local_var) && repr
       then do
         id <- Trans.lift $ mkBinderFor expr "caseval"
