@@ -206,10 +206,7 @@ dataconToVHDLExpr dc = do
 varToVHDLId ::
   CoreSyn.CoreBndr
   -> AST.VHDLId
-varToVHDLId var = mkVHDLExtId (varToString var ++ varToStringUniq var ++ show (lowers $ varToStringUniq var))
-  where
-    lowers :: String -> Int
-    lowers xs = length [x | x <- xs, Char.isLower x]
+varToVHDLId var = mkVHDLExtId $ varToUniqString var
 
 -- Creates a VHDL Name from a binder
 varToVHDLName ::
@@ -222,6 +219,14 @@ varToString ::
   CoreSyn.CoreBndr
   -> String
 varToString = OccName.occNameString . Name.nameOccName . Var.varName
+
+varToUniqString ::
+  CoreSyn.CoreBndr
+  -> String
+varToUniqString var = (varToString var ++ varToStringUniq var ++ show (lowers $ varToStringUniq var))
+  where
+    lowers :: String -> Int
+    lowers xs = length [x | x <- xs, Char.isLower x]
 
 -- Get the string version a Var's unique
 varToStringUniq :: Var.Var -> String

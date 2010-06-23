@@ -596,7 +596,7 @@ genMap (Left res) f [(Left mapped_f, _), (Left (CoreSyn.Var arg), _)] = do {
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
   ; let res_type = (tfvec_elem . Var.varType) res
           -- TODO: Use something better than varToString
-  ; let { label       = mkVHDLExtId ("mapVector" ++ (varToString res))
+  ; let { label       = mkVHDLExtId ("mapVector" ++ (varToUniqString res))
         ; n_id        = mkVHDLBasicId "n"
         ; n_expr      = idToVHDLExpr n_id
         ; range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -621,7 +621,7 @@ genZipWith (Left res) f args@[(Left zipped_f, _), (Left (CoreSyn.Var arg1), _), 
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
   ; let res_type = (tfvec_elem . Var.varType) res
           -- TODO: Use something better than varToString
-  ; let { label       = mkVHDLExtId ("zipWithVector" ++ (varToString res))
+  ; let { label       = mkVHDLExtId ("zipWithVector" ++ (varToUniqString res))
         ; n_id        = mkVHDLBasicId "n"
         ; n_expr      = idToVHDLExpr n_id
         ; range       = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -672,7 +672,7 @@ genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecTy
   Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
   let gen_label = mkVHDLExtId ("foldlVector" ++ (show vecExpr))
-  let block_label = mkVHDLExtId ("foldlVector" ++ (varToString res))
+  let block_label = mkVHDLExtId ("foldlVector" ++ (varToUniqString res))
   let gen_range = if left then AST.ToRange (AST.PrimLit "0") len_min_expr
                   else AST.DownRange len_min_expr (AST.PrimLit "0")
   let gen_scheme   = AST.ForGn n_id gen_range
@@ -758,7 +758,7 @@ genZip' (Left res) f args@[(arg1,_), (arg2,_)] = do {
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genZip: Invalid result type" (tfvec_elem (Var.varType res))
   ; [AST.PrimName argName1, AST.PrimName argName2] <- argsToVHDLExprs [arg1,arg2] 
           -- TODO: Use something better than varToString
-  ; let { label           = mkVHDLExtId ("zipVector" ++ (varToString res))
+  ; let { label           = mkVHDLExtId ("zipVector" ++ (varToUniqString res))
         ; n_id            = mkVHDLBasicId "n"
         ; n_expr          = idToVHDLExpr n_id
         ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -828,7 +828,7 @@ genUnzip' (Left res) f args@[(arg,argType)] = do
       ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid result type" (Var.varType res)
       ; [AST.PrimName arg'] <- argsToVHDLExprs [arg]
         -- TODO: Use something better than varToString
-      ; let { label           = mkVHDLExtId ("unzipVector" ++ (varToString res))
+      ; let { label           = mkVHDLExtId ("unzipVector" ++ (varToUniqString res))
             ; n_id            = mkVHDLBasicId "n"
             ; n_expr          = idToVHDLExpr n_id
             ; range           = AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len-1))
@@ -882,7 +882,7 @@ genConcat' (Left res) f args@[(arg,argType)] = do {
   ; len2 <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty nvec
   ; [AST.PrimName argName] <- argsToVHDLExprs [arg]
           -- TODO: Use something better than varToString
-  ; let { label       = mkVHDLExtId ("concatVector" ++ (varToString res))
+  ; let { label       = mkVHDLExtId ("concatVector" ++ (varToUniqString res))
         ; n_id        = mkVHDLBasicId "n"
         ; n_expr      = idToVHDLExpr n_id
         ; fromRange   = n_expr AST.:*: (AST.PrimLit $ show len2)
@@ -939,7 +939,7 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
   -- Setup the generate scheme
   [startExpr] <- argsToVHDLExprs [start]
   let gen_label = mkVHDLExtId ("iterateVector" ++ (show startExpr))
-  let block_label = mkVHDLExtId ("iterateVector" ++ (varToString res))
+  let block_label = mkVHDLExtId ("iterateVector" ++ (varToUniqString res))
   let gen_range = AST.ToRange (AST.PrimLit "0") len_min_expr
   let gen_scheme   = AST.ForGn n_id gen_range
   -- Make the intermediate vector
@@ -1019,7 +1019,7 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   let rdaddr_int = genExprFCall (mkVHDLBasicId toIntegerId) $ fst rdaddr
   let argexpr = vhdlNameToVHDLExpr $ mkIndexedName (AST.NSimple ram_id) rdaddr_int
   let assign = mkUncondAssign (Right resname) argexpr
-  let block_label = mkVHDLExtId ("blockRAM" ++ (varToString res))
+  let block_label = mkVHDLExtId ("blockRAM" ++ (varToUniqString res))
   let block = AST.BlockSm block_label [] (AST.PMapAspect []) [ram_dec] [assign, mkUpdateProcSm]
   return [AST.CSBSm block]
   where
