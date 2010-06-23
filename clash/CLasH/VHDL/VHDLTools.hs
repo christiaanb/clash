@@ -723,7 +723,7 @@ mkVectorShow elemTM vectorTM =
                                                              AST.:-: AST.PrimLit "1"))
     tailRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     showSpec  = AST.Function showId [AST.IfaceVarDec vecPar vectorTM, AST.IfaceVarDec parenPar booleanTM] stringTM
-    doShowId  = AST.unsafeVHDLExtId "doshow"
+    doShowId  = AST.unsafeVHDLBasicId "doshow"
     doShowDef = AST.SubProgBody doShowSpec [] [doShowRet]
       where doShowSpec = AST.Function doShowId [AST.IfaceVarDec vecPar vectorTM] 
                                            stringTM

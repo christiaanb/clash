@@ -353,7 +353,7 @@ showIdString :: String
 showIdString = "show"
 
 showId :: AST.VHDLId
-showId = AST.unsafeVHDLExtId showIdString
+showId = AST.unsafeVHDLBasicId showIdString
 
 -- | write function identifier (from std.textio)
 writeId :: AST.VHDLId
