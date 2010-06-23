@@ -389,7 +389,7 @@ mkTyConHType tycon args =
                 -- If we get here, then all of the argument types were state
                 -- types (we check for enumeration types at the top). Not
                 -- sure how to handle this, so error out for now.
-                (_, []) -> error $ "ADT with only State elements (or something like that?) Dunno how to handle this yet. Tycon: " ++ pprString tycon ++ " Arguments: " ++ pprString args
+                (_, []) -> return $ Right StateType --error $ "VHDLTools.mkTyConHType: ADT with only State elements (or something like that?) Dunno how to handle this yet. Tycon: " ++ pprString tycon ++ " Arguments: " ++ pprString args
                 -- A full ADT (with multiple fields and one or multiple
                 -- constructors).
                 (_, elem_htys) -> do
