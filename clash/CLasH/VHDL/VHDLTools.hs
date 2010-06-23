@@ -256,12 +256,18 @@ mkVHDLBasicId s =
 -- basic ids.
 -- Use extended Ids for any values that are taken from the source file.
 mkVHDLExtId :: String -> AST.VHDLId
-mkVHDLExtId s = 
-  AST.unsafeVHDLExtId $ strip_invalid s
+mkVHDLExtId s =
+  (AST.unsafeVHDLBasicId . zEncodeString . strip_multiscore . strip_leading . strip_invalid) s
   where 
     -- Allowed characters, taken from ForSyde's mkVHDLExtId
     allowed = ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ " \"#&'()*+,./:;<=>_|!$%@?[]^`{}~-"
     strip_invalid = filter (`elem` allowed)
+    strip_leading = dropWhile (`elem` ['0'..'9'] ++ "_")
+    strip_multiscore = concatMap (\cs -> 
+        case cs of 
+          ('_':_) -> "_"
+          _ -> cs
+      ) . List.group
 
 -- Create a record field selector that selects the given label from the record
 -- stored in the given binder.

@@ -1,8 +1,10 @@
-module CLasH.Utils.Pretty (prettyShow, pprString, pprStringDebug) where
+module CLasH.Utils.Pretty (prettyShow, pprString, pprStringDebug, zEncodeString) where
 
 -- Standard imports
 import qualified Data.Map as Map
 import Text.PrettyPrint.HughesPJClass
+import Data.Char
+import Numeric
 
 -- GHC API
 import qualified CoreSyn
@@ -79,3 +81,82 @@ pprString = showSDoc . ppr
 
 pprStringDebug :: (Outputable x) => x -> String
 pprStringDebug = showSDocDebug . ppr
+
+
+type UserString = String        -- As the user typed it
+type EncodedString = String     -- Encoded form
+
+zEncodeString :: UserString -> EncodedString
+zEncodeString cs = case maybe_tuple cs of
+                Just n  -> n ++ (go cs)            -- Tuples go to Z2T etc
+                Nothing -> go cs
+          where
+                go []     = []
+                go (c:cs) = encode_digit_ch c ++ go' cs
+                go' []     = []
+                go' (c:cs) = encode_ch c ++ go' cs
+
+maybe_tuple :: UserString -> Maybe EncodedString
+
+maybe_tuple "(# #)" = Just("Z1H")
+maybe_tuple ('(' : '#' : cs) = case count_commas (0::Int) cs of
+                                 (n, '#' : ')' : _) -> Just ('Z' : shows (n+1) "H")
+                                 _                  -> Nothing
+maybe_tuple "()" = Just("Z0T")
+maybe_tuple ('(' : cs)       = case count_commas (0::Int) cs of
+                                 (n, ')' : _) -> Just ('Z' : shows (n+1) "T")
+                                 _            -> Nothing
+maybe_tuple _                = Nothing
+
+count_commas :: Int -> String -> (Int, String)
+count_commas n (',' : cs) = count_commas (n+1) cs
+count_commas n cs         = (n,cs)
+
+encode_digit_ch :: Char -> EncodedString
+encode_digit_ch c | c >= '0' && c <= '9' = encode_as_unicode_char c
+encode_digit_ch c | otherwise            = encode_ch c
+
+encode_ch :: Char -> EncodedString
+encode_ch c | unencodedChar c = [c]     -- Common case first
+
+-- Constructors
+encode_ch '('  = "ZL"   -- Needed for things like (,), and (->)
+encode_ch ')'  = "ZR"   -- For symmetry with (
+encode_ch '['  = "ZM"
+encode_ch ']'  = "ZN"
+encode_ch ':'  = "ZC"
+encode_ch 'Z'  = "ZZ"
+
+-- Variables
+encode_ch 'z'  = "zz"
+encode_ch '&'  = "za"
+encode_ch '|'  = "zb"
+encode_ch '^'  = "zc"
+encode_ch '$'  = "zd"
+encode_ch '='  = "ze"
+encode_ch '>'  = "zg"
+encode_ch '#'  = "zh"
+encode_ch '.'  = "zi"
+encode_ch '<'  = "zl"
+encode_ch '-'  = "zm"
+encode_ch '!'  = "zn"
+encode_ch '+'  = "zp"
+encode_ch '\'' = "zq"
+encode_ch '\\' = "zr"
+encode_ch '/'  = "zs"
+encode_ch '*'  = "zt"
+encode_ch '%'  = "zv"
+encode_ch c    = encode_as_unicode_char c
+
+encode_as_unicode_char :: Char -> EncodedString
+encode_as_unicode_char c = 'z' : if isDigit (head hex_str) then hex_str
+                                                           else '0':hex_str
+  where hex_str = showHex (ord c) "U"
+                                                           
+unencodedChar :: Char -> Bool   -- True for chars that don't need encoding
+unencodedChar 'Z' = False
+unencodedChar 'z' = False
+unencodedChar c   =  c >= 'a' && c <= 'z'
+                  || c >= 'A' && c <= 'Z'
+                  || c >= '0' && c <= '9'
+                  || c == '_'                                                         
