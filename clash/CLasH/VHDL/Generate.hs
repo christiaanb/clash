@@ -310,11 +310,12 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
   -- Compare the (constructor field of the) scrutinee with each of the
   -- alternatives.
   let cond_exprs = map (\x -> cmp AST.:=: x) altcons
-  -- Rotate expressions to the left, so that the expression related to the default case is the last
-  let alts' = case alts of
-                ((CoreSyn.DEFAULT,_,_):_) -> ((tail alts) ++ [head alts])
-                otherwise         -> alts
-  
+  -- Rotate expressions to the leftso that the expression related to the default case is the last
+  -- Does NOT apply when there is no DEFAULT case and there are no binders
+  let alts' = if ((any (\(_,x,_) -> not (null x)) alts) || ((\(x,_,_)->x) (head alts)) == CoreSyn.DEFAULT ) then
+                  ((tail alts) ++ [head alts])
+              else
+                  alts
   exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) alts' --((tail alts) ++ [head alts])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
