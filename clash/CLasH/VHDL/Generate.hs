@@ -500,7 +500,7 @@ genFromInteger' (Left res) f args = do
     "Unsigned" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
     "Index" -> do
       bound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
-      return $ floor (logBase 2 (fromInteger (toInteger (bound)))) + 1
+      return $ (ceiling (logBase 2 (fromInteger (toInteger (bound)))))
   let fname = case name of "Signed" -> toSignedId ; "Unsigned" -> toUnsignedId ; "Index" -> toUnsignedId
   case args of
     [integer] -> do -- The type and dictionary arguments are removed by genApplication
