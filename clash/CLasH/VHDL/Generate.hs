@@ -301,7 +301,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
       let enums = [AST.PrimLit "'1'", AST.PrimLit "'0'"]
       return (enums, scrut_expr)
     (BuiltinType "Bool") -> do
-      let enums = [AST.PrimLit "true", AST.PrimLit "false"]
+      let enums = [AST.PrimLit "false", AST.PrimLit "true"]
       return (enums, scrut_expr)
     _ -> error $ "\nSelector case on weird scrutinee: " ++ pprString scrut ++ " scrutinee type: " ++ pprString (Id.idType scrut)
   -- Omit first condition, which is the default. Look up each altcon in
@@ -311,11 +311,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
   -- alternatives.
   let cond_exprs = map (\x -> cmp AST.:=: x) altcons
   -- Rotate expressions to the leftso that the expression related to the default case is the last
-  -- Does NOT apply when there is no DEFAULT case and there are no binders
-  let alts' = if ((any (\(_,x,_) -> not (null x)) alts) || ((\(x,_,_)->x) (head alts)) == CoreSyn.DEFAULT ) then
-                  ((tail alts) ++ [head alts])
-              else
-                  alts
+  let alts' = (tail alts) ++ [head alts]
   exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) alts' --((tail alts) ++ [head alts])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
