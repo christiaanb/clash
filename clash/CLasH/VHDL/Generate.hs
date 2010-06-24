@@ -310,9 +310,8 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
   -- Compare the (constructor field of the) scrutinee with each of the
   -- alternatives.
   let cond_exprs = map (\x -> cmp AST.:=: x) altcons
-  -- Rotate expressions to the leftso that the expression related to the default case is the last
-  let alts' = (tail alts) ++ [head alts]
-  exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) alts' --((tail alts) ++ [head alts])
+  -- Rotate expressions to the left, so that the expression related to the default case is the last
+  exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) ((tail alts) ++ [head alts])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
 mkConcSm (_, CoreSyn.Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement does not have a simple variable as scrutinee"
