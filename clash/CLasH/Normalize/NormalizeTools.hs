@@ -119,6 +119,7 @@ subeverywhere trans c (Case scrut b t alts) = do
 subeverywhere trans c (Var x) = return $ Var x
 subeverywhere trans c (Lit x) = return $ Lit x
 subeverywhere trans c (Type x) = return $ Type x
+subeverywhere trans c (Note msg expr) = return expr
 
 subeverywhere trans c (Cast expr ty) = do
   expr' <- trans (Other:c) expr
