@@ -318,7 +318,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) _ _ alts)) = do
   exprs <- MonadState.lift tsType $ mapM (varToVHDLExpr . (\(_,_,CoreSyn.Var expr) -> expr)) ((tail alts) ++ [head alts])
   return ([mkAltsAssign (Left bndr) cond_exprs exprs], [])
 
-mkConcSm (_, CoreSyn.Case _ _ _ _) = error "\nVHDL.mkConcSm: Not in normal form: Case statement does not have a simple variable as scrutinee"
+mkConcSm (_, expr@(CoreSyn.Case _ _ _ _)) = error $ "\nVHDL.mkConcSm: Not in normal form: Case statement does not have a simple variable as scrutinee; expr:\n" ++ pprString expr
 mkConcSm (bndr, expr) = error $ "\nVHDL.mkConcSM: Unsupported binding in let expression: " ++ pprString bndr ++ " = " ++ pprString expr
 
 -----------------------------------------------------------------------------
@@ -337,7 +337,7 @@ argsToVHDLExprs = catMaybesM . (mapM argToVHDLExpr)
 
 argToVHDLExpr :: Either CoreSyn.CoreExpr AST.Expr -> TranslatorSession (Maybe AST.Expr)
 argToVHDLExpr (Left expr) = MonadState.lift tsType $ do
-  let errmsg = "Generate.argToVHDLExpr: Using non-representable type? Should not happen!"
+  let errmsg = "Generate.argToVHDLExpr: Using non-representable type? Should not happen! Expr: \n" ++ show expr ++ "\n has Type:\n" ++ show (CoreUtils.exprType expr) ++ "\n"
   ty_maybe <- vhdlTy errmsg expr
   case ty_maybe of
     Just _ -> do
@@ -1146,8 +1146,8 @@ genApplication (dst, dsttype) f args = do
                   -- These builtin types are also enumeration types
                   Right (BuiltinType tyname) | tyname `elem` ["Bit", "Bool"] ->
                     simple_assign
-                  Right _ -> error $ "Datacon application does not result in a aggregate type? datacon: " ++ pprString f ++ " Args: " ++ show args
-                  Left _ -> error $ "Unrepresentable result type in datacon application?  datacon: " ++ pprString f ++ " Args: " ++ show args
+                  Right _ -> error $ "Generate.genApplication(DataConWorkId): application does not result in a aggregate type? datacon: " ++ pprString f ++ " Args: " ++ concatMap (\(x,y) -> (either pprString show x) ++ (pprString y)) args
+                  Left _ -> error $ "Generate.genApplication(DataConWorkId): Unrepresentable result type in datacon application?  datacon: " ++ pprString f ++ " Args: " ++ concatMap (\(x,y) -> (either pprString show x) ++ (pprString y)) args
                   where
                     -- Simple uncoditional assignment, for (built-in)
                     -- enumeration types
