@@ -3,7 +3,7 @@
 -- top level function "normalize", and defines the actual transformation passes that
 -- are performed.
 --
-module CLasH.Normalize (getNormalized, normalizeExpr, splitNormalized) where
+module CLasH.Normalize (getNormalized, normalizeExpr, splitNormalized, transforms) where
 
 -- Standard modules
 import Debug.Trace
@@ -964,12 +964,427 @@ letmerge c expr@(Let _ _) = do
 letmerge c expr = return expr
 -}
 
+----------------------------------------------------------------
+-- Arrow transformations
+----------------------------------------------------------------
+
+extractArrowExpression :: CoreBndr -> TransformMonad CoreExpr
+extractArrowExpression bndr = do
+  fExpr <- Trans.lift $ getNormalized False bndr
+  arrowsMap <- Trans.lift $ MonadState.get tsArrows
+  let transF = Maybe.fromMaybe (error $ "Normalize.extractArrowExpression: could not find real function of: " ++ pprString bndr) $ Map.lookup bndr arrowsMap
+  return $ Var transF
+
+--------------------------------
+-- ArrowHooks (>>>) inlining
+--------------------------------
+-- Arrow expressions usually take on the form of:
+--
+-- letrec d = (>>>) a b c ....
+-- in
+--  letrec
+--    x = d y z
+--    o = d p q
+--    ...
+--
+-- So we want to inline the arrow hooks (>>>) hoping the arrowHooksExtract 
+-- transformation (which mathes on the operator) will later remove it at every
+-- inlined location.
+inlineArrowHooks :: Transform
+inlineArrowHooks c expr@(Let (Rec [(bndr,val)]) res) | isArrowE expr = inlinebind condition c expr
+  where
+    condition :: ((CoreBndr, CoreExpr) -> TransformMonad Bool)
+    condition (b, e) = do
+      return (b == bndr)
+      
+inlineArrowHooks c expr = return expr
+
+--------------------------------
+-- liftS (^^^) extraction
+--------------------------------
+-- Stateful functions are explicitly lifted to arrows by the programmer using 
+-- the lifting (^^^) function, e.g. f ^^^ i; where f is of type: 
+-- a -> b -> (a,c). We replace the lifting function by an application of 'f' 
+-- to its arguments: f (x::a) (y::b). We also associate the initial state, 
+-- 'i', to this particular instantiation of f.
+-- 
+-- From: 
+-- (^^^) (f :: s -> a -> (s,b)) i
+-- 
+-- To: 
+-- \(s::s) (i::a) -> f i 
+arrowLiftSExtract :: Transform
+arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
+      -- Collect the lifted function and the initial state
+      let (Var liftS) = appliedF
+      let [Var realfun, Var initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
+      exprMaybe <- Trans.lift $ getGlobalBind realfun  
+      let funBody = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+      -- Create 2 new Vars that that will be applied to the lifted function
+      let [arg1Ty,arg2Ty] = (fst . Type.splitFunTys . CoreUtils.exprType) funBody
+      id1 <- Trans.lift $ mkInternalVar "param" arg1Ty
+      id2 <- Trans.lift $ mkInternalVar "param" arg2Ty
+      -- Clone the lifted function
+      realfun' <- Trans.lift $ mkFunction realfun funBody
+      -- Associate initial value with the cloned functions
+      initbndr_maybe <- Trans.lift $ getGlobalBind initvalue
+      initbndr <- case initbndr_maybe of
+        (Just a) -> return initvalue
+        Nothing -> do
+          let body = Var initvalue
+          id <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfun)
+          Trans.lift $ addGlobalBind id body
+          return id            
+      Trans.lift $ MonadState.modify tsInitStates (Map.insert realfun' initbndr)
+      -- Return the extracted expression       
+      change (Lam id1 (Lam id2 (App (App (Var realfun') (Var id1)) (Var id2))))
+  where
+    (appliedF, alreadyMappedArgs) = collectArgs expr
+
+-- Leave all other expressions unchanged    
+arrowLiftSExtract c e = return e
+
+----------------------------------
+-- implicit lift (arr) extraction
+----------------------------------
+-- Combinational functions are implicitly lifted to arrows by GHC using the 
+-- the 'arr' function, e.g. arr f; where f is of type:  a -> b. We replace the 
+-- lifting function by an application of 'f' to its argument: f (x::a). 
+-- 
+-- From: 
+-- arr (f :: a -> b)
+-- 
+-- To: 
+-- \() (x::a) -> ((), f x)
+arrowLiftExtract :: Transform
+arrowLiftExtract c expr@(App _ _) | isArrLift (appliedF, alreadyMappedArgs) = do
+    -- Collect the lifted function and the initial state
+    let (Var arr) = appliedF
+    let [realfun] = get_val_args (Var.varType arr) alreadyMappedArgs
+    -- Create 2 new Vars of which the 2nd is applied to the lifted function
+    let [argTy] = (fst . Type.splitFunTys . CoreUtils.exprType) realfun
+    id1 <- Trans.lift $ mkInternalVar "param" TysWiredIn.unitTy
+    id2 <- Trans.lift $ mkInternalVar "param" argTy
+    -- Return the extracted expression 
+    let realfunapp = App realfun (Var id2)
+    let realfunpack = MkCore.mkCoreTup [MkCore.mkCoreTup [],realfunapp]
+    change (Lam id1 (Lam id2 (realfunpack)))
+  where
+    (appliedF, alreadyMappedArgs) = collectArgs expr
+ 
+-- Leave all other expressions unchanged      
+arrowLiftExtract c e = return e
+
+-------------------------------------
+-- return value (returnA) extraction 
+-------------------------------------
+-- The returnA function normally returns the value of an Arrow, it is replaced
+-- by a statefull identity function
+-- 
+-- From: 
+-- (returnA :: (Arrow a) => a b b)
+-- 
+-- To: 
+-- \() (x::b) -> ((), x)
+arrowReturnExtract :: Transform
+arrowReturnExtract c expr@(Var f) | ((Name.getOccString f) == "returnA") = do
+  -- Create 2 new Vars of which the 2nd is of the value type of the arrow
+  let arg_ty = (head . snd . Type.splitTyConApp . CoreUtils.exprType) expr
+  id1 <- Trans.lift $ mkInternalVar "param" TysWiredIn.unitTy
+  id2 <- Trans.lift $ mkInternalVar "param" arg_ty
+  -- Return the extracted expression 
+  let packinps = MkCore.mkCoreTup [MkCore.mkCoreTup [],Var id2]
+  change (Lam id1 (Lam id2 packinps))
+
+-- Leave all other expressions unchanged      
+arrowReturnExtract c e = return e
+
+--------------------------------
+-- arrow hooks (>>>) extraction
+--------------------------------
+-- The (>>>) function composes 2 arrows into 1:
+-- 
+--       -----                  -----
+-- β --> | f | --> γ >>> γ ---> | g | ---> δ
+--       -----                  -----
+-- 
+-- It is replaced by a statefull function that evaluates the 2 lifted 
+-- functions in a letbinding and returns the result of the 2nd function.
+-- 
+-- From: 
+-- (>>>) (f :: s1 -> β -> (s1,γ)) (g :: s2 -> γ -> (s2,δ))
+-- 
+-- To: 
+-- \((s::(s1,s2)) (β::β) -> letrec
+--                            s1   = case s of (s1,s2) -> s1
+--                            s2   = case s of (s1,s2) -> s2
+--                            fout = f s1 β
+--                            s1'  = case fout of (s1',γ) -> s1'
+--                            γ    = case fout of (s1',γ) -> γ
+--                            gout = g s2 γ
+--                            s2'  = case fout of (s2',δ) -> s2'
+--                            δ    = case fout of (s2',δ) -> δ
+--                            aout = ((s1',s2'),δ)
+--                          in
+--                            aout
+arrowHooksExtract :: Transform
+arrowHooksExtract c expr@(App _ _) | isArrHooks (appliedF, alreadyMappedArgs) = do
+    -- Collect the two lifted functions
+    let (Var hooks) = appliedF
+    let [f,g] = get_val_args (Var.varType hooks) alreadyMappedArgs
+    -- Collect the types and expression for f
+    realF <- if isArrowE f
+      -- If f is still an arrow, arrow-normalize it first 
+      then do
+        case f of
+          -- If it's a variable reference, make sure the referenced expression
+          -- is normalized, and return the bndr for the normalized expression          
+          (Var bndr) -> extractArrowExpression bndr
+          -- Otherwise, just normalize the expression
+          otherwise -> Trans.lift $ normalizeExpr "hookleft" aTransforms f
+      else 
+        return f
+    -- Collect the types and expression for g
+    realG <- if isArrowE g
+      -- If g is still an arrow, arrow-normalize it first
+      then do
+        case g of
+          -- If it's a variable reference, make sure the referenced expression
+          -- is normalized, and return the bndr for the normalized expression
+          (Var bndr) -> extractArrowExpression bndr
+          -- Otherwise, just normalize the expression
+          otherwise -> Trans.lift $ normalizeExpr "hookright" aTransforms g
+      else 
+        return g
+    let [([fStateTy,fInpTy], fResTy),([gStateTy,gInpTy], gResTy)] = map (Type.splitFunTys . CoreUtils.exprType) [realF,realG]      
+    -- Create the State input type of the combined functions
+    let stateTy = MkCore.mkCoreTupTy [fStateTy,gStateTy]
+    stateId <- Trans.lift $ mkInternalVar "inputStateHooks" stateTy
+    inputId <- Trans.lift $ mkInternalVar "inputHooks" fInpTy
+    -- Unpack the states of functions f and g
+    fStateScrutId <- Trans.lift $ mkInternalVar "fStateScrutHooks" fStateTy
+    gStateScrutId <- Trans.lift $ mkInternalVar "gStateScrutHooks" gStateTy
+    fStateId <- Trans.lift $ mkInternalVar "fStateHooks" fStateTy
+    gStateId <- Trans.lift $ mkInternalVar "gStateHooks" gStateTy
+    stateSelbndr <- Trans.lift $ mkInternalVar "stateSelHooks" stateTy   
+    let unpackFState = MkCore.mkSmallTupleSelector [fStateScrutId,gStateScrutId] fStateScrutId stateSelbndr (Var stateId)
+    let unpackGState = MkCore.mkSmallTupleSelector [fStateScrutId,gStateScrutId] gStateScrutId stateSelbndr (Var stateId)
+    -- Unpack the updated state and output of f
+    fResultId <- Trans.lift $ mkInternalVar "fResultHooks" fResTy
+    fStatePrimeScrutId <- Trans.lift $ mkInternalVar "fStatePrimeScrutHooks" fStateTy
+    gammaScrutId <- Trans.lift $ mkInternalVar "gammaScrutHooks" gInpTy
+    fStatePrimeId <- Trans.lift $ mkInternalVar "fStatePrimeHooks" fStateTy
+    gammaId <- Trans.lift $ mkInternalVar "gammaHooks" gInpTy
+    fResultSelbndr <- Trans.lift $ mkInternalVar "fResultSelHooks" fResTy   
+    let unpackFStatePrime = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,gammaScrutId] fStatePrimeScrutId fResultSelbndr (Var fResultId)
+    let unpackGamma = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,gammaScrutId] gammaScrutId fResultSelbndr (Var fResultId)
+    -- Unpack the updated state and output of g
+    let deltaType = (last . snd . Type.splitTyConApp) gResTy
+    gResultId <- Trans.lift $ mkInternalVar "gResultHooks" gResTy
+    gStatePrimeScrutId <- Trans.lift $ mkInternalVar "gStatePrimeScrutHooks" gStateTy
+    deltaScrutId <- Trans.lift $ mkInternalVar "deltaScrutHooks" deltaType 
+    gStatePrimeId <- Trans.lift $ mkInternalVar "gStatePrimeHooks" gStateTy
+    deltaId <- Trans.lift $ mkInternalVar "deltaHooks" deltaType
+    gResultSelbndr <- Trans.lift $ mkInternalVar "gResultSelHooks" gResTy 
+    let unpackGStatePrime = MkCore.mkSmallTupleSelector [gStatePrimeScrutId,deltaScrutId] gStatePrimeScrutId gResultSelbndr (Var gResultId)
+    let unpackDelta = MkCore.mkSmallTupleSelector [gStatePrimeScrutId,deltaScrutId] deltaScrutId gResultSelbndr (Var gResultId)
+    -- Pack the update state, and pack the result of g
+    let resPack = MkCore.mkCoreTup [MkCore.mkCoreTup [Var fStatePrimeId, Var gStatePrimeId], Var deltaId]
+    arrowHooksOutId <- Trans.lift $ mkInternalVar "arrowHooksOut" (CoreUtils.exprType (resPack))
+    let letexprs = Rec [(fStateId, unpackFState)
+                       ,(gStateId, unpackGState)
+                       , (fResultId, (App (App realF (Var fStateId)) (Var inputId)))
+                       , (fStatePrimeId, unpackFStatePrime)
+                       , (gammaId, unpackGamma)
+                       , (gResultId, (App (App realG (Var gStateId)) (Var gammaId)))
+                       , (gStatePrimeScrutId, unpackGStatePrime)
+                       , (deltaId, unpackDelta)
+                       , (arrowHooksOutId, resPack)
+                       ]
+    let letExpression = MkCore.mkCoreLets [letexprs] (Var arrowHooksOutId)       
+    change (Lam stateId (Lam inputId (letExpression)))
+  where
+    (appliedF, alreadyMappedArgs) = collectArgs expr   
+
+-- Leave all other expressions unchanged       
+arrowHooksExtract c e = return e
+
+--------------------------------
+-- arrow first extraction
+--------------------------------
+-- The first function encapsulates arrow in a larger arrow which has a input
+-- tuple and an output tuple. The inner arrow is applied to the first value
+-- of the tuple:
+-- 
+--      -------------
+--      |   -----   |                 
+-- β ---|-> | f | --|--> γ 
+--      |   -----   |
+-- δ ---|-----------|--> δ
+--      -------------
+-- 
+-- It is replaced by a statefull function that evaluates the lifted 
+-- function in a letbinding and returns the result as part of the tuple.
+-- 
+-- From: 
+-- first (f :: s -> β -> (s,γ))
+-- 
+-- To: 
+-- \(s::s) (i::(β,δ)) -> letrec
+--                          β    = case i of (β,δ) -> β
+--                          δ    = case i of (β,δ) -> δ
+--                          fout = f s β
+--                          s'   = case fout of (s',γ) -> s'
+--                          γ    = case fout of (s',γ) -> γ
+--                          aout = (s',(γ,δ))
+--                        in
+--                          aout
+arrowFirstExtract :: Transform
+arrowFirstExtract c expr@(App _ _) | isArrFirst (appliedF, alreadyMappedArgs) = do
+    let (Var first) = appliedF
+    -- Get type of delta and gamma
+    let deltaTy = (last . snd . Type.splitTyConApp . head . snd . Type.splitTyConApp . CoreUtils.exprType) expr
+    let gammaTy = (head . snd . Type.splitTyConApp . last . snd . Type.splitTyConApp . CoreUtils.exprType) expr
+    -- Retreive the packed functions     
+    let [f] = get_val_args (Var.varType first) alreadyMappedArgs
+    -- Get the State, Input and Result type of the packed function
+    realF <- if isArrowE f
+      -- If f is still an arrow, arrow-normalize it first 
+      then do
+        case f of
+          -- If it's a variable reference, make sure the referenced expression
+          -- is normalized, and return the bndr for the normalized expression
+          (Var bndr) -> extractArrowExpression bndr
+          -- Otherwise, just normalize the expression
+          otherwise -> Trans.lift $ normalizeExpr "first" aTransforms f
+      else 
+        return f
+    let ([fStateTy,fInpTy], fResTy) = (Type.splitFunTys . CoreUtils.exprType) realF
+    -- Create a new input type that is a combination of the input of 'f' and delta
+    let inputTy = MkCore.mkCoreTupTy [fInpTy,deltaTy]
+    inputStateId <- Trans.lift $ mkInternalVar "inputStateFirst" fStateTy
+    inputId <- Trans.lift $ mkInternalVar "inputFirst" inputTy
+    -- Unpack input into input for function f and delta
+    fInputScrutId <- Trans.lift $ mkInternalVar "fInputScrutFirst" fInpTy
+    deltaScrutId <- Trans.lift $ mkInternalVar "deltaScrutFirst" deltaTy
+    fInput <- Trans.lift $ mkInternalVar "fInputFirst" fInpTy
+    deltaId <- Trans.lift $ mkInternalVar "deltaFirst" deltaTy
+    let unpackFInput = MkCore.mkSmallTupleSelector [fInputScrutId,deltaScrutId] fInputScrutId (MkCore.mkWildBinder inputTy) (Var inputId)
+    let unpackDelta = MkCore.mkSmallTupleSelector [fInputScrutId,deltaScrutId] deltaScrutId (MkCore.mkWildBinder inputTy) (Var inputId)
+    -- Unpack the updated state of 'f' and its output
+    fResultId <- Trans.lift $ mkInternalVar "fResultFirst" fResTy
+    fStatePrimeScrutId <- Trans.lift $ mkInternalVar "fStatePrimeScrutFirst" fStateTy
+    gammaScrutId <- Trans.lift $ mkInternalVar "gammaScrutFirst" gammaTy
+    fStatePrimeId <- Trans.lift $ mkInternalVar "fStatePrimeFirst" fStateTy
+    gammaId <- Trans.lift $ mkInternalVar "gammaFirst" gammaTy
+    let unpackFStatePrime = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,gammaScrutId] fStatePrimeScrutId (MkCore.mkWildBinder fResTy) (Var fResultId)
+    let unpackGamma = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,gammaScrutId] gammaScrutId (MkCore.mkWildBinder fResTy) (Var fResultId)
+    -- Pack the update state, and pack the result of f and delta
+    let resPack = MkCore.mkCoreTup [Var fStatePrimeId, MkCore.mkCoreTup [Var gammaId, Var deltaId]]
+    arrowFirstOutId <- Trans.lift $ mkInternalVar "arrowFirstOut" (CoreUtils.exprType (resPack))
+    let letexprs = Rec [ (fInput, unpackFInput)
+                       , (deltaId, unpackDelta)
+                       , (fResultId, (App (App realF (Var inputStateId)) (Var fInput)))
+                       , (fStatePrimeId, unpackFStatePrime)
+                       , (gammaId, unpackGamma)
+                       , (arrowFirstOutId, resPack)
+                       ]
+    let letExpression = MkCore.mkCoreLets [letexprs] (Var arrowFirstOutId)   
+    change (Lam inputStateId (Lam inputId (letExpression)))
+  where
+    (appliedF, alreadyMappedArgs) = collectArgs expr
+
+-- Leave all other expressions unchanged
+arrowFirstExtract c e = return e
+
+--------------------------------
+-- arrow loop extraction
+--------------------------------
+-- The loop function feeds back the latter part of the outputtuple of an arrow 
+-- 
+--        -------                
+-- β ---> |     | ---> γ 
+--        |  f  |
+--   ---> |     | --- 
+--   |    -------   |
+--   ----------------
+--           δ
+-- 
+-- It is replaced by a statefull function that evaluates the lifted 
+-- function in a letbinding and feeds back part of the result to itself
+-- 
+-- From: 
+-- loop (f :: s -> (β,δ) -> (s,(γ,δ))
+-- 
+-- To: 
+-- \(s::s) (i::(β,δ)) -> letrec
+--                         i    = (β,δ)
+--                         fout = f s i
+--                         s'   = case fout of (s',fres) -> s'
+--                         fres = case fout of (s',fres) -> fres
+--                         γ    = case fres of (γ,δ) -> γ
+--                         δ    = case fres of (γ,δ) -> δ
+--                         aout = (s',γ)
+--                       in
+--                         aout
+arrowLoopExtract :: Transform
+arrowLoopExtract c expr@(App _ _) | isArrLoop (appliedF, alreadyMappedArgs) = do
+    let (Var loop) = appliedF
+    let [f] = get_val_args (Var.varType loop) alreadyMappedArgs
+    -- Get the State, Input and Result type of the packed function
+    realF <- if isArrowE f 
+      -- If f is still an arrow, arrow-normalize it first 
+      then do
+        case f of
+          -- If it's a variable reference, make sure the referenced expression
+          -- is normalized, and return the bndr for the normalized expression
+          (Var bndr) -> extractArrowExpression bndr
+          -- Otherwise, just normalize the expression
+          otherwise -> Trans.lift $ normalizeExpr "arrowLoop" aTransforms f
+      else 
+        return f
+    let ([fStateTy,fInpTy], fResTy) = (Type.splitFunTys . CoreUtils.exprType) realF
+    let [betaTy,deltaTy] = (snd . Type.splitTyConApp) fInpTy
+    let fOutTy = (last . snd . Type.splitTyConApp) fResTy
+    let gammaTy = (head . snd . Type.splitTyConApp) fOutTy
+    betaId <- Trans.lift $ mkInternalVar "betaLoop" betaTy
+    deltaId <- Trans.lift $ mkInternalVar "deltaLoop" deltaTy
+    gammaId <- Trans.lift $ mkInternalVar "gammaLoop" gammaTy
+    deltaScrutId <- Trans.lift $ mkInternalVar "deltaScrutLoop" deltaTy
+    gammaScrutId <- Trans.lift $ mkInternalVar "gammaScrutLoop" gammaTy
+    fInput <- Trans.lift $ mkInternalVar "fInputLoop" fInpTy
+    inputStateId <- Trans.lift $ mkInternalVar "inputStateLoop" fStateTy
+    let inputPack = MkCore.mkCoreTup [Var betaId, Var deltaId]
+    fResultId <- Trans.lift $ mkInternalVar "fResultLoop" fResTy
+    fOutId <- Trans.lift $ mkInternalVar "fOutLoop" fOutTy
+    fOutScrutId <- Trans.lift $ mkInternalVar "fOutScrutLoop" fOutTy
+    fStatePrimeId <- Trans.lift $ mkInternalVar "fStatePrimeLoop" fStateTy
+    fStatePrimeScrutId <- Trans.lift $ mkInternalVar "fStatePrimeScrutLoop" fStateTy
+    let unpackFStatePrime = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,fOutScrutId] fStatePrimeScrutId (MkCore.mkWildBinder fResTy) (Var fResultId)
+    let unpackFOut = MkCore.mkSmallTupleSelector [fStatePrimeScrutId,fOutScrutId] fOutScrutId (MkCore.mkWildBinder fResTy) (Var fResultId)
+    let unpackGamma = MkCore.mkSmallTupleSelector [gammaScrutId,deltaScrutId] gammaScrutId (MkCore.mkWildBinder fOutTy) (Var fOutId)
+    let unpackDelta = MkCore.mkSmallTupleSelector [gammaScrutId,deltaScrutId] deltaScrutId (MkCore.mkWildBinder fOutTy) (Var fOutId)
+    let resPack = MkCore.mkCoreTup [Var fStatePrimeId, Var gammaId]
+    arrowLoopOutId <- Trans.lift $ mkInternalVar "arrowLoopOut" (CoreUtils.exprType (resPack))
+    let letexprs = Rec [ (fInput, inputPack)
+                       , (fResultId, (App (App realF (Var inputStateId)) (Var fInput)))
+                       , (fStatePrimeId, unpackFStatePrime)
+                       , (fOutId, unpackFOut)
+                       , (gammaId, unpackGamma)
+                       , (deltaId, unpackDelta)
+                       , (arrowLoopOutId, resPack)
+                       ]
+    let letExpression = MkCore.mkCoreLets [letexprs] (Var arrowLoopOutId)
+    change (Lam inputStateId (Lam betaId (letExpression)))
+  where
+    (appliedF, alreadyMappedArgs) = collectArgs expr
+
+-- Leave all other expressions unchanged    
+arrowLoopExtract c e = return e
+
 --------------------------------
 -- End of transformations
 --------------------------------
-
-
-
 
 -- What transforms to run?
 transforms = [ ("inlinedict", inlinedict)
@@ -998,6 +1413,21 @@ transforms = [ ("inlinedict", inlinedict)
              , ("castsimpl", castsimpl)
              ]
 
+-- What transforms to apply to get rid of arrows
+aTransforms = [ ("inlinenonrep", inlinenonrep)
+              , ("letrec", letrec)
+              , ("inlineArrowHooks", inlineArrowHooks)
+              , ("letremove", letremove)
+              , ("beta", beta)
+              , ("eta", eta)
+              , ("arrowLiftSExtract", arrowLiftSExtract)
+              , ("arrowLiftExtract", arrowLiftExtract)
+              , ("arrowReturnExtract", arrowReturnExtract)
+              , ("arrowHooksExtract", arrowHooksExtract)
+              , ("arrowFirstExtract", arrowFirstExtract)
+              , ("arrowLoopExtract", arrowLoopExtract)            
+              ]
+
 -- | Returns the normalized version of the given function, or an error
 -- if it is not a known global binder.
 getNormalized ::
@@ -1018,32 +1448,69 @@ getNormalized_maybe ::
   -> TranslatorSession (Maybe CoreExpr) -- The normalized function body
 
 getNormalized_maybe result_nonrep bndr = do
-    expr_maybe <- getGlobalBind bndr
-    normalizeable <- isNormalizeable result_nonrep bndr
-    if not normalizeable || Maybe.isNothing expr_maybe
-      then
-        -- Binder not normalizeable or not found
-        return Nothing
-      else do
-        -- Binder found and is monomorphic. Normalize the expression
-        -- and cache the result.
-        normalized <- Utils.makeCached bndr tsNormalized $ 
-          normalizeExpr (show bndr) (Maybe.fromJust expr_maybe)
-        return (Just normalized)
+  expr_maybe <- getGlobalBind bndr
+  case (isArrowB bndr, expr_maybe, isLiftMaybe expr_maybe) of
+    -- The bndr is an Arrow, and it is the lifting function
+    (True, Just arrowf, True) -> do
+      -- Collect the lifted function and the initial state
+      let (CoreSyn.Var liftfun, already_mapped_args) = CoreSyn.collectArgs arrowf
+      let [Var realfun, Var initvalue] = get_val_args (Var.varType liftfun) already_mapped_args
+      -- Normalize the lifted function
+      normalized <- getNormalized_maybe result_nonrep realfun
+      realfun' <- mkFunction realfun $ Maybe.fromMaybe (error $ "Normalize.getNormalized_maybe(Arrow.liftS): lifted function " ++ pprString realfun ++ "could not be normalized") normalized
+      -- Associate initial state with lifted function
+      MonadState.modify tsInitStates (Map.insert realfun' initvalue)
+      -- Make a mapping from the arrow to the lifted function
+      MonadState.modify tsArrows (Map.insert bndr realfun')
+      return normalized
+    -- The bndr is an Arrow (but not the lifting function)
+    (True, Just arrowf, False) -> do
+      normalizedA <- Utils.makeCached bndr tsNormalized $ do {
+          -- First apply the transformations that remove the arrows
+          ; arrowLessExpr <- normalizeExpr (show bndr) aTransforms arrowf
+          -- Secondly apply the standard normalization transformations
+          ; normalizeExpr (show bndr) transforms arrowLessExpr
+          }
+      normalizeable <- isNormalizeableE result_nonrep normalizedA
+      if not normalizeable
+        then
+          return Nothing
+        else
+          return (Just normalizedA)
+    -- The expression is not an Arrow
+    (False, Just expr, False) -> do
+      normalizeable <- isNormalizeable result_nonrep bndr
+      if not normalizeable
+        then
+          -- Binder not normalizeable
+          return Nothing
+        else do
+          -- Binder found and is monomorphic. Normalize the expression
+          -- and cache the result.
+          normalized <- Utils.makeCached bndr tsNormalized $ 
+            normalizeExpr (show bndr) transforms expr
+          return (Just normalized)
+    -- No expression belonging to this binder found
+    otherwise -> return Nothing
+  where
+    isLiftMaybe :: Maybe CoreExpr -> Bool
+    isLiftMaybe Nothing = False
+    isLiftMaybe (Just x) = (isLift . CoreSyn.collectArgs) x
 
 -- | Normalize an expression
 normalizeExpr ::
   String -- ^ What are we normalizing? For debug output only.
+  -> [(String, Transform)] -- ^ What transformations we are applying
   -> CoreSyn.CoreExpr -- ^ The expression to normalize 
   -> TranslatorSession CoreSyn.CoreExpr -- ^ The normalized expression
 
-normalizeExpr what expr = do
+normalizeExpr what normTransforms expr = do
       startcount <- MonadState.get tsTransformCounter 
       expr_uniqued <- genUniques expr
       -- Do a debug print, if requested
       let expr_uniqued' = Utils.traceIf (normalize_debug >= NormDbgFinal) (what ++ " before normalization:\n\n" ++ showSDoc ( ppr expr_uniqued ) ++ "\n") expr_uniqued
       -- Normalize this expression
-      expr' <- dotransforms transforms expr_uniqued'
+      expr' <- dotransforms normTransforms expr_uniqued'
       endcount <- MonadState.get tsTransformCounter 
       -- Do a debug print, if requested
       Utils.traceIf (normalize_debug >= NormDbgFinal)  (what ++ " after normalization:\n\n" ++ showSDoc ( ppr expr') ++ "\nNeeded " ++ show (endcount - startcount) ++ " transformations to normalize " ++ what) $

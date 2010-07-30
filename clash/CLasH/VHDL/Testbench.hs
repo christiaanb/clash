@@ -130,7 +130,7 @@ createStimulans ::
 
 createStimulans expr cycl = do 
   -- There must be a let at top level 
-  expr <- normalizeExpr ("test input #" ++ show cycl) expr
+  expr <- normalizeExpr ("test input #" ++ show cycl) transforms expr
   -- Split the normalized expression. It can't have a function type, so match
   -- an empty list of argument binders
   let ([], binds, res) = splitNormalized expr

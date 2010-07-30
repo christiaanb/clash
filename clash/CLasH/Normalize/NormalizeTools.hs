@@ -18,6 +18,7 @@ import qualified Id
 import qualified CoreSubst
 import qualified Type
 import qualified CoreUtils
+import qualified TyCon
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -258,3 +259,63 @@ isNormalizeable result_nonrep bndr = do
   let (arg_tys, res_ty) = Type.splitFunTys ty
   let check_tys = if result_nonrep then arg_tys else (res_ty:arg_tys) 
   andM $ mapM isRepr' check_tys
+
+isNormalizeableE :: 
+  Bool -- ^ Allow the result to be unrepresentable?
+  -> CoreExpr  -- ^ The binder to check
+  -> TranslatorSession Bool  -- ^ Is it normalizeable?
+isNormalizeableE result_nonrep expr = do
+  let ty = CoreUtils.exprType expr
+  let (arg_tys, res_ty) = Type.splitFunTys ty
+  let check_tys = if result_nonrep then arg_tys else (res_ty:arg_tys) 
+  andM $ mapM isRepr' check_tys
+
+isArrowB ::
+	CoreBndr
+	-> Bool
+isArrowB bndr = res
+  where
+  	ty = Id.idType bndr
+  	res = case Type.splitTyConApp_maybe ty of
+  		Just (tycon, args) -> Name.getOccString (TyCon.tyConName tycon) == "Stat"
+  		Nothing -> False
+
+isArrowE ::
+	CoreExpr
+	-> Bool
+isArrowE expr = res
+  where
+	  ty = CoreUtils.exprType expr
+	  res =	case Type.splitTyConApp_maybe ty of
+  		Just (tycon, args) -> (Name.getOccString (TyCon.tyConName tycon)) == "Stat"
+  		Nothing -> False
+	
+isLift ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isLift ((Var bndr), args) = (Name.getOccString bndr) == "^^^" && (length args) > 4
+isLift _                  = False
+	
+isArrHooks ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isArrHooks ((Var bndr), args) = (Name.getOccString bndr) == ">>>" && (length args) > 6
+isArrHooks _                  = False	
+	
+isArrLift ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isArrLift ((Var bndr), args) = (Name.getOccString bndr) == "arr" && (length args) > 2
+isArrLift _                  = False	
+
+isArrFirst ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isArrFirst ((Var bndr), args) = (Name.getOccString bndr) == "first" && (length args) > 3
+isArrFirst _                  = False
+
+isArrLoop ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isArrLoop ((Var bndr), args) = (Name.getOccString bndr) == "loop" && (length args) > 3
+isArrLoop _                  = False
