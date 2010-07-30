@@ -59,6 +59,7 @@ data HType = AggrType String (Maybe (String, HType)) [[(String, HType)]] |
              RangedWType Int |
              SizedIType Int |
              BuiltinType String |
+             UnitType |
              StateType
   deriving (Eq, Ord, Show)
 

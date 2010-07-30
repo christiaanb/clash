@@ -359,6 +359,8 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                   bound <- tfp_to_int (ranged_word_bound_ty ty)
                   -- Upperbound is exclusive, hence the -1
                   return $ Right $ RangedWType (bound - 1)
+                "()" -> do
+                  return $ Right UnitType
                 otherwise ->
                   mkTyConHType tycon args
     Nothing -> return $ Left $ "\nVHDLTools.mkHTypeEither': Do not know what to do with type: " ++ pprString ty
@@ -383,7 +385,7 @@ mkTyConHType tycon args =
           elem_htyss_either <- mapM (mapM mkHTypeEither) real_arg_tyss_nostate
           let (errors, elem_htyss) = unzip (map Either.partitionEithers elem_htyss_either)
           case (all null errors) of
-            True -> case (dcs, concat elem_htyss) of
+            True -> case (dcs,filter (\x -> x /= UnitType && x /= StateType) $ concat elem_htyss) of
                 -- A single constructor with a single (non-state) field?
                 ([dc], [elem_hty]) -> return $ Right elem_hty
                 -- If we get here, then all of the argument types were state
@@ -449,7 +451,8 @@ construct_vhdl_ty :: HType -> TypeSession TypeMapRec
 -- State types don't generate VHDL
 construct_vhdl_ty htype =
     case htype of
-      StateType -> return  Nothing
+      StateType -> return Nothing
+      UnitType -> return Nothing
       (SizedWType w) -> mkUnsignedTy w
       (SizedIType i) -> mkSignedTy i
       (RangedWType u) -> mkNaturalTy 0 u

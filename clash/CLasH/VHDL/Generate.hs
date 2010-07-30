@@ -1102,9 +1102,10 @@ genApplication (dst, dsttype) f args = do
             --Left bndr -> do
               -- We have the bndr, so we can get at the type
               htype_either <- MonadState.lift tsType $ mkHTypeEither dsttype
-              let argsNoState = filter (\x -> not (either hasStateType (\x -> False) x)) (map fst args)
+              let argsNoState = filter (\(x,y) -> not (either hasStateType (\x -> False) x)) args   
+              argsTransatable <- MonadState.lift tsType $ Monad.filterM (\(x,y) -> canTypeToVHDLType y) argsNoState
               let dcs = datacons_for dsttype
-              case (dcs, argsNoState) of
+              case (dcs, map fst argsTransatable) of
                 -- This is a type with a single datacon and a single
                 -- argument, so no record is created (the type of the
                 -- binder becomes the type of the single argument).
@@ -1116,7 +1117,7 @@ genApplication (dst, dsttype) f args = do
                   Right htype@(AggrType _ etype _) -> do
                     let dc_i = datacon_index dsttype dc
                     let labels = getFieldLabels htype dc_i
-                    arg_exprs <- argsToVHDLExprs argsNoState
+                    arg_exprs <- argsToVHDLExprs (map fst argsNoState)
                     let (final_labels, final_exprs) = case getConstructorFieldLabel htype of
                           -- Only a single constructor
                           Nothing -> 
@@ -1238,6 +1239,13 @@ genApplication (dst, dsttype) f args = do
                return ([mkUncondAssign dst f'], [])
     else -- Destination has empty type, don't generate anything
       return ([], [])
+      
+canTypeToVHDLType :: Type.Type -> TypeSession Bool
+canTypeToVHDLType ty = do
+  a <- vhdlTy "Generate.canTypeToVHDLType" ty
+  let b = case a of Nothing -> False ; Just _ -> True
+  return b   
+      
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
 -----------------------------------------------------------------------------
