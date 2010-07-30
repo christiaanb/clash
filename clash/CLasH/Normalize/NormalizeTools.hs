@@ -19,6 +19,7 @@ import qualified CoreSubst
 import qualified Type
 import qualified CoreUtils
 import qualified TyCon
+import qualified Var
 import Outputable ( showSDoc, ppr, nest )
 
 -- Local imports
@@ -293,29 +294,29 @@ isArrowE expr = res
 isLift ::
 	(CoreExpr, [CoreExpr])
 	-> Bool
-isLift ((Var bndr), args) = (Name.getOccString bndr) == "^^^" && (length args) > 4
+isLift ((Var bndr), args) = (Name.getOccString bndr) == "^^^" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 2
 isLift _                  = False
 	
 isArrHooks ::
 	(CoreExpr, [CoreExpr])
 	-> Bool
-isArrHooks ((Var bndr), args) = (Name.getOccString bndr) == ">>>" && (length args) > 6
+isArrHooks ((Var bndr), args) = (Name.getOccString bndr) == ">>>" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 2
 isArrHooks _                  = False	
 	
 isArrLift ::
 	(CoreExpr, [CoreExpr])
 	-> Bool
-isArrLift ((Var bndr), args) = (Name.getOccString bndr) == "arr" && (length args) > 2
+isArrLift ((Var bndr), args) = (Name.getOccString bndr) == "arr" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 1
 isArrLift _                  = False	
 
 isArrFirst ::
 	(CoreExpr, [CoreExpr])
 	-> Bool
-isArrFirst ((Var bndr), args) = (Name.getOccString bndr) == "first" && (length args) > 3
+isArrFirst ((Var bndr), args) = (Name.getOccString bndr) == "first" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 1
 isArrFirst _                  = False
 
 isArrLoop ::
 	(CoreExpr, [CoreExpr])
 	-> Bool
-isArrLoop ((Var bndr), args) = (Name.getOccString bndr) == "loop" && (length args) > 3
+isArrLoop ((Var bndr), args) = (Name.getOccString bndr) == "loop" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 1
 isArrLoop _                  = False
