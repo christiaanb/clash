@@ -831,5 +831,5 @@ mkSigDec bndr = do
 
 -- | Does the given thing have a non-empty type?
 hasNonEmptyType :: (TypedThing t, Outputable.Outputable t) => 
-  t -> TranslatorSession Bool
-hasNonEmptyType thing = MonadState.lift tsType $ isJustM (vhdlTy "hasNonEmptyType: Non representable type?" thing)
+  String -> t -> TranslatorSession Bool
+hasNonEmptyType errMsg thing = MonadState.lift tsType $ isJustM (vhdlTy (errMsg ++ "\nVHDLTools.hasNonEmptyType: Non representable type?") thing)

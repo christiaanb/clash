@@ -134,12 +134,12 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
         ([in_state], [out_state], Nothing) -> do 
-          nonEmpty <- hasNonEmptyType in_state
+          nonEmpty <- hasNonEmptyType "\n Generate.getArchitecture (in_state)" in_state
           if nonEmpty 
             then error ("No initial state defined for: " ++ show fname) 
             else return ([],[])
         ([in_state], [out_state], Just resetval) -> do
-          nonEmpty <- hasNonEmptyType in_state
+          nonEmpty <- hasNonEmptyType "" in_state
           if nonEmpty 
             then mkStateProcSm (in_state, out_state, resetval)
             else error ("Initial state defined for function with only substate: " ++ show fname)
@@ -247,10 +247,10 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
                 | otherwise =
   case alt of
     (CoreSyn.DataAlt dc, bndrs, (CoreSyn.Var sel_bndr)) -> do
-      nonemptysel <- hasNonEmptyType sel_bndr 
+      nonemptysel <- hasNonEmptyType "\n Generate.mkConcSm (nonemptysel)" sel_bndr 
       if nonemptysel 
         then do
-          bndrs' <- Monad.filterM hasNonEmptyType bndrs
+          bndrs' <- Monad.filterM (hasNonEmptyType ("\n Generate.mkConcSm (bndr'): " ++ show bndrs)) bndrs
           case List.elemIndex sel_bndr bndrs' of
             Just sel_i -> do
               htypeScrt <- MonadState.lift tsType $ mkHTypeEither (Var.varType scrut)
@@ -1091,7 +1091,7 @@ genApplication ::
   --   instantiated.
 genApplication (dst, dsttype) f args = do
   nonemptydst <- case dst of
-    Left bndr -> hasNonEmptyType bndr 
+    Left bndr -> hasNonEmptyType "\nGenerate.genApplication: " bndr 
     Right _ -> return True
   if nonemptydst
     then
