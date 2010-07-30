@@ -160,18 +160,18 @@ castsimpl c expr = return expr
 inlinetoplevel :: Transform
 inlinetoplevel c expr | not (null c) && is_letbinding_ctx (head c) && not (is_fun expr) =
   case collectArgs expr of
-	(Var f, args) -> do
-	  body_maybe <- needsInline f
-	  case body_maybe of
-		Just body -> do
-			-- Regenerate all uniques in the to-be-inlined expression
-			body_uniqued <- Trans.lift $ genUniques body
-			-- And replace the variable reference with the unique'd body.
-			change (mkApps body_uniqued args)
-			-- No need to inline
-		Nothing -> return expr
-	-- This is not an application of a binder, leave it unchanged.
-	_ -> return expr
+  (Var f, args) -> do
+    body_maybe <- needsInline f
+    case body_maybe of
+      Just body -> do
+        -- Regenerate all uniques in the to-be-inlined expression
+        body_uniqued <- Trans.lift $ genUniques body
+        -- And replace the variable reference with the unique'd body.
+        change (mkApps body_uniqued args)
+        -- No need to inline
+      Nothing -> return expr
+  -- This is not an application of a binder, leave it unchanged.
+  _ -> return expr
 
 -- Leave all other expressions unchanged
 inlinetoplevel c expr = return expr

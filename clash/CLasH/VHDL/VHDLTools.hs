@@ -600,11 +600,11 @@ getConstructorFieldLabel ::
   HType
   -> Maybe AST.VHDLId
 getConstructorFieldLabel (AggrType _ (Just con) _) =
-	Just $ mkVHDLBasicId (fst con)
+  Just $ mkVHDLBasicId (fst con)
 getConstructorFieldLabel (AggrType _ Nothing _) =
-	Nothing
+  Nothing
 getConstructorFieldLabel htype =
-	error $ "Can't get constructor field label from non-aggregate HType: " ++ show htype
+  error $ "Can't get constructor field label from non-aggregate HType: " ++ show htype
 
 
 getConstructorIndex ::
