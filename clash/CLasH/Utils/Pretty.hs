@@ -125,10 +125,8 @@ encode_ch ')'  = "ZR"   -- For symmetry with (
 encode_ch '['  = "ZM"
 encode_ch ']'  = "ZN"
 encode_ch ':'  = "ZC"
-encode_ch 'Z'  = "ZZ"
 
 -- Variables
-encode_ch 'z'  = "zz"
 encode_ch '&'  = "za"
 encode_ch '|'  = "zb"
 encode_ch '^'  = "zc"
@@ -154,8 +152,6 @@ encode_as_unicode_char c = 'z' : if isDigit (head hex_str) then hex_str
   where hex_str = showHex (ord c) "U"
                                                            
 unencodedChar :: Char -> Bool   -- True for chars that don't need encoding
-unencodedChar 'Z' = False
-unencodedChar 'z' = False
 unencodedChar c   =  c >= 'a' && c <= 'z'
                   || c >= 'A' && c <= 'Z'
                   || c >= '0' && c <= '9'
