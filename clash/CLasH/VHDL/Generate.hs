@@ -141,8 +141,12 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
         ([in_state], [out_state], Just resetval) -> do
           nonEmpty <- hasNonEmptyType "" in_state
           if nonEmpty 
-            then mkStateProcSm (in_state, out_state, resetval)
-            else error ("Initial state defined for function with only substate: " ++ show fname)
+            then mkStateProcSm (in_state, out_state, resetval)            
+            else do
+              nonEmptyReset <- hasNonEmptyType "" resetval
+              if nonEmptyReset
+                then error ("Generate.getArchitecture: Initial state defined for function with only substate: " ++ show fname)
+                else return ([],[])
         ([], [], Just _) -> error $ "Initial state defined for state-less function: " ++ show fname
         ([], [], Nothing) -> return ([],[])
         (ins, outs, res) -> error $ "Weird use of state in " ++ show fname ++ ". In: " ++ show ins ++ " Out: " ++ show outs
