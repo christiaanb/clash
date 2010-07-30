@@ -616,12 +616,12 @@ getConstructorIndex ::
   Int
 getConstructorIndex (EnumType etype cons) dc = case List.elemIndex dc cons of
   Just (index) -> index
-  Nothing -> error $ "VHDLTools.getConstructor: constructor: " ++ show dc ++ " is not part of type: " ++ show etype ++ ", which only has constructors: " ++ show cons
-getConstructorIndex htype _ = error $ "Can't get constructor index for non-Enum type: " ++ show htype
+  Nothing -> error $ "VHDLTools.getConstructorIndex: constructor: " ++ show dc ++ " is not part of type: " ++ show etype ++ ", which only has constructors: " ++ show cons
+getConstructorIndex htype _ = error $ "VHDLTools.getConstructorIndex: Can't get constructor index for non-Enum type: " ++ show htype
 
 
 mktydecl :: (AST.VHDLId, Maybe (Either AST.TypeDef AST.SubtypeIn)) -> Maybe AST.PackageDecItem
-mytydecl (_, Nothing) = Nothing
+mktydecl (_, Nothing) = Nothing
 mktydecl (ty_id, Just (Left ty_def)) = Just $ AST.PDITD $ AST.TypeDec ty_id ty_def
 mktydecl (ty_id, Just (Right ty_def)) = Just $ AST.PDISD $ AST.SubtypeDec ty_id ty_def
 
