@@ -1475,7 +1475,9 @@ getNormalized_maybe result_nonrep bndr = do
       if not normalizeable
         then
           return Nothing
-        else
+        else do
+          realfun <- mkFunction bndr normalizedA
+          MonadState.modify tsArrows (Map.insert bndr realfun)
           return (Just normalizedA)
     -- The expression is not an Arrow
     (False, Just expr, False) -> do
