@@ -1156,7 +1156,7 @@ arrowHooksExtract c expr@(App _ _) | isArrHooks (appliedF, alreadyMappedArgs) = 
           otherwise -> Trans.lift $ normalizeExpr "hookright" aTransforms g
       else 
         return g
-    let [([fStateTy,fInpTy], fResTy),([gStateTy,gInpTy], gResTy)] = map (Type.splitFunTys . CoreUtils.exprType) [realF,realG]      
+    let [([fStateTy,fInpTy], fResTy),([gStateTy,gInpTy], gResTy)] = map (Type.splitFunTys . CoreUtils.exprType) [realF,realG]
     -- Create the State input type of the combined functions
     let stateTy = MkCore.mkCoreTupTy [fStateTy,gStateTy]
     stateId <- Trans.lift $ mkInternalVar "inputStateHooks" stateTy
