@@ -1017,27 +1017,37 @@ arrowLiftSExtract :: Transform
 arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
       -- Collect the lifted function and the initial state
       let (Var liftS) = appliedF
-      let [Var realfun, Var initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
-      exprMaybe <- Trans.lift $ getGlobalBind realfun  
-      let funBody = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+      let [realfun, Var initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
+      -- TODO: All of this looks/is hacked! Needs rethinking and rewriting
+      (realfunBndr, realfunBody) <- case realfun of
+        (Var realfunBndr) -> do
+          exprMaybe <- Trans.lift $ getGlobalBind realfunBndr
+          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+          -- Clone the lifted function
+          realfun' <- Trans.lift $ mkFunction realfunBndr body
+          return (realfun', Var realfun')
+        (App appliedFun appliedArgs) -> do
+          let (Var appliedFunBndr, _) = collectArgs realfun
+          exprMaybe <- Trans.lift $ getGlobalBind appliedFunBndr
+          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+          realfun' <- Trans.lift $ mkFunction appliedFunBndr body
+          return (realfun', App (Var realfun') appliedArgs)      
       -- Create 2 new Vars that that will be applied to the lifted function
-      let [arg1Ty,arg2Ty] = (fst . Type.splitFunTys . CoreUtils.exprType) funBody
+      let [arg1Ty,arg2Ty] = (fst . Type.splitFunTys . CoreUtils.exprType) realfun
       id1 <- Trans.lift $ mkInternalVar "param" arg1Ty
       id2 <- Trans.lift $ mkInternalVar "param" arg2Ty
-      -- Clone the lifted function
-      realfun' <- Trans.lift $ mkFunction realfun funBody
       -- Associate initial value with the cloned functions
       initbndr_maybe <- Trans.lift $ getGlobalBind initvalue
       initbndr <- case initbndr_maybe of
         (Just a) -> return initvalue
         Nothing -> do
           let body = Var initvalue
-          id <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfun)
-          Trans.lift $ addGlobalBind id body
-          return id            
-      Trans.lift $ MonadState.modify tsInitStates (Map.insert realfun' initbndr)
+          initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
+          Trans.lift $ addGlobalBind initId body
+          return initId            
+      Trans.lift $ MonadState.modify tsInitStates (Map.insert realfunBndr initbndr)
       -- Return the extracted expression       
-      change (Lam id1 (Lam id2 (App (App (Var realfun') (Var id1)) (Var id2))))
+      change (Lam id1 (Lam id2 (App (App realfunBody (Var id1)) (Var id2))))
   where
     (appliedF, alreadyMappedArgs) = collectArgs expr
 
