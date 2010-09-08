@@ -1470,6 +1470,7 @@ getNormalized_maybe result_nonrep bndr = do
       realfun' <- mkFunction realfun $ Maybe.fromMaybe (error $ "Normalize.getNormalized_maybe(Arrow.liftS): lifted function " ++ pprString realfun ++ "could not be normalized") normalized
       -- Associate initial state with lifted function
       MonadState.modify tsInitStates (Map.insert realfun' initvalue)
+      MonadState.modify tsInitStates (Map.insert bndr initvalue)
       -- Make a mapping from the arrow to the lifted function
       MonadState.modify tsArrows (Map.insert bndr realfun')
       return normalized
