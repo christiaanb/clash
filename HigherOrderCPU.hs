@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module HigherOrderCPU where
 
 -- hide default prelude functions
@@ -9,7 +7,8 @@ import qualified Prelude as P
 import CLasH.HardwareTypes
 import CLasH.Translator.Annotations
 
-type CpuState = State (Vector D4 (Signed D16))
+type Word     = Signed D16
+type CpuState = State (Vector D4 Word)
 
 fu op inputs (a1, a2) = 
   op (inputs!a1) (inputs!a2)
@@ -26,12 +25,10 @@ multiop Equal   = \a b -> if a == b then 1 else 0
 
 fu0 c = fu (multiop c)
 
-{-# ANN cpu TopEntity #-}
-{-# ANN cpu (InitState 'cpuState) #-}
-cpu :: CpuState 
-  -> (Signed D16, Opcode, Vector D4 (Index D7, Index D7))
-  -> (CpuState, Signed D16)
-cpu (State s) (x,opc,addrs) = (State s', out)
+cpuA :: CpuState 
+  -> (Word, Opcode, Vector D4 (Index D7, Index D7))
+  -> (CpuState, Word)
+cpuA (State s) (x,opc,addrs) = (State s', out)
   where
     inputs  = x +> (0 +> (1 +> s))
     s'      = (fu0 opc inputs (addrs!0)) +> (
@@ -40,5 +37,8 @@ cpu (State s) (x,opc,addrs) = (State s', out)
               (fu3     inputs (addrs!3)) +> empty)))
     out     = last s
 
-cpuState :: Vector D4 (Signed D16)
+cpuState :: Vector D4 Word
 cpuState = copy 0
+
+{-# ANN cpu TopEntity #-}
+cpu = cpuA ^^^ cpuState
