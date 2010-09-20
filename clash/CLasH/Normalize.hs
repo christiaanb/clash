@@ -1017,7 +1017,7 @@ arrowLiftSExtract :: Transform
 arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
       -- Collect the lifted function and the initial state
       let (Var liftS) = appliedF
-      let [realfun, Var initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
+      let [realfun, initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
       -- TODO: All of this looks/is hacked! Needs rethinking and rewriting
       (realfunBndr, realfunBody) <- case realfun of
         (Var realfunBndr) -> do
@@ -1037,14 +1037,28 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
       id1 <- Trans.lift $ mkInternalVar "param" arg1Ty
       id2 <- Trans.lift $ mkInternalVar "param" arg2Ty
       -- Associate initial value with the cloned functions
-      initbndr_maybe <- Trans.lift $ getGlobalBind initvalue
-      initbndr <- case initbndr_maybe of
-        (Just a) -> return initvalue
-        Nothing -> do
-          let body = Var initvalue
-          initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
-          Trans.lift $ addGlobalBind initId body
-          return initId            
+      initbndr <- case initvalue of
+        (Var initvalueBndr) -> do
+          initBndrMaybe <- Trans.lift $ getGlobalBind initvalueBndr
+          case initBndrMaybe of
+            (Just a) -> return initvalueBndr
+            Nothing -> do
+              let body = Var initvalueBndr
+              initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
+              Trans.lift $ addGlobalBind initId body
+              return initId
+        otherwise -> do
+          initId <- Trans.lift $ mkBinderFor initvalue ("init" ++ Name.getOccString realfunBndr)
+          Trans.lift $ addGlobalBind initId initvalue
+          return initId
+      -- initbndr_maybe <- Trans.lift $ getGlobalBind initvalue
+      -- initbndr <- case initbndr_maybe of
+      --   (Just a) -> return initvalue
+      --   Nothing -> do
+      --     let body = Var initvalue
+      --     initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
+      --     Trans.lift $ addGlobalBind initId body
+      --     return initId            
       Trans.lift $ MonadState.modify tsInitStates (Map.insert realfunBndr initbndr)
       -- Return the extracted expression       
       change (Lam id1 (Lam id2 (App (App realfunBody (Var id1)) (Var id2))))
