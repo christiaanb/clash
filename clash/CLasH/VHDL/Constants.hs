@@ -331,10 +331,10 @@ resizeId :: String
 resizeId = "resize"
 
 resizeWordId :: String
-resizeWordId = "resizeWord"
+resizeWordId = "resizeUnsigned"
 
 resizeIntId :: String
-resizeIntId = "resizeInt"
+resizeIntId = "resizeSigned"
 
 smallIntegerId :: String
 smallIntegerId = "smallInteger"
