@@ -825,10 +825,9 @@ genUnzip' (Left res) f args@[(arg,argType)] = do
   -- resulting VHDL, making the the unzip no longer required.
   case htype of
     -- A normal vector containing two-tuples
-    VecType _ (AggrType _ _ [_, _]) -> do {
+    VecType _ arg_htype@(AggrType _ _ [[_, _]]) -> do {
         -- Setup the generate scheme
       ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty argType
-      ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid argument type" argType
       ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genUnzip: Invalid result type" (Var.varType res)
       ; [AST.PrimName arg'] <- argsToVHDLExprs [arg]
         -- TODO: Use something better than varToString
@@ -856,7 +855,7 @@ genUnzip' (Left res) f args@[(arg,argType)] = do
     -- need to do anything
     VecType _ (AggrType _ _ []) -> return []
     -- A vector containing aggregates with more than two elements?
-    VecType _ (AggrType _ _ _) -> error $ "Unzipping a value that is not a vector of two-tuples? Value: " ++ show arg ++ "\nType: " ++ pprString argType
+    VecType _ (AggrType _ _ _) -> error $ "Unzipping a value that is not a vector of two-tuples? Value: " ++ show arg ++ "\nType: " ++ pprString argType ++ "\nhType: " ++ show htype
     -- One of the elements of the tuple was state, so there won't be a
     -- tuple (record) in the VHDL output. We can just do a plain
     -- assignment, then.
