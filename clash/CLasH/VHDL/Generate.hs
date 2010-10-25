@@ -801,13 +801,13 @@ genFst' res f args@[(arg,argType)] = do {
 genSnd :: BuiltinBuilder
 genSnd = genNoInsts genSnd'
 genSnd' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
-genSnd' (Left res) f args@[(arg,argType)] = do {
+genSnd' res f args@[(arg,argType)] = do {
   ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSnd: Invalid argument type" argType
   ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg] 
   ; let { 
         ; labels      = getFieldLabels arg_htype 0
         ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argExpr (labels!!1)
-        ; assign      = mkUncondAssign (Left res) argexprB
+        ; assign      = mkUncondAssign res argexprB
         } ;
     -- Return the generate functions
   ; return [assign]
