@@ -1532,8 +1532,8 @@ genUnconsVectorFuns elemTM vectorTM  =
     lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
     lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))
-    shiftlSpec = AST.Function (mkVHDLExtId shiftIntoLId) [AST.IfaceVarDec vecPar vectorTM,
-                                   AST.IfaceVarDec aPar   elemTM  ] vectorTM 
+    shiftlSpec = AST.Function (mkVHDLExtId shiftIntoLId) [AST.IfaceVarDec aPar elemTM,
+                                     AST.IfaceVarDec vecPar vectorTM] vectorTM 
     -- variable res : fsvec_x (0 to vec'length-1);
     shiftlVar = 
      AST.VarDec resId 

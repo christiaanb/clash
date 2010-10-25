@@ -81,7 +81,7 @@ exId = "!"
 
 -- | sel (function select in original Haskell source) function identifier
 selId :: String
-selId = "select"
+selId = "vselect"
 
 
 -- | ltplus (function (<+) in original Haskell source) function identifier
@@ -91,7 +91,7 @@ ltplusId = "<+"
 
 -- | plusplus (function (++) in original Haskell source) function identifier
 plusplusId :: String
-plusplusId = "++"
+plusplusId = "<++>"
 
 
 -- | empty function identifier
@@ -108,37 +108,37 @@ singletonId = "singleton"
 
 -- | length function identifier
 lengthId :: String
-lengthId = "length"
+lengthId = "vlength"
 
 
 -- | isnull (function null in original Haskell source) function identifier
 nullId :: String
-nullId = "null"
+nullId = "vnull"
 
 
 -- | replace function identifier
 replaceId :: String
-replaceId = "replace"
+replaceId = "vreplace"
 
 
 -- | head function identifier
 headId :: String
-headId = "head"
+headId = "vhead"
 
 
 -- | last function identifier
 lastId :: String
-lastId = "last"
+lastId = "vlast"
 
 
 -- | init function identifier
 initId :: String
-initId = "init"
+initId = "vinit"
 
 
 -- | tail function identifier
 tailId :: String
-tailId = "tail"
+tailId = "vtail"
 
 -- | minimum ftp function identifier
 minimumId :: String
@@ -146,84 +146,84 @@ minimumId = "minimum"
 
 -- | take function identifier
 takeId :: String
-takeId = "take"
+takeId = "vtake"
 
 
 -- | drop function identifier
 dropId :: String
-dropId = "drop"
+dropId = "vdrop"
 
 -- | shiftl function identifier
 shiftIntoLId :: String
-shiftIntoLId = "shiftIntoL"
+shiftIntoLId = "+>>"
 
 -- | shiftr function identifier
 shiftIntoRId :: String
-shiftIntoRId = "shiftIntoR"
+shiftIntoRId = "<<+"
 
 -- | rotl function identifier
 rotlId :: String
-rotlId = "rotl"
+rotlId = "vrotl"
 
 -- | reverse function identifier
 rotrId :: String
-rotrId = "rotr"
+rotrId = "vrotr"
 
 -- | concatenate the vectors in a vector
 concatId :: String
-concatId = "concat"
+concatId = "vconcat"
 
 -- | reverse function identifier
 reverseId :: String
-reverseId = "reverse"
+reverseId = "vreverse"
 
 -- | iterate function identifier
 iterateId :: String
-iterateId = "iterate"
+iterateId = "viterate"
 
 -- | iteraten function identifier
 iteratenId :: String
-iteratenId = "iteraten"
+iteratenId = "viteraten"
 
 -- | iterate function identifier
 generateId :: String
-generateId = "generate"
+generateId = "vgenerate"
 
 -- | iteraten function identifier
 generatenId :: String
-generatenId = "generaten"
+generatenId = "vgeneraten"
 
 -- | copy function identifier
 copyId :: String
-copyId = "copy"
+copyId = "vcopy"
 
 -- | copyn function identifier
 copynId :: String
-copynId = "copyn"
+copynId = "vcopyn"
 
 -- | map function identifier
 mapId :: String
-mapId = "map"
+mapId = "vmap"
 
 -- | zipwith function identifier
 zipWithId :: String
-zipWithId = "zipWith"
+zipWithId = "vzipWith"
 
 -- | foldl function identifier
 foldlId :: String
-foldlId = "foldl"
+foldlId = "vfoldl"
 
 -- | foldr function identifier
 foldrId :: String
-foldrId = "foldr"
+foldrId = "vfoldr"
 
 -- | zip function identifier
 zipId :: String
-zipId = "zip"
+zipId = "vzip"
 
 -- | unzip function identifier
 unzipId :: String
-unzipId = "unzip"
+unzipId = "vunzip"
 
 -- | hwxor function identifier
 hwxorId :: String
@@ -251,7 +251,7 @@ shiftRId :: String
 shiftRId = "shiftR"
 
 lengthTId :: String
-lengthTId = "lengthT"
+lengthTId = "vlengthT"
 
 fstId :: String
 fstId = "fst"
@@ -260,7 +260,7 @@ sndId :: String
 sndId = "snd"
 
 splitId :: String
-splitId = "split"
+splitId = "vsplit"
 
 -- Equality Operations
 equalityId :: String
