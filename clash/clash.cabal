@@ -10,7 +10,7 @@ category:           Language, Hardware
 license:            BSD3
 license-file:       LICENSE
 homepage:           http://clash.ewi.utwente.nl/
-package-url:        http://github.com/christiaanb/clash/tree/master/cλash
+package-url:        http://github.com/christiaanb/clash/tree/master/clash
 copyright:          Copyright (c) 2009-2010 Christiaan Baaij & 
                     Matthijs Kooijman
 author:             Christiaan Baaij & Matthijs Kooijman
@@ -27,7 +27,6 @@ Library
                     
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
-                    CLasH.Translator.Annotations
                     
   other-modules:    Data.Param.Integer
                     Data.Param.Signed
@@ -35,6 +34,7 @@ Library
                     Data.Param.Index
                     Data.Param.Vector
                     CLasH.Translator.TranslatorTypes
+                    CLasH.Translator.Annotations
                     CLasH.Normalize
                     CLasH.Normalize.NormalizeTypes
                     CLasH.Normalize.NormalizeTools
