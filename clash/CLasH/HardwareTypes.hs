@@ -7,12 +7,12 @@ module CLasH.HardwareTypes
   , module Data.Param.Index
   , module Data.Param.Signed
   , module Data.Param.Unsigned
-  , module Prelude
   , module Data.Bits
   , module Language.Haskell.TH.Lift
   , module Control.Category
   , module Control.Arrow
   , module Control.Monad.Fix
+  , module CLasH.Translator.Annotations
   , Bit(..)
   , State(..)
   , hwand
@@ -27,8 +27,6 @@ module CLasH.HardwareTypes
   , (^^^)
   ) where
 
-import qualified Prelude as P
-import Prelude (Bool(..),Num(..),Eq(..),Ord(..),snd,fst,otherwise,(&&),(||),not,(>>),(>>=),fail,return)
 import Types
 import Data.Param.Integer (HWBits(..))
 import Data.Param.Vector
@@ -43,6 +41,10 @@ import Data.Typeable
 import Control.Category (Category,(.),id)
 import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),second,returnA)
 import Control.Monad.Fix (mfix)
+import qualified Prelude as P
+import Prelude hiding (id, (.))
+
+import CLasH.Translator.Annotations
 
 newtype State s = State s deriving (P.Show)
 
@@ -58,15 +60,14 @@ hwxor :: Bit -> Bit -> Bit
 hwnot :: Bit -> Bit
 
 High `hwand` High = High
-_ `hwand` _ = Low
+_    `hwand` _    = Low
 
-High `hwor` _  = High
-_ `hwor` High  = High
-Low `hwor` Low = Low
+Low  `hwor` Low   = Low
+_    `hwor` _     = High
 
-High `hwxor` Low = High
-Low `hwxor` High = High
-_ `hwxor` _      = Low
+High `hwxor` Low  = High
+Low  `hwxor` High = High
+_    `hwxor` _    = Low
 
 hwnot High = Low
 hwnot Low  = High
@@ -88,7 +89,7 @@ blockRAM (State mem) data_in rdaddr wraddr wrenable =
     data_out  = mem!rdaddr
     -- Only write data_in to memory if write is enabled
     mem' =  if wrenable then
-              replace mem wraddr data_in
+              vreplace mem wraddr data_in
             else
               mem
 
