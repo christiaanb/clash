@@ -106,9 +106,9 @@ plusgtId = "+>"
 singletonId :: String
 singletonId = "singleton"
 
--- | length function identifier
+-- | length attribute identifier
 lengthId :: String
-lengthId = "vlength"
+lengthId = "length"
 
 
 -- | isnull (function null in original Haskell source) function identifier
