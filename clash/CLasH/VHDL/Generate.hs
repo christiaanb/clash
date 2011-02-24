@@ -130,13 +130,13 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   let (statementss, used_entitiess) = unzip sms
   -- Get initial state, if it's there
   initSmap <- MonadState.get tsInitStates
-  let init_state = Map.lookup fname initSmap
+  let init_state = Map.lookup (fname) initSmap
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
         ([in_state], [out_state], Nothing) -> do 
           nonEmpty <- hasNonEmptyType "\n Generate.getArchitecture (in_state)" in_state
           if nonEmpty 
-            then error ("No initial state defined for: " ++ show fname) 
+            then error ("Generate.getArchitecture: No initial state defined for: " ++ show fname)
             else return ([],[])
         ([in_state], [out_state], Just resetval) -> do
           nonEmpty <- hasNonEmptyType "" in_state
