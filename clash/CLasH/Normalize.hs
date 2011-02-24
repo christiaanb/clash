@@ -164,10 +164,29 @@ inlinetoplevel c expr | not (null c) && is_letbinding_ctx (head c) && not (is_fu
     body_maybe <- needsInline f
     case body_maybe of
       Just body -> do
-        -- Regenerate all uniques in the to-be-inlined expression
-        body_uniqued <- Trans.lift $ genUniques body
-        -- And replace the variable reference with the unique'd body.
-        change (mkApps body_uniqued args)
+        -- If we inline a top-level function which has an associated
+        -- initial state, and if the body of of the function is an
+        -- Application. Then we need to clone the function indicated
+        -- by the first argument of the application, and associate the 
+        -- initial state with this clone. We also need to replace the
+        -- original reference with a reference to this clone
+        initSmap <- Trans.lift $ MonadState.get tsInitStates
+        case (CoreSyn.collectArgs body, Map.lookup f initSmap) of
+          ((Var inlineF, inlineFargs), Just initState) -> do
+            -- Get the body belong to the applied function and clone it
+            inlineFbody <- Trans.lift $ getGlobalBind inlineF
+            newInlineF <- Trans.lift $ mkFunction inlineF (Maybe.fromJust inlineFbody)
+            -- Associate the initial state with the cloned function
+            Trans.lift $ MonadState.modify tsInitStates (\ismap -> Map.insert (newInlineF) initState ismap)
+            -- Replace original reference with a reference to the cloned function
+            let newBody = mkApps (Var newInlineF) inlineFargs
+            newBodyUniqued <- Trans.lift $ genUniques newBody
+            change (mkApps newBodyUniqued args)      
+          _ -> do
+            -- Regenerate all uniques in the to-be-inlined expression
+            body_uniqued <- Trans.lift $ genUniques body
+            -- And replace the variable reference with the unique'd body.
+            change (mkApps body_uniqued args)
         -- No need to inline
       Nothing -> return expr
   -- This is not an application of a binder, leave it unchanged.
@@ -675,12 +694,13 @@ argprop c expr@(App _ _) | is_var fexpr = do
           let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
           -- Create a new function with the same name but a new body
           newf <- Trans.lift $ mkFunction f newbody
-
           Trans.lift $ MonadState.modify tsInitStates (\ismap ->
-            let init_state_maybe = Map.lookup f ismap in
-            case init_state_maybe of
-              Nothing -> ismap
-              Just init_state -> Map.insert newf init_state ismap)
+            let 
+                init_state_maybe = Map.lookup f ismap 
+            in
+              case init_state_maybe of
+                Nothing -> ismap
+                Just init_state -> Map.insert (newf) init_state ismap)
           -- Replace the original application with one of the new function to the
           -- new arguments.
           change $ MkCore.mkCoreApps (Var newf) newargs
@@ -1473,23 +1493,9 @@ getNormalized_maybe ::
 
 getNormalized_maybe result_nonrep bndr = do
   expr_maybe <- getGlobalBind bndr
-  case (isArrowB bndr, expr_maybe, isLiftMaybe expr_maybe) of
-    -- The bndr is an Arrow, and it is the lifting function
-    (True, Just arrowf, True) -> do
-      -- Collect the lifted function and the initial state
-      let (CoreSyn.Var liftfun, already_mapped_args) = CoreSyn.collectArgs arrowf
-      let [Var realfun, Var initvalue] = get_val_args (Var.varType liftfun) already_mapped_args
-      -- Normalize the lifted function
-      normalized <- getNormalized_maybe result_nonrep realfun
-      realfun' <- mkFunction realfun $ Maybe.fromMaybe (error $ "Normalize.getNormalized_maybe(Arrow.liftS): lifted function " ++ pprString realfun ++ "could not be normalized") normalized
-      -- Associate initial state with lifted function
-      MonadState.modify tsInitStates (Map.insert realfun' initvalue)
-      MonadState.modify tsInitStates (Map.insert bndr initvalue)
-      -- Make a mapping from the arrow to the lifted function
-      MonadState.modify tsArrows (Map.insert bndr realfun')
-      return normalized
-    -- The bndr is an Arrow (but not the lifting function)
-    (True, Just arrowf, False) -> do
+  case (isArrowB bndr, expr_maybe) of
+    -- The bndr is an Arrow 
+    (True, Just arrowf) -> do
       normalizedA <- Utils.makeCached bndr tsNormalized $ do {
           -- First apply the transformations that remove the arrows
           ; arrowLessExpr <- normalizeExpr (show bndr) aTransforms arrowf
@@ -1505,7 +1511,7 @@ getNormalized_maybe result_nonrep bndr = do
           MonadState.modify tsArrows (Map.insert bndr realfun)
           return (Just normalizedA)
     -- The expression is not an Arrow
-    (False, Just expr, False) -> do
+    (False, Just expr) -> do
       normalizeable <- isNormalizeable result_nonrep bndr
       if not normalizeable
         then
