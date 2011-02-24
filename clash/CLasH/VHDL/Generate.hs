@@ -1079,7 +1079,7 @@ genSra :: BuiltinBuilder
 genSra = genNoInsts $ genExprArgs $ genExprRes genSra'
 genSra' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genSra' res f [(arg1,_),(arg2,_)] = do {
-  ; return $ (AST.Sra arg1 (genExprFCall (mkVHDLBasicId toIntegerId) arg2))
+  ; return $ (genExprFCall2 (mkVHDLBasicId "shift_right") (arg1, (genExprFCall (mkVHDLBasicId toIntegerId) arg2)))
   }
 
 -----------------------------------------------------------------------------
