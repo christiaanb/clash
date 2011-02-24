@@ -1070,15 +1070,7 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
         otherwise -> do
           initId <- Trans.lift $ mkBinderFor initvalue ("init" ++ Name.getOccString realfunBndr)
           Trans.lift $ addGlobalBind initId initvalue
-          return initId
-      -- initbndr_maybe <- Trans.lift $ getGlobalBind initvalue
-      -- initbndr <- case initbndr_maybe of
-      --   (Just a) -> return initvalue
-      --   Nothing -> do
-      --     let body = Var initvalue
-      --     initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
-      --     Trans.lift $ addGlobalBind initId body
-      --     return initId            
+          return initId         
       Trans.lift $ MonadState.modify tsInitStates (Map.insert realfunBndr initbndr)
       -- Return the extracted expression       
       change (Lam id1 (Lam id2 (App (App realfunBody (Var id1)) (Var id2))))
