@@ -1,5 +1,5 @@
 name:               clash
-version:            0.1.2.2
+version:            0.1.2.3
 build-type:         Simple
 synopsis:           CAES Language for Synchronous Hardware (CLaSH)
 description:        CLaSH is a tool-chain/language to translate subsets of
