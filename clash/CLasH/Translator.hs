@@ -81,8 +81,8 @@ moduleToVHDL env cores specs = do
     let all_bindings = concatMap (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings
-    let all_initstates = concatMap (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs 
-    tsInitStates %= Map.fromList all_initstates
+    -- let all_initstates = concatMap (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs 
+    tsInitStates %= Map.empty
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
     let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
     vhdl <- case topbinds of
