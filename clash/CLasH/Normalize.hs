@@ -821,7 +821,7 @@ inlinenonrepresult context expr | not (is_applicable expr) && not (has_free_tyva
                   -- all free variables of the old return value. First pass
                   -- all the types of the variables, since tuple
                   -- constructors are polymorphic.
-                  let newres = mkApps (Var fvs_datacon_id) (map Type free_var_types ++  map Var free_vars)
+                  let newres = if (n_free_vars == 1) then res else mkApps (Var fvs_datacon_id) (map Type free_var_types ++  map Var free_vars)
                   -- Recreate the function body with the changed return value
                   let newbody = mkLams bndrs (Let (Rec binds) newres) 
                   -- Create the new function
@@ -832,7 +832,10 @@ inlinenonrepresult context expr | not (is_applicable expr) && not (has_free_tyva
                   res_bndr <- Trans.lift $ mkBinderFor newapp "res"
                   -- Create extractor case expressions to extract each of the
                   -- free variables from the tuple.
-                  sel_cases <- Trans.lift $ mapM (mkSelCase (Var res_bndr) 0) [0..n_free_vars-1]
+                  sel_cases <- if (n_free_vars == 1) then
+                        return [(Var res_bndr)]
+                      else
+                        Trans.lift $ mapM (mkSelCase (Var res_bndr) 0) [0..n_free_vars-1]
 
                   -- Bind the res_bndr to the result of the new application
                   -- and each of the free variables to the corresponding
