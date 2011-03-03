@@ -24,6 +24,7 @@ import qualified Type
 import qualified DataCon
 import qualified CoreSubst
 import qualified Outputable
+import qualified Unique
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
@@ -223,14 +224,11 @@ varToString = OccName.occNameString . Name.nameOccName . Var.varName
 varToUniqString ::
   CoreSyn.CoreBndr
   -> String
-varToUniqString var = (varToString var ++ varToStringUniq var ++ show (lowers $ varToStringUniq var))
-  where
-    lowers :: String -> Int
-    lowers xs = length [x | x <- xs, Char.isLower x]
+varToUniqString var = (varToString var ++ varToStringUniq var)
 
 -- Get the string version a Var's unique
 varToStringUniq :: Var.Var -> String
-varToStringUniq = show . Var.varUnique
+varToStringUniq = show . Unique.getKey . Var.varUnique
 
 -- Extracts the string version of the name
 nameToString :: Name.Name -> String

@@ -37,7 +37,7 @@ mkUnique = do
 mkInternalVar :: String -> Type.Type -> TranslatorSession Var.Var
 mkInternalVar str ty = do
   uniq <- mkUnique
-  let occname = OccName.mkVarOcc (str ++ show uniq)
+  let occname = OccName.mkVarOcc str
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkLocalVar IdInfo.VanillaId name ty IdInfo.vanillaIdInfo
 
@@ -48,7 +48,7 @@ mkInternalVar str ty = do
 mkTypeVar :: String -> Type.Kind -> TranslatorSession Var.Var
 mkTypeVar str kind = do
   uniq <- mkUnique
-  let occname = OccName.mkVarOcc (str ++ show uniq)
+  let occname = OccName.mkVarOcc str
   let name = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
   return $ Var.mkTyVar name kind
 
