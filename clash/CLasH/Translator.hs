@@ -90,7 +90,7 @@ moduleToVHDL env cores specs = do
       tops -> createDesignFiles (tops ++ test_binds)
     count <- get tsTransformCounter 
     return (vhdl, count)
-  mapM_ (putStr . render . Ppr.ppr . snd) vhdl
+  -- mapM_ (putStr . render . Ppr.ppr . snd) vhdl
   putStr $ "Total number of transformations applied: " ++ (show count) ++ "\n"
   return vhdl
   where

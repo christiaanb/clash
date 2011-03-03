@@ -41,7 +41,7 @@ data NormDbgLevel =
   | NormDbgApplied      -- ^ Print expressions before / after applying transformations
   | NormDbgAll          -- ^ Print expressions when a transformation does not apply
   deriving (Eq, Ord)
-normalize_debug = NormDbgFinal
+normalize_debug = NormDbgNone
 
 -- Applies a transform, optionally showing some debug output.
 apply :: (String, Transform) -> Transform
