@@ -36,6 +36,7 @@ import qualified Literal
 import qualified MkCore
 import qualified VarEnv
 import qualified Outputable
+import qualified TypeRep
 
 -- Local imports
 import CLasH.Translator.TranslatorTypes
@@ -52,35 +53,105 @@ type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int. Checks if the type really is a Dec type and
 -- caches the results.
+-- tfp_to_int :: Type.Type -> TypeSession Int
+-- tfp_to_int ty = do
+--   hscenv <- MonadState.get tsHscEnv
+--   let norm_ty = normalize_tfp_int hscenv ty
+--   case Type.splitTyConApp_maybe norm_ty of
+--     Just (tycon, args) -> do
+--       let name = Name.getOccString (TyCon.tyConName tycon)
+--       case name of
+--         "Dec" ->
+--           tfp_to_int' ty
+--         otherwise -> do
+--           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+--     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 tfp_to_int :: Type.Type -> TypeSession Int
-tfp_to_int ty = do
-  hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalize_tfp_int hscenv ty
-  case Type.splitTyConApp_maybe norm_ty of
-    Just (tycon, args) -> do
-      let name = Name.getOccString (TyCon.tyConName tycon)
-      case name of
-        "Dec" ->
-          tfp_to_int' ty
-        otherwise -> do
-          return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
-    Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
+tfp_to_int ty@(TypeRep.TyConApp tycon args)  | TyCon.isClosedSynTyCon tycon = do
+                                                lens <- MonadState.get tsTfpInts
+                                                let knownSynonymMaybe = Map.lookup tycon lens
+                                                case knownSynonymMaybe of
+                                                  Just knownSynonym -> return knownSynonym
+                                                  Nothing -> do
+                                                    let tycon' = TyCon.synTyConType tycon
+                                                    len <- tycon' `seq` tfp_to_int $! tycon'
+                                                    len `seq` MonadState.modify tsTfpInts $! (Map.insert tycon len)
+                                                    return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec" = do
+                                                let arg = head args 
+                                                len <- arg `seq` tfp_to_int $! arg
+                                                return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == ":."  = do
+                                               let arg0 = head args
+                                               let arg1 = args!!1
+                                               int0 <- arg0 `seq` tfp_to_int $! arg0
+                                               int1 <- arg1 `seq` tfp_to_int $! arg1
+                                               let len  = int0 `seq` int1 `seq` int0 * 10 + int1
+                                               return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Succ" = do
+                                               let arg = head args
+                                               int <- arg `seq` tfp_to_int $! arg
+                                               let len = int `seq` int + 1
+                                               return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Pred" = do
+                                               let arg = head args
+                                               int <- arg `seq` tfp_to_int $! arg
+                                               let len = int `seq` int - 1
+                                               return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Pow2" = do
+                                               let arg = head args
+                                               int <- arg `seq` tfp_to_int $! arg
+                                               let len = int `seq` int * int
+                                               return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == ":+:"  = do
+                                               let arg0 = head args
+                                               let arg1 = args!!1
+                                               int0 <- arg0 `seq` tfp_to_int $! arg0
+                                               int1 <- arg1 `seq` tfp_to_int $! arg1
+                                               let len  = int0 `seq` int1 `seq` int0 + int1
+                                               return len
+                                             | Name.getOccString (TyCon.tyConName tycon) == "DecN" = 
+                                               return 0
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec0" = 
+                                               return 0
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec1" = 
+                                               return 1
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec2" = 
+                                               return 2
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec3" = 
+                                               return 3
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec4" = 
+                                               return 4
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec5" = 
+                                               return 5
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec6" = 
+                                               return 6
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec7" = 
+                                               return 7
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec8" = 
+                                               return 8
+                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec9" = 
+                                               return 9
+                                             | otherwise                                          = 
+                                               error $ "CoreTools.tfp_to_int: Unknown TyCon : " ++ pprString tycon
+tfp_to_int ty = error $ "CoreTools.tfp_to_int: Not a TyConApp: " ++ show ty 
+
 
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int. Caches the results. Do not use directly, use
 -- tfp_to_int instead.
-tfp_to_int' :: Type.Type -> TypeSession Int
-tfp_to_int' ty = do
-  lens <- MonadState.get tsTfpInts
-  hscenv <- MonadState.get tsHscEnv
-  let norm_ty = normalize_tfp_int hscenv ty
-  let existing_len = Map.lookup (OrdType norm_ty) lens
-  case existing_len of
-    Just len -> return len
-    Nothing -> do
-      let new_len = eval_tfp_int hscenv ty
-      MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
-      return new_len
+-- tfp_to_int' :: Type.Type -> TypeSession Int
+-- tfp_to_int' ty = do
+--   lens <- MonadState.get tsTfpInts
+--   hscenv <- MonadState.get tsHscEnv
+--   let norm_ty = normalize_tfp_int hscenv ty
+--   let existing_len = Map.lookup (OrdType norm_ty) lens
+--   case existing_len of
+--     Just len -> return len
+--     Nothing -> do
+--       let new_len = eval_tfp_int hscenv ty
+--       MonadState.modify tsTfpInts (Map.insert (OrdType norm_ty) (new_len))
+--       return new_len
       
 -- | Evaluate a core Type representing type level int from the tfp
 -- library to a real int. Do not use directly, use tfp_to_int instead.

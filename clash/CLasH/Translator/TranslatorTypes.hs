@@ -17,6 +17,7 @@ import qualified CoreSyn
 import qualified Type
 import qualified HscTypes
 import qualified UniqSupply
+import qualified TyCon
 
 -- VHDL Imports
 import qualified Language.VHDL.AST as AST
@@ -72,7 +73,7 @@ type TypeMap      = Map.Map HType TypeMapRec
 -- VHDLId of the function and the function body.
 type TypeFunMap = Map.Map (HType, String) (AST.VHDLId, AST.SubProgBody)
 
-type TfpIntMap = Map.Map OrdType Int
+type TfpIntMap = Map.Map TyCon.TyCon Int
 -- A substate that deals with type generation
 data TypeState = TypeState {
   -- | A map of Core type -> VHDL Type
