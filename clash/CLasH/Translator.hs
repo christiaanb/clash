@@ -8,9 +8,9 @@ import qualified System.Directory as Directory
 import qualified Maybe
 import qualified Monad
 import qualified System.FilePath as FilePath
-import qualified Control.Monad.Trans.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import Text.PrettyPrint.HughesPJ (render)
-import Data.Accessor.Monad.Trans.State
+import Data.Accessor.Monad.Trans.StrictState
 import qualified Data.Map as Map
 import qualified Data.Time.Clock as Clock
 import Debug.Trace

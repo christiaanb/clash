@@ -12,7 +12,7 @@ import qualified List
 import qualified Control.Monad.Trans.Class as Trans
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 import qualified Data.Monoid as Monoid
 import qualified Data.Map as Map
 

@@ -10,7 +10,7 @@ import qualified Maybe
 import qualified List
 import qualified System.IO.Unsafe
 import qualified Data.Map as Map
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- GHC API
 import qualified GHC

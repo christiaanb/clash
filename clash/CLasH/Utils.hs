@@ -3,10 +3,10 @@ module CLasH.Utils where
 -- Standard Imports
 import qualified Maybe
 import Data.Accessor
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 import qualified Data.Map as Map
 import qualified Control.Monad as Monad
-import qualified Control.Monad.Trans.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import qualified Debug.Trace as Trace
   
 -- Make a caching version of a stateful computatation.

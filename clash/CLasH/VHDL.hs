@@ -8,7 +8,7 @@ import qualified Data.Map as Map
 import qualified Maybe
 import qualified Control.Arrow as Arrow
 import Data.Accessor
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- VHDL Imports
 import qualified Language.VHDL.AST as AST

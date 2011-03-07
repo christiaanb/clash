@@ -4,7 +4,7 @@
 module CLasH.Utils.Core.BinderTools where
 
 -- Standard modules
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- GHC API
 import qualified CoreSyn

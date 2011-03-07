@@ -7,7 +7,7 @@ module CLasH.VHDL.Testbench where
 import qualified Control.Monad as Monad
 import qualified Maybe
 import qualified Data.Map as Map
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- VHDL Imports
 import qualified Language.VHDL.AST as AST

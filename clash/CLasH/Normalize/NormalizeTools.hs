@@ -9,7 +9,7 @@ import qualified Data.Either as Either
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Trans.Writer as Writer
 import qualified Control.Monad.Trans.Class as Trans
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- GHC API
 import CoreSyn

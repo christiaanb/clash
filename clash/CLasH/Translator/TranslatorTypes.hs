@@ -6,10 +6,10 @@
 module CLasH.Translator.TranslatorTypes where
 
 -- Standard modules
-import qualified Control.Monad.Trans.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.Map as Map
 import qualified Data.Accessor.Template
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 
 -- GHC API
 import qualified GHC
