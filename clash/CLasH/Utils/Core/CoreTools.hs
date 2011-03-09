@@ -67,73 +67,107 @@ type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 --           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 --     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 tfp_to_int :: Type.Type -> TypeSession Int
-tfp_to_int ty@(TypeRep.TyConApp tycon args)  | TyCon.isClosedSynTyCon tycon = do
-                                                lens <- MonadState.get tsTfpInts
-                                                let knownSynonymMaybe = Map.lookup tycon lens
-                                                case knownSynonymMaybe of
-                                                  Just knownSynonym -> return knownSynonym
-                                                  Nothing -> do
-                                                    let tycon' = TyCon.synTyConType tycon
-                                                    len <- tycon' `seq` tfp_to_int $! tycon'
-                                                    len `seq` MonadState.modify tsTfpInts $! (Map.insert tycon len)
-                                                    return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec" = do
-                                                let arg = head args 
-                                                len <- arg `seq` tfp_to_int $! arg
-                                                return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == ":."  = do
-                                               let arg0 = head args
-                                               let arg1 = args!!1
-                                               int0 <- arg0 `seq` tfp_to_int $! arg0
-                                               int1 <- arg1 `seq` tfp_to_int $! arg1
-                                               let len  = int0 `seq` int1 `seq` int0 * 10 + int1
-                                               return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Succ" = do
-                                               let arg = head args
-                                               int <- arg `seq` tfp_to_int $! arg
-                                               let len = int `seq` int + 1
-                                               return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Pred" = do
-                                               let arg = head args
-                                               int <- arg `seq` tfp_to_int $! arg
-                                               let len = int `seq` int - 1
-                                               return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Pow2" = do
-                                               let arg = head args
-                                               int <- arg `seq` tfp_to_int $! arg
-                                               let len = int `seq` int * int
-                                               return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == ":+:"  = do
-                                               let arg0 = head args
-                                               let arg1 = args!!1
-                                               int0 <- arg0 `seq` tfp_to_int $! arg0
-                                               int1 <- arg1 `seq` tfp_to_int $! arg1
-                                               let len  = int0 `seq` int1 `seq` int0 + int1
-                                               return len
-                                             | Name.getOccString (TyCon.tyConName tycon) == "DecN" = 
-                                               return 0
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec0" = 
-                                               return 0
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec1" = 
-                                               return 1
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec2" = 
-                                               return 2
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec3" = 
-                                               return 3
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec4" = 
-                                               return 4
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec5" = 
-                                               return 5
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec6" = 
-                                               return 6
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec7" = 
-                                               return 7
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec8" = 
-                                               return 8
-                                             | Name.getOccString (TyCon.tyConName tycon) == "Dec9" = 
-                                               return 9
-                                             | otherwise                                          = 
-                                               error $ "CoreTools.tfp_to_int: Unknown TyCon : " ++ pprString tycon
+tfp_to_int ty@(TypeRep.TyConApp tycon args) = if TyCon.isClosedSynTyCon tycon then do
+    lens <- MonadState.get tsTfpInts
+    let knownSynonymMaybe = Map.lookup tycon lens
+    case knownSynonymMaybe of
+      Just knownSynonym -> return knownSynonym
+      Nothing -> do
+        let tycon' = TyCon.synTyConType tycon
+        len <- tycon' `seq` tfp_to_int $! tycon'
+        len `seq` MonadState.modify tsTfpInts $! (Map.insert tycon len)
+        return len
+  else
+    case Name.getOccString (TyCon.tyConName tycon) of
+      "Dec" -> do
+        let arg = head args
+        len <- arg `seq` tfp_to_int $! arg
+        return len
+      ":."  -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len  = int0 `seq` int1 `seq` int0 * 10 + int1
+        return len
+      "DecN" -> return 0
+      "Dec0" -> return 0
+      "Dec1" -> return 1
+      "Dec2" -> return 2
+      "Dec3" -> return 3
+      "Dec4" -> return 4
+      "Dec5" -> return 5
+      "Dec6" -> return 6
+      "Dec7" -> return 7
+      "Dec8" -> return 8
+      "Dec9" -> return 9
+      "Succ" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let len = int `seq` int + 1
+        return len
+      "Pred" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let len = int `seq` int - 1
+        return len
+      ":+:" -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len  = int0 `seq` int1 `seq` int0 + int1
+        return len
+      ":-:" -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len  = int0 `seq` int1 `seq` int0 - int1
+        return len
+      ":*:" -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len  = int0 `seq` int1 `seq` int0 * int1
+        return len
+      "Pow2" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let len = int `seq` int * int
+        return len
+      "Mul2" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let len = int `seq` int + int
+        return len
+      "Div2" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let len = int `seq` int `div` 2
+        return len
+      "Fac" -> do
+        let arg = head args
+        int <- arg `seq` tfp_to_int $! arg
+        let fac x = if x == 0 then 1 else x * fac (x - 1)
+        let len = int `seq` fac int
+        return len
+      "Min" -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len = int0 `seq` int1 `seq` if int0 <= int1 then int0 else int1
+        return len
+      "Max" -> do
+        let arg0 = head args
+        let arg1 = args!!1
+        int0 <- arg0 `seq` tfp_to_int $! arg0
+        int1 <- arg1 `seq` tfp_to_int $! arg1
+        let len = int0 `seq` int1 `seq` if int0 >= int1 then int0 else int1
+        return len
+      _ -> error $ "CoreTools.tfp_to_int: Unknown TyCon : " ++ pprString tycon
 tfp_to_int ty = error $ "CoreTools.tfp_to_int: Not a TyConApp: " ++ show ty 
 
 
