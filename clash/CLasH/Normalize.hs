@@ -171,13 +171,15 @@ inlinetoplevel c expr | not (null c) && is_letbinding_ctx (head c) && not (is_fu
         -- initial state with this clone. We also need to replace the
         -- original reference with a reference to this clone
         initSmap <- Trans.lift $ MonadState.get tsInitStates
-        case (CoreSyn.collectArgs body, Map.lookup f initSmap) of
-          ((Var inlineF, inlineFargs), Just initState) -> do
+        clocksMap <- Trans.lift $ MonadState.get tsClocks
+        case (CoreSyn.collectArgs body, Map.lookup f initSmap, Map.lookup f clocksMap) of
+          ((Var inlineF, inlineFargs), Just initState, Just clock) -> do
             -- Get the body belong to the applied function and clone it
             inlineFbody <- Trans.lift $ getGlobalBind inlineF
             newInlineF <- Trans.lift $ mkFunction inlineF (Maybe.fromJust inlineFbody)
-            -- Associate the initial state with the cloned function
+            -- Associate the initial state and clock with the cloned function
             Trans.lift $ MonadState.modify tsInitStates (\ismap -> Map.insert (newInlineF) initState ismap)
+            Trans.lift $ MonadState.modify tsClocks (\clocksMap -> Map.insert (newInlineF) clock clocksMap)
             -- Replace original reference with a reference to the cloned function
             let newBody = mkApps (Var newInlineF) inlineFargs
             newBodyUniqued <- Trans.lift $ genUniques newBody
@@ -694,13 +696,22 @@ argprop c expr@(App _ _) | is_var fexpr = do
           let newbody = MkCore.mkCoreLams newparams (MkCore.mkCoreApps body oldargs)
           -- Create a new function with the same name but a new body
           newf <- Trans.lift $ mkFunction f newbody
+          -- Copy initial statee if it has one
           Trans.lift $ MonadState.modify tsInitStates (\ismap ->
             let 
                 init_state_maybe = Map.lookup f ismap 
             in
               case init_state_maybe of
                 Nothing -> ismap
-                Just init_state -> Map.insert (newf) init_state ismap)
+                Just init_state -> Map.insert newf init_state ismap)
+          -- Copy clock if it has one
+          Trans.lift $ MonadState.modify tsClocks (\clockMap ->
+            let 
+                clockMaybe = Map.lookup f clockMap 
+            in
+              case clockMaybe of
+                Nothing -> clockMap
+                Just clock -> Map.insert newf clock clockMap)
           -- Replace the original application with one of the new function to the
           -- new arguments.
           change $ MkCore.mkCoreApps (Var newf) newargs
@@ -1037,10 +1048,11 @@ inlineArrowHooks c expr = return expr
 -- To: 
 -- \(s::s) (i::a) -> f i 
 arrowLiftSExtract :: Transform
-arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
+arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) || isComponent (appliedF, alreadyMappedArgs) = do
       -- Collect the lifted function and the initial state
       let (Var liftS) = appliedF
-      let [realfun, initvalue] = get_val_args (Var.varType liftS) alreadyMappedArgs
+      let valArgs = get_val_args (Var.varType liftS) alreadyMappedArgs
+      let [realfun, initvalue] = take 2 valArgs
       -- TODO: All of this looks/is hacked! Needs rethinking and rewriting
       (realfunBndr, realfunBody) <- case realfun of
         (Var realfunBndr) -> do
@@ -1059,7 +1071,7 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
       let [arg1Ty,arg2Ty] = (fst . Type.splitFunTys . CoreUtils.exprType) realfun
       id1 <- Trans.lift $ mkInternalVar "param" arg1Ty
       id2 <- Trans.lift $ mkInternalVar "param" arg2Ty
-      -- Associate initial value with the cloned functions
+      -- Associate initial value with the cloned function
       initbndr <- case initvalue of
         (Var initvalueBndr) -> do
           initBndrMaybe <- Trans.lift $ getGlobalBind initvalueBndr
@@ -1075,6 +1087,23 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) = do
           Trans.lift $ addGlobalBind initId initvalue
           return initId         
       Trans.lift $ MonadState.modify tsInitStates (Map.insert realfunBndr initbndr)
+      -- Associate clock with the clone function
+      clockEdge <- if isLift (appliedF, alreadyMappedArgs) then
+          return (True,1)
+        else do
+          let clock = last valArgs
+          case clock of
+            (Var clockBndr) -> do
+              exprMaybe <- Trans.lift $ getGlobalBind clockBndr
+              let clockExpr = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find clock for: " ++ pprString realfun) exprMaybe
+              let (Var appliedFunBndr, [litArg]) = collectArgs clockExpr
+              clockLit <- Trans.lift $ getIntegerLiteral litArg
+              case (Name.getOccString appliedFunBndr) of
+                "ClockUp" -> return (True,clockLit)
+                "ClockDown" -> return (False,clockLit)
+            otherwise -> do
+              error $ "Normalize.arrowLiftSExtract: Do now know how to handle clock:" ++ show clock
+      Trans.lift $ MonadState.modify tsClocks (Map.insert realfunBndr clockEdge)
       -- Return the extracted expression       
       change (Lam id1 (Lam id2 (App (App realfunBody (Var id1)) (Var id2))))
   where

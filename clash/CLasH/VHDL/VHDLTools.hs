@@ -133,14 +133,15 @@ mkAggregateSignal x = AST.Aggregate (map (\z -> AST.ElemAssoc Nothing z) x)
 mkComponentInst ::
   String -- ^ The portmap label
   -> AST.VHDLId -- ^ The entity name
+  -> [Integer] -- ^ Clock domains
   -> [AST.AssocElem] -- ^ The port assignments
   -> AST.ConcSm
-mkComponentInst label entity_id portassigns = AST.CSISm compins
+mkComponentInst label entity_id clockDomains portassigns = AST.CSISm compins
   where
     -- We always have a clock port, so no need to map it anywhere but here
-    clk_port = mkAssocElem clockId (idToVHDLExpr clockId)
+    clkPorts = map (\clkId -> mkAssocElem clkId (idToVHDLExpr clkId)) $ map (AST.unsafeVHDLBasicId . ("clock" ++) . show) clockDomains
     resetn_port = mkAssocElem resetId (idToVHDLExpr resetId)
-    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ [clk_port,resetn_port]))
+    compins = AST.CompInsSm (mkVHDLExtId label) (AST.IUEntity (AST.NSimple entity_id)) (AST.PMapAspect (portassigns ++ clkPorts ++ [resetn_port]))
 
 -----------------------------------------------------------------------------
 -- Functions to generate VHDL Exprs

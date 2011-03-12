@@ -78,11 +78,12 @@ createTestbenchArch mCycles stimuli top testent= do
         -- used by mkAssocElems when there is no output port.
         Nothing -> (undefined, [], [])
   let iDecs   = map (\(vId, tm) -> AST.SigDec vId tm Nothing) iIface
+  let clockId = AST.unsafeVHDLBasicId ("clock1")
   let finalIDecs = iDecs ++
                     [AST.SigDec clockId std_logicTM (Just $ AST.PrimLit "'0'"),
                      AST.SigDec resetId std_logicTM (Just $ AST.PrimLit "'0'")]
   let portmaps = mkAssocElems (map idToVHDLExpr iIds) (AST.NSimple oId) signature
-  let mIns    = mkComponentInst "totest" entId portmaps
+  let mIns    = mkComponentInst "totest" entId [1] portmaps
   (stimuliAssigns, stimuliDecs, cycles, used) <- createStimuliAssigns mCycles stimuli (head iIds)
   let finalAssigns = (AST.CSSASm (AST.NSimple resetId AST.:<==:
                       AST.ConWforms []
@@ -146,7 +147,8 @@ createStimulans expr cycl = do
 -- | generates a clock process with a period of 10ns
 createClkProc :: AST.ProcSm
 createClkProc = AST.ProcSm (AST.unsafeVHDLBasicId "clkproc") [] sms
- where sms = -- wait for 5 ns -- (half a cycle)
+ where clockId = AST.unsafeVHDLBasicId ("clock1")
+       sms = -- wait for 5 ns -- (half a cycle)
              [AST.WaitFor $ AST.PrimLit "5 ns",
               -- clk <= not clk;
               AST.NSimple clockId `AST.SigAssign` 
@@ -159,7 +161,8 @@ createOutputProc outs =
   AST.ProcSm (AST.unsafeVHDLBasicId "writeoutput") 
          [clockId]
          [AST.IfSm clkPred (writeOuts outs) [] Nothing]
- where clkPred = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple clockId) 
+ where clockId = AST.unsafeVHDLBasicId ("clock1")
+       clkPred = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple clockId) 
                                                    (AST.NSimple eventId)
                                                    Nothing          ) `AST.And` 
                  (AST.PrimName (AST.NSimple clockId) AST.:=: AST.PrimLit "'1'")

@@ -3,6 +3,7 @@ module CLasH.VHDL.Generate where
 -- Standard modules
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Control.Monad as Monad
 import qualified Maybe
 import qualified Data.Either as Either
@@ -52,7 +53,9 @@ getEntity fname = makeCached fname tsEntities $ do
       count <- MonadState.get tsEntityCounter 
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "Component_" ++ show count
       MonadState.set tsEntityCounter (count + 1)
-      let ent_decl = createEntityAST vhdl_id args' res'
+      clocks <- MonadState.get tsClocks
+      let clockList = (Set.toList . Set.fromList . Map.elems) clocks
+      let ent_decl = createEntityAST vhdl_id clockList args' res'
       let signature = Entity vhdl_id args' res' ent_decl
       return signature
   where
@@ -79,19 +82,21 @@ getEntity fname = makeCached fname tsEntities $ do
 -- | Create the VHDL AST for an entity
 createEntityAST ::
   AST.VHDLId                   -- ^ The name of the function
+  -> [(Bool,Integer)]          -- ^ Clocks
   -> [Port]                    -- ^ The entity's arguments
   -> Maybe Port                -- ^ The entity's result
   -> AST.EntityDec             -- ^ The entity with the ent_decl filled in as well
 
-createEntityAST vhdl_id args res =
+createEntityAST vhdl_id clocks args res =
   AST.EntityDec vhdl_id ports
   where
     -- Create a basic Id, since VHDL doesn't grok filenames with extended Ids.
     ports = map (mkIfaceSigDec AST.In) args
               ++ (Maybe.maybeToList res_port)
-              ++ [clk_port,resetn_port]
-    -- Add a clk port if we have state
-    clk_port = AST.IfaceSigDec clockId AST.In std_logicTM
+              ++ clkPorts
+              ++ [resetn_port]
+    -- TODO: Only add a clk ports if we have state
+    clkPorts = map ((\a -> AST.IfaceSigDec a AST.In std_logicTM) . AST.unsafeVHDLBasicId . ("clock" ++) . show . snd) clocks
     resetn_port = AST.IfaceSigDec resetId AST.In std_logicTM
     res_port = fmap (mkIfaceSigDec AST.Out) res
 
@@ -130,7 +135,10 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   let (statementss, used_entitiess) = unzip sms
   -- Get initial state, if it's there
   initSmap <- MonadState.get tsInitStates
-  let init_state = Map.lookup (fname) initSmap
+  let init_state = Map.lookup fname initSmap
+  -- Get clock domains, if they're there
+  clocksMap <- MonadState.get tsClocks
+  let clockEdge = Map.lookup fname clocksMap
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
         ([in_state], [out_state], Nothing) -> do 
@@ -141,7 +149,7 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
         ([in_state], [out_state], Just resetval) -> do
           nonEmpty <- hasNonEmptyType "" in_state
           if nonEmpty 
-            then mkStateProcSm (in_state, out_state, resetval)            
+            then mkStateProcSm (in_state, out_state, resetval, Maybe.fromMaybe (error $ "Generate.getArchitecture: No clock found for: " ++ show fname ++ ", listed clocks: " ++ show clocksMap) clockEdge)            
             else do
               nonEmptyReset <- hasNonEmptyType "" resetval
               if nonEmptyReset
@@ -178,9 +186,9 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
       return ((Nothing, Nothing), sms)
 
 mkStateProcSm :: 
-  (CoreSyn.CoreBndr, CoreSyn.CoreBndr, CoreSyn.CoreBndr) -- ^ The current state, new state and reset variables
+  (CoreSyn.CoreBndr, CoreSyn.CoreBndr, CoreSyn.CoreBndr, (Bool, Integer)) -- ^ The current state, new state, reset variables, and clock domain
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) -- ^ The resulting statements
-mkStateProcSm (old, new, res) = do
+mkStateProcSm (old, new, res, (edge, period)) = do
   let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
   type_mark_old_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType old)
   let type_mark_old = Maybe.fromMaybe 
@@ -201,16 +209,20 @@ mkStateProcSm (old, new, res) = do
   let blocklabel       = mkVHDLBasicId "state"
   let statelabel  = mkVHDLBasicId "stateupdate"
   let rising_edge = AST.NSimple $ mkVHDLBasicId "rising_edge"
+  let falling_edge = AST.NSimple $ mkVHDLBasicId "falling_edge"
   let wform       = AST.Wform [AST.WformElem (AST.PrimName $ varToVHDLName new) Nothing]
   let clk_assign      = AST.SigAssign (varToVHDLName old) wform
-  let rising_edge_clk = AST.PrimFCall $ AST.FCall rising_edge [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
+  let clockId = AST.unsafeVHDLBasicId ("clock" ++ show period)
+  let clkFlank = AST.PrimFCall $ AST.FCall (if edge then rising_edge else falling_edge) [Nothing AST.:=>: (AST.ADName $ AST.NSimple clockId)]
   let resetn_is_low  = (AST.PrimName $ AST.NSimple resetId) AST.:=: (AST.PrimLit "'0'")
   signature <- getEntity res
   let entity_id = ent_id signature
   let reslabel = "resetval_" ++ ((prettyShow . varToVHDLName) res)
   let portmaps = mkAssocElems [] (AST.NSimple resvalid) signature
-  let reset_statement = mkComponentInst reslabel entity_id portmaps
-  let clk_statement = [AST.ElseIf rising_edge_clk [clk_assign]]
+  clocksMap <- MonadState.get tsClocks
+  let clockDomains = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+  let reset_statement = mkComponentInst reslabel entity_id clockDomains portmaps
+  let clk_statement = [AST.ElseIf clkFlank [clk_assign]]
   let statement   = AST.IfSm resetn_is_low [res_assign] clk_statement Nothing
   let stateupdate = AST.CSPSm $ AST.ProcSm statelabel [clockId,resetId,resvalid] [statement]
   let block = AST.CSBSm $ AST.BlockSm blocklabel [] (AST.PMapAspect []) [resvaldec] [reset_statement,stateupdate]
@@ -1027,6 +1039,7 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
   return [AST.CSBSm block]
   where
     ram_id = mkVHDLBasicId "ram"
+    clockId = AST.unsafeVHDLBasicId "clock1"
     mkUpdateProcSm :: AST.ConcSm
     mkUpdateProcSm = AST.CSPSm $ AST.ProcSm proclabel [clockId] [statement]
       where
@@ -1193,7 +1206,9 @@ genApplication (dst, dsttype) f args = do
                     -- unique-ish value...
                     let label = "comp_ins_" ++ (either show prettyShow) dst
                     let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-                    return ([mkComponentInst label entity_id portmaps], [f])
+                    clocksMap <- MonadState.get tsClocks
+                    let clockDomains = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+                    return ([mkComponentInst label entity_id clockDomains portmaps], [f])
                   else
                     -- Not a top level binder, so this must be a local variable reference.
                     -- It should have a representable type (and thus, no arguments) and a
@@ -1232,7 +1247,9 @@ genApplication (dst, dsttype) f args = do
                -- unique-ish value...
                let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
                let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
-               return ([mkComponentInst label entity_id portmaps], [f])
+               clocksMap <- MonadState.get tsClocks
+               let clockDomains = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+               return ([mkComponentInst label entity_id clockDomains portmaps], [f])
             else
               -- Not a top level binder, so this must be a local variable reference.
               -- It should have a representable type (and thus, no arguments) and a

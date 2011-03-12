@@ -103,6 +103,7 @@ data TranslatorState = TranslatorState {
   , tsInitStates_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreBndr
   , tsTransformCounter_ :: Int -- ^ How many transformations were applied?
   , tsArrows_ :: Map.Map CoreSyn.CoreBndr CoreSyn.CoreBndr
+  , tsClocks_ :: Map.Map CoreSyn.CoreBndr (Bool,Integer)
 }
 
 -- Derive accessors

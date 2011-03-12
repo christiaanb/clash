@@ -22,9 +22,11 @@ module CLasH.HardwareTypes
   , RAM
   , MemState
   , blockRAM
-  , Stat
+  , Clock(..)
+  , Comp
   , simulate
   , (^^^)
+  , comp
   ) where
 
 import Types
@@ -43,6 +45,7 @@ import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),second,returnA)
 import Control.Monad.Fix (mfix)
 import qualified Prelude as P
 import Prelude hiding (id, (.))
+import qualified Data.Set as Set
 
 import CLasH.Translator.Annotations
 
@@ -93,38 +96,63 @@ blockRAM (State mem) data_in rdaddr wraddr wrenable =
             else
               mem
 
+-- ==========
+-- = Clocks =
+-- ==========
+data Clock = ClockUp Int | ClockDown Int
+  deriving (Eq,Ord,Show)
+
 -- ==================
 -- = Automata Arrow =
 -- ==================
-newtype Stat i o = A {
-     apply :: i -> (o, Stat i o)
-}
+data Comp i o = C {
+    domain :: Set.Set Clock  
+  , exec   :: Clock -> i -> (o, Comp i o)
+  }
 
-instance Category Stat where
-   (A g) . (A f) = A (\b ->  let (c,f') = f b
-                                 (d,g') = g c
-                             in (d, g'.f'))
-   id = arr id
+instance Category Comp where
+  k@(C { domain = cdA, exec = g}) . (C {domain = cdB, exec = f}) =
+     C { domain = Set.union cdA cdB
+       , exec   = \clk b -> let (c,f') = f clk b
+                                (d,g') = g clk c
+                            in (d, g'.f')
+       }
+  id = arr id
 
-instance Arrow Stat where
-   arr f = A (\b -> (f b, arr f))
-   first (A f) = A (\(b,d) -> let (c,f') = f b
-                              in ((c,d), first f'))
-instance ArrowLoop Stat where
-   loop (A f) = A (\i -> let ((c,d), f') = f (i, d)
-                         in (c, loop f'))
+instance Arrow Comp where
+  arr f    = C { domain = Set.empty
+               , exec   = \clk b -> (f b, arr f)
+               }
+  first af = af { exec  = \clk (b,d) -> let (c,f') = (exec af) clk b
+                                        in ((c,d), first f')
+                }
+instance ArrowLoop Comp where
+   loop af = af { exec = (\clk i -> let ((c,d), f') = (exec af) clk (i, d)
+                                    in (c, loop f'))
+                }
 
-liftS :: s -> (State s -> i -> (State s,o)) -> Stat i o
-liftS init f = A applyS
-   where applyS = \i -> let (State s,o) = f (State init) i
-                        in (o, liftS s f)
+comp :: (State s -> i -> (State s,o)) -> s -> Clock -> Comp i o
+comp f initS clk = C { domain = Set.singleton clk
+                     , exec = \clk' i -> let (State s,o)      = f (State initS) i
+                                             s' | clk == clk' = s
+                                                | otherwise   = initS
+                                         in (o, comp f s' clk)                                              
+                     }
 
-simulate :: Stat b c -> [b] -> [c]
-simulate (A f) []     = []
-simulate (A f) (b:bs) = let (c,f') = f b in (c : simulate f' bs)
+liftS :: s -> (State s -> i -> (State s,o)) -> Comp i o
+liftS init f = C {domain = Set.singleton (ClockUp 1), exec = applyS}
+   where applyS = \clk i -> let (State s,o) = f (State init) i
+                            in (o, liftS s f)
 
-arrState :: s -> (State s -> i -> (State s,o)) -> Stat i o
-arrState = liftS
+(^^^) :: (State s -> i -> (State s,o)) -> s -> Comp i o
+(^^^) f init = liftS init f
 
-(^^^) :: (State s -> i -> (State s,o)) -> s -> Stat i o
-(^^^) f init = arrState init f
+simulate :: Comp b c -> [b] -> [c]
+simulate af inps = if (Set.size $ domain af) < 2 then
+    simulate' af inps
+  else
+    error "Use simulateM for components with more than 1 clock"
+
+simulate' :: Comp b c -> [b] -> [c]
+simulate' af []     = []
+simulate' (C {exec = f}) (b:bs) = let (c,f') = f undefined b in (c : simulate' f' bs)

@@ -278,7 +278,7 @@ isArrowB bndr = res
   where
   	ty = Id.idType bndr
   	res = case Type.splitTyConApp_maybe ty of
-  		Just (tycon, args) -> Name.getOccString (TyCon.tyConName tycon) == "Stat"
+  		Just (tycon, args) -> Name.getOccString (TyCon.tyConName tycon) == "Comp"
   		Nothing -> False
 
 isArrowE ::
@@ -288,7 +288,7 @@ isArrowE expr = res
   where
 	  ty = CoreUtils.exprType expr
 	  res =	case Type.splitTyConApp_maybe ty of
-  		Just (tycon, args) -> (Name.getOccString (TyCon.tyConName tycon)) == "Stat"
+  		Just (tycon, args) -> (Name.getOccString (TyCon.tyConName tycon)) == "Comp"
   		Nothing -> False
 	
 isLift ::
@@ -296,6 +296,12 @@ isLift ::
 	-> Bool
 isLift ((Var bndr), args) = (Name.getOccString bndr) == "^^^" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 2
 isLift _                  = False
+
+isComponent ::
+	(CoreExpr, [CoreExpr])
+	-> Bool
+isComponent ((Var bndr), args) = (Name.getOccString bndr) == "comp" && (length $ CoreTools.get_val_args (Var.varType bndr) args) == 3
+isComponent _                  = False
 	
 isArrHooks ::
 	(CoreExpr, [CoreExpr])
