@@ -886,6 +886,17 @@ genCopy' (Left res) f [(arg,argType)] = do {
         }
   ; return [out_assign]
   }
+
+genCopyn :: BuiltinBuilder 
+genCopyn = genNoInsts genCopyn'
+genCopyn' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
+genCopyn' (Left res) f [arg0,(arg,argType)] = do {
+  ; [arg'] <- argsToVHDLExprs [arg]
+  ; let { resExpr = AST.Aggregate [AST.ElemAssoc (Just AST.Others) arg']
+        ; out_assign = mkUncondAssign (Left res) resExpr
+        }
+  ; return [out_assign]
+  }
     
 genConcat :: BuiltinBuilder
 genConcat = genNoInsts genConcat'
@@ -1119,6 +1130,32 @@ genBV2s' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Ex
 genBV2s' (Left res) f [(arg1,_)] = do {
   ; return $ (genExprFCall (mkVHDLBasicId "signed") arg1)
   }
+
+genTake :: BuiltinBuilder
+genTake = genNoInsts $ genExprRes genTake'
+genTake' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genTake' res f [(arg1,arg1Type),(arg2,arg2Type)] = do {
+  ; literal <- MonadState.lift tsType $ tfp_to_int arg1Type
+  ; arg2expr <- argToVHDLExpr arg2
+  ; let (AST.PrimName arg2name) = Maybe.fromMaybe (error $ "Generate.genTake': Expected variable reference, but found:" ++ either pprString show arg2) arg2expr
+  ; arg2len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty arg2Type
+  ; let minLit = min literal arg2len
+  ; let takeVal = AST.PrimName (AST.NSlice (AST.SliceName arg2name (AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (minLit - 1)))))
+  ; return takeVal
+  }
+
+genDrop :: BuiltinBuilder
+genDrop = genNoInsts $ genExprRes genDrop'
+genDrop' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genDrop' res f [(arg1,arg1Type),(arg2,arg2Type)] = do {
+  ; literal <- MonadState.lift tsType $ tfp_to_int arg1Type
+  ; arg2expr <- argToVHDLExpr arg2
+  ; let (AST.PrimName arg2name) = Maybe.fromMaybe (error $ "Generate.genDrop': Expected variable reference, but found:" ++ either pprString show arg2) arg2expr
+  ; arg2len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty arg2Type
+  ; let dropVal = AST.PrimName (AST.NSlice (AST.SliceName arg2name (AST.ToRange (AST.PrimLit $ show literal) (AST.PrimLit $ show (arg2len - 1)))))
+  ; return dropVal
+  }
+
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -1333,12 +1370,9 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (lastId, (AST.SubProgBody lastSpec    []                  [lastExpr],[]))
   , (initId, (AST.SubProgBody initSpec    [AST.SPVD initVar]  [initExpr, initRet],[]))
   , (minimumId, (AST.SubProgBody minimumSpec [] [minimumExpr],[]))
-  , (takeId, (AST.SubProgBody takeSpec    [AST.SPVD takeVar]  [takeExpr, takeRet],[minimumId]))
-  , (dropId, (AST.SubProgBody dropSpec    [AST.SPVD dropVar]  [dropExpr, dropRet],[]))
   , (plusgtId, (AST.SubProgBody plusgtSpec  [AST.SPVD plusgtVar] [plusgtExpr, plusgtRet],[]))
   , (emptyId, (AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr],[]))
   , (singletonId, (AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet],[]))
-  , (copynId, (AST.SubProgBody copynSpec    [AST.SPVD copynVar]      [copynExpr],[]))
   , (selId, (AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet],[]))
   , (ltplusId, (AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet],[]))  
   , (plusplusId, (AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet],[]))
@@ -1422,45 +1456,12 @@ genUnconsVectorFuns elemTM vectorTM  =
                         []
                         (Just $ AST.Else [minimumExprRet])
       where minimumExprRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple rightPar)
-    takeSpec = AST.Function (mkVHDLExtId takeId) [AST.IfaceVarDec nPar   naturalTM,
-                                   AST.IfaceVarDec vecPar vectorTM ] vectorTM
        -- variable res : fsvec_x (0 to (minimum (n,vec'length))-1);
     minLength = AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId minimumId))  
                               [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple nPar)
                               ,Nothing AST.:=>: AST.ADExpr (AST.PrimName (AST.NAttribute $ 
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))]
-    takeVar = 
-         AST.VarDec resId 
-                (AST.SubtypeIn vectorTM
-                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
-                   [AST.ToRange (AST.PrimLit "0")
-                               (minLength AST.:-:
-                                (AST.PrimLit "1"))   ]))
-                Nothing
-       -- res AST.:= vec(0 to n-1)
-    takeExpr = AST.NSimple resId AST.:= 
-                    (vecSlice (AST.PrimLit "0") 
-                              (minLength AST.:-: AST.PrimLit "1"))
-    takeRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    dropSpec = AST.Function (mkVHDLExtId dropId) [AST.IfaceVarDec nPar   naturalTM,
-                                   AST.IfaceVarDec vecPar vectorTM ] vectorTM 
-       -- variable res : fsvec_x (0 to vec'length-n-1);
-    dropVar = 
-         AST.VarDec resId 
-                (AST.SubtypeIn vectorTM
-                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
-                   [AST.ToRange (AST.PrimLit "0")
-                            (AST.PrimName (AST.NAttribute $ 
-                              AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
-                               (AST.PrimName $ AST.NSimple nPar)AST.:-: (AST.PrimLit "1")) ]))
-               Nothing
-       -- res AST.:= vec(n to vec'length-1)
-    dropExpr = AST.NSimple resId AST.:= (vecSlice 
-                               (AST.PrimName $ AST.NSimple nPar) 
-                               (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
-                                                             AST.:-: AST.PrimLit "1"))
-    dropRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+
     plusgtSpec = AST.Function (mkVHDLExtId plusgtId) [AST.IfaceVarDec aPar   elemTM,
                                        AST.IfaceVarDec vecPar vectorTM] vectorTM 
     -- variable res : fsvec_x (0 to vec'length);
@@ -1495,20 +1496,7 @@ genUnconsVectorFuns elemTM vectorTM  =
              (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
                                           (AST.PrimName $ AST.NSimple aPar)])
     singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    copynSpec = AST.Function (mkVHDLExtId copynId) [AST.IfaceVarDec nPar   naturalTM,
-                                   AST.IfaceVarDec aPar   elemTM   ] vectorTM 
-    -- variable res : fsvec_x (0 to n-1) := (others => a);
-    copynVar = 
-      AST.VarDec resId 
-             (AST.SubtypeIn vectorTM
-               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
-                [AST.ToRange (AST.PrimLit "0")
-                            ((AST.PrimName (AST.NSimple nPar)) AST.:-:
-                             (AST.PrimLit "1"))   ]))
-             (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
-                                          (AST.PrimName $ AST.NSimple aPar)])
-    -- return res
-    copynExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+
     selSpec = AST.Function (mkVHDLExtId selId) [AST.IfaceVarDec fPar   naturalTM,
                                AST.IfaceVarDec sPar   naturalTM,
                                AST.IfaceVarDec nPar   naturalTM,
@@ -1712,14 +1700,14 @@ type NameTable = Map.Map String (Int, BuiltinBuilder )
 -- it to VHDL.Constants/builtinIds as well.
 globalNameTable :: NameTable
 globalNameTable = Map.fromList
-  [ (exId             , (2, genFCall True          ) )
+  [ (exId             , (2, genFCall True           ) )
   , (replaceId        , (3, genFCall False          ) )
   , (headId           , (1, genFCall True           ) )
   , (lastId           , (1, genFCall True           ) )
   , (tailId           , (1, genFCall False          ) )
   , (initId           , (1, genFCall False          ) )
-  , (takeId           , (2, genFCall False          ) )
-  , (dropId           , (2, genFCall False          ) )
+  , (takeId           , (2, genTake                 ) )
+  , (dropId           , (2, genDrop                 ) )
   , (selId            , (4, genFCall False          ) )
   , (plusgtId         , (2, genFCall False          ) )
   , (ltplusId         , (2, genFCall False          ) )
@@ -1742,7 +1730,7 @@ globalNameTable = Map.fromList
   , (generateId       , (2, genGenerate             ) )
   , (emptyId          , (0, genFCall False          ) )
   , (singletonId      , (1, genFCall False          ) )
-  , (copynId          , (2, genFCall False          ) )
+  , (copynId          , (2, genCopyn                ) )
   , (copyId           , (1, genCopy                 ) )
   , (lengthTId        , (1, genFCall False          ) )
   , (nullId           , (1, genFCall False          ) )
