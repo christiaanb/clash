@@ -1095,6 +1095,30 @@ genSra' res f [(arg1,_),(arg2,_)] = do {
   ; return $ (genExprFCall2 (mkVHDLBasicId "shift_right") (arg1, (genExprFCall (mkVHDLBasicId toIntegerId) arg2)))
   }
 
+genI2bv :: BuiltinBuilder
+genI2bv = genNoInsts $ genExprArgs $ genExprRes genI2bv'
+genI2bv' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genI2bv' (Left res) f [(arg1,_)] = do {
+  ; let resTy = Var.varType res
+  ; let errorMsg = "\nGenerate.genS2bv': Can not construct vector type: " ++ pprString resTy 
+  -- TODO: Handle Nothing
+  ; Just tmpVhdlTy <- MonadState.lift tsType $ vhdlTy errorMsg resTy
+  ; return $ (genExprFCall (mkVHDLBasicId $ AST.fromVHDLId tmpVhdlTy) arg1)
+  }
+
+genBV2u :: BuiltinBuilder
+genBV2u = genNoInsts $ genExprArgs $ genExprRes genBV2u'
+genBV2u' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genBV2u' (Left res) f [(arg1,_)] = do {
+  ; return $ (genExprFCall (mkVHDLBasicId "unsigned") arg1)
+  }
+
+genBV2s :: BuiltinBuilder
+genBV2s = genNoInsts $ genExprArgs $ genExprRes genBV2s'
+genBV2s' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genBV2s' (Left res) f [(arg1,_)] = do {
+  ; return $ (genExprFCall (mkVHDLBasicId "signed") arg1)
+  }
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
 -----------------------------------------------------------------------------
@@ -1753,6 +1777,10 @@ globalNameTable = Map.fromList
   , (xorId            , (2, genOperator2 AST.Xor    ) )
   , (shiftLId         , (2, genSll                  ) )
   , (shiftRId         , (2, genSra                  ) )
+  , (s2bvId           , (1, genI2bv                 ) )
+  , (u2bvId           , (1, genI2bv                 ) )
+  , (bv2uId           , (1, genBV2u                 ) )
+  , (bv2sId           , (1, genBV2s                 ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

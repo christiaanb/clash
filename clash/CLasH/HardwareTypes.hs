@@ -27,6 +27,10 @@ module CLasH.HardwareTypes
   , simulate
   , (^^^)
   , comp
+  , bv2u
+  , u2bv
+  , s2bv
+  , bv2s
   ) where
 
 import Types
@@ -36,6 +40,7 @@ import Data.Param.Index
 import Data.Param.Signed
 import Data.Param.Unsigned 
 import Data.Bits hiding (shiftL,shiftR)
+import qualified Data.Bits as B
 
 import Language.Haskell.TH.Lift
 import Data.Typeable
@@ -95,6 +100,42 @@ blockRAM (State mem) data_in rdaddr wraddr wrenable =
               vreplace mem wraddr data_in
             else
               mem
+
+-- ==============================
+-- = Integer/Vector Conversions =
+-- ==============================
+-- ===============
+-- = Conversions =
+-- ===============
+bv2u :: NaturalT nT => Vector nT Bit -> Unsigned nT
+bv2u bv = vfoldl (\a b -> let
+                      a' = B.shiftL a 1
+                    in
+                      if b == High then
+                        a' + 1
+                      else
+                        a'
+                 ) 0 bv
+
+bv2s :: NaturalT nT => Vector nT Bit -> Signed nT
+bv2s bv = vfoldl (\a b -> let
+                        a' = B.shiftL a 1
+                      in
+                        if b == High then
+                          a' + 1
+                        else
+                          a'
+                   ) 0 bv
+
+u2bv :: NaturalT nT => Unsigned nT -> Vector nT Bit
+u2bv u = vreverse . (vmap fst) . (vgenerate f) $ (Low,(0,u))
+  where
+    f (_,(n,u)) = if testBit u n then (High,(n+1,u)) else (Low,(n+1,u))
+    
+s2bv :: NaturalT nT => Signed nT -> Vector nT Bit
+s2bv u = vreverse . (vmap fst) . (vgenerate f) $ (Low,(0,u))
+  where
+    f (_,(n,u)) = if testBit u n then (High,(n+1,u)) else (Low,(n+1,u))
 
 -- ==========
 -- = Clocks =
