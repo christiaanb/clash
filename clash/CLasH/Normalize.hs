@@ -1077,12 +1077,19 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) || isC
           initBndrMaybe <- Trans.lift $ getGlobalBind initvalueBndr
           case initBndrMaybe of
             (Just a) -> return initvalueBndr
+            -- FIXME: This is definately broken, we're making a top-level binder that
+            -- rerefences a local variable from another function... What we should do
+            -- is copy the value that's referenced by the local variable!
             Nothing -> do
               let body = Var initvalueBndr
               initId <- Trans.lift $ mkBinderFor body ("init" ++ Name.getOccString realfunBndr)
               Trans.lift $ addGlobalBind initId body
               return initId
         otherwise -> do
+          -- FIXME: This is also broken! In case a local variable is referenced anywhere
+          -- in the expression that we're making a top-level binder, we'll again be making
+          -- a reference that the new top-level binder can not find. We should check if
+          -- there are any references to local variables, and copy their values!
           initId <- Trans.lift $ mkBinderFor initvalue ("init" ++ Name.getOccString realfunBndr)
           Trans.lift $ addGlobalBind initId initvalue
           return initId         
