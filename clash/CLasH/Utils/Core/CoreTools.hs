@@ -35,6 +35,7 @@ import qualified CoreFVs
 import qualified Literal
 import qualified MkCore
 import qualified VarEnv
+import qualified VarSet
 import qualified Outputable
 import qualified TypeRep
 
@@ -67,27 +68,57 @@ type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 --           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 --     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 tfp_to_int :: Type.Type -> TypeSession Int
-tfp_to_int ty@(TypeRep.TyConApp tycon args) = if TyCon.isClosedSynTyCon tycon then do
+tfp_to_int ty = tfp_to_int' (show ty ++ "\n") ty
+
+tfp_to_int' :: String -> Type.Type -> TypeSession Int
+tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon tycon) && (null args) then do
     lens <- MonadState.get tsTfpInts
     let knownSynonymMaybe = Map.lookup tycon lens
     case knownSynonymMaybe of
       Just knownSynonym -> return knownSynonym
       Nothing -> do
         let tycon' = TyCon.synTyConType tycon
-        len <- tycon' `seq` tfp_to_int $! tycon'
+        len <- tycon' `seq` tfp_to_int' (msg ++ " > " ++ (Name.getOccString (TyCon.tyConName tycon))) $! tycon'
         len `seq` MonadState.modify tsTfpInts $! (Map.insert tycon len)
         return len
-  else
-    case Name.getOccString (TyCon.tyConName tycon) of
+  else if (TyCon.isClosedSynTyCon tycon) then do
+    let tyconNameString = Name.getOccString (TyCon.tyConName tycon)
+    case tyconNameString of
+      "R:IfFalseyz" -> do
+        let arg = args!!1
+        len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! arg
+        return len
+      -- TODO: Add more cases for type synonyms introduced by the Renamer
+      -- FIXME: substitution of type variables by type arguments is potentially
+      -- wrong!! Check if there are cases when this is valid. If not, throw an
+      -- Error if we do not know the syntycon name! 
+      _ -> do {
+              ; let { ty'  = TyCon.synTyConType tycon
+                    ; tyvarSet = VarSet.varSetElems $ Type.tyVarsOfType ty'
+                    ; ty''  = let
+                                tysubst = if length args == length tyvarSet then
+                                    Type.zipTopTvSubst tyvarSet args
+                                  else
+                                    error $ "CoreTools.tfp_to_int': TyVars and Args don't match \nContext: " ++ msg
+                              in
+                                Type.substTy tysubst ty'
+                    }            
+              ; len <- (Type.seqType ty'') `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! ty''
+              ; return len
+              }
+  else do
+    let tyconName = pprString tycon
+    let tyconNameString = Name.getOccString (TyCon.tyConName tycon)
+    case tyconNameString of
       "Dec" -> do
         let arg = head args
-        len <- arg `seq` tfp_to_int $! arg
+        len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         return len
       ":."  -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len  = int0 `seq` int1 `seq` int0 * 10 + int1
         return len
       "DecN" -> return 0
@@ -103,72 +134,72 @@ tfp_to_int ty@(TypeRep.TyConApp tycon args) = if TyCon.isClosedSynTyCon tycon th
       "Dec9" -> return 9
       "Succ" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let len = int `seq` int + 1
         return len
       "Pred" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let len = int `seq` int - 1
         return len
       ":+:" -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len  = int0 `seq` int1 `seq` int0 + int1
         return len
       ":-:" -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len  = int0 `seq` int1 `seq` int0 - int1
         return len
       ":*:" -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len  = int0 `seq` int1 `seq` int0 * int1
         return len
       "Pow2" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let len = int `seq` int * int
         return len
       "Mul2" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let len = int `seq` int + int
         return len
       "Div2" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let len = int `seq` int `div` 2
         return len
       "Fac" -> do
         let arg = head args
-        int <- arg `seq` tfp_to_int $! arg
+        int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
         let fac x = if x == 0 then 1 else x * fac (x - 1)
         let len = int `seq` fac int
         return len
       "Min" -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len = int0 `seq` int1 `seq` if int0 <= int1 then int0 else int1
         return len
       "Max" -> do
         let arg0 = head args
         let arg1 = args!!1
-        int0 <- arg0 `seq` tfp_to_int $! arg0
-        int1 <- arg1 `seq` tfp_to_int $! arg1
+        int0 <- arg0 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg0
+        int1 <- arg1 `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg1
         let len = int0 `seq` int1 `seq` if int0 >= int1 then int0 else int1
         return len
-      _ -> error $ "CoreTools.tfp_to_int: Unknown TyCon : " ++ pprString tycon
-tfp_to_int ty = error $ "CoreTools.tfp_to_int: Not a TyConApp: " ++ show ty 
+      _ -> error $ "CoreTools.tfp_to_int: Unknown TyCon : " ++ pprString tycon ++ "\n Context: " ++ msg
+tfp_to_int' msg ty = error $ "CoreTools.tfp_to_int: Not a TyConApp: " ++ show ty ++ "\n Context: " ++ msg
 
 
 -- | Evaluate a core Type representing type level int from the tfp
