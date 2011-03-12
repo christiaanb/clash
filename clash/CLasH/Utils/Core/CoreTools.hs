@@ -395,6 +395,7 @@ getIntegerLiteral expr =
   case CoreSyn.collectArgs expr of
     (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachInt integer)]) 
       | getFullString f == "GHC.Integer.smallInteger" -> return integer
+      | getFullString f == "GHC.Types.I#" -> return integer
     (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachInt64 integer)]) 
       | getFullString f == "GHC.Integer.int64ToInteger" -> return integer
     (CoreSyn.Var f, [CoreSyn.Lit (Literal.MachWord integer)]) 
