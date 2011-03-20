@@ -190,10 +190,10 @@ liftS init f = C {domain = Set.singleton (ClockUp 1), exec = applyS}
 
 simulate :: Comp b c -> [b] -> [c]
 simulate af inps = if (Set.size $ domain af) < 2 then
-    simulate' af inps
+    simulate' af (Set.findMin $ domain af) inps
   else
     error "Use simulateM for components with more than 1 clock"
 
-simulate' :: Comp b c -> [b] -> [c]
-simulate' af []     = []
-simulate' (C {exec = f}) (b:bs) = let (c,f') = f undefined b in (c : simulate' f' bs)
+simulate' :: Comp b c -> Clock -> [b] -> [c]
+simulate' af             _   []     = []
+simulate' (C {exec = f}) clk (i:is) = let (o,f') = f clk i in (o : simulate' f' clk is)
