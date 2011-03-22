@@ -66,9 +66,9 @@ import qualified Data.Set as Set
 
 import qualified Data.List as L
 
-import qualified Control.Monad.Trans.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.Accessor.Template
-import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Data.Accessor.Monad.Trans.StrictState as MonadState
 import qualified Control.Monad.Trans.Class as Trans
 
 import CLasH.Translator.Annotations
@@ -250,9 +250,9 @@ runWithClock clk n = do
   MonadState.modify hw (snd . (run' (replicate n clk) curInp))
   
 run' []         _ arch     = ([],arch)
-run' (clk:clks) i (C {..}) = let (c,f')   = exec clk i
-                                 (cs,f'') = run' clks i f'
-                             in (c:cs,f'')
+run' (clk:clks) i (C {..}) = let (c,f')   = clk `seq` exec clk i
+                                 (cs,f'') = f' `seq` run' clks i f'
+                             in f'' `seq` (c:cs,f'')
 
 setInput :: i -> SimulatorSession i o ()
 setInput i = MonadState.set input i
