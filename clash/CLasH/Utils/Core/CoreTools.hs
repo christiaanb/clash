@@ -68,7 +68,7 @@ type Binding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 --           return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 --     Nothing -> return $ error ("Callin tfp_to_int on non-dec:" ++ (show ty))
 tfp_to_int :: Type.Type -> TypeSession Int
-tfp_to_int ty = tfp_to_int' (show ty ++ "\n") ty
+tfp_to_int ty = tfp_to_int' (pprString ty ++ "\n") ty
 
 tfp_to_int' :: String -> Type.Type -> TypeSession Int
 tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon tycon) && (null args) then do
@@ -84,14 +84,22 @@ tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon ty
   else if (TyCon.isClosedSynTyCon tycon) then do
     let tyconNameString = Name.getOccString (TyCon.tyConName tycon)
     case tyconNameString of
+      -- TODO: Add more cases for type synonyms introduced by the Renamer
+      -- Especially for those cases where there are more type arguments
+      -- than type variables, which will throw an error if not not caught.
       "R:IfFalseyz" -> do
         let arg = args!!1
         len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! arg
         return len
-      -- TODO: Add more cases for type synonyms introduced by the Renamer
+      "R:IfTrueyz" -> do
+        let arg = head args
+        len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! arg
+        return len
       -- FIXME: substitution of type variables by type arguments is potentially
       -- wrong!! Check if there are cases when this is valid. If not, throw an
-      -- Error if we do not know the syntycon name! 
+      -- Error if we do not know the syntycon name!
+      -- FIXED: It should be valid in all cases as we are replacing type variables
+      -- on the RHS of the type synonym. So no additional logic/arithmatic is needed.
       _ -> do {
               ; let { ty'  = TyCon.synTyConType tycon
                     ; tyvarSet = VarSet.varSetElems $ Type.tyVarsOfType ty'
@@ -99,7 +107,8 @@ tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon ty
                                 tysubst = if length args == length tyvarSet then
                                     Type.zipTopTvSubst tyvarSet args
                                   else
-                                    error $ "CoreTools.tfp_to_int': TyVars and Args don't match \nContext: " ++ msg
+                                    error $ "CoreTools.tfp_to_int': TyVars(" ++ (show $ length tyvarSet) ++ ") and Args(" ++ (show $ length args) ++ 
+                                            ") don't match for: " ++ tyconNameString ++ "\nContext: " ++ msg
                               in
                                 Type.substTy tysubst ty'
                     }            
