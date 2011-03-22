@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DeriveDataTypeable #-}
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, RecordWildCards #-}
 
 module CLasH.HardwareTypes
   ( module Types
@@ -23,6 +23,7 @@ module CLasH.HardwareTypes
   , MemState
   , blockRAM
   , Clock(..)
+  , pulseLength
   , Comp
   , simulate
   , (^^^)
@@ -31,6 +32,17 @@ module CLasH.HardwareTypes
   , u2bv
   , s2bv
   , bv2s
+  , SimulatorSession
+  , SimulationState
+  , simulateM
+  , run
+  , runWithClock
+  , setInput
+  , setAndRun
+  , getOutput
+  , showOutput
+  , assert
+  , report
   ) where
 
 import Types
@@ -51,6 +63,13 @@ import Control.Monad.Fix (mfix)
 import qualified Prelude as P
 import Prelude hiding (id, (.))
 import qualified Data.Set as Set
+
+import qualified Data.List as L
+
+import qualified Control.Monad.Trans.State as State
+import qualified Data.Accessor.Template
+import qualified Data.Accessor.Monad.Trans.State as MonadState
+import qualified Control.Monad.Trans.Class as Trans
 
 import CLasH.Translator.Annotations
 
@@ -143,6 +162,9 @@ s2bv u = vreverse . (vmap fst) . (vgenerate f) $ (Low,(0,u))
 data Clock = ClockUp Int | ClockDown Int
   deriving (Eq,Ord,Show)
 
+pulseLength (ClockUp   i) = i
+pulseLength (ClockDown i) = i
+
 -- ==================
 -- = Automata Arrow =
 -- ==================
@@ -197,3 +219,74 @@ simulate af inps = if (Set.size $ domain af) < 2 then
 simulate' :: Comp b c -> Clock -> [b] -> [c]
 simulate' af             _   []     = []
 simulate' (C {exec = f}) clk (i:is) = let (o,f') = f clk i in (o : simulate' f' clk is)
+
+data SimulationState i o = SimulationState {
+    clockTicks_ :: ([Clock],[Int])
+  , input_      :: i
+  , hw_         :: Comp i o
+  }
+  
+Data.Accessor.Template.deriveAccessors ''SimulationState
+
+type SimulatorSession i o a = State.StateT (SimulationState i o) IO a
+
+simulateM :: Comp i o -> SimulatorSession i o () -> IO ()
+simulateM hw testbench = State.evalStateT testbench initSession
+  where
+    initSession = SimulationState ((Set.toList $ domain hw), (replicate (Set.size $ domain hw) 1)) (error "CLasH.simulateM: initial simulation input not set") hw
+
+
+run :: Int -> SimulatorSession i o ()
+run n = do
+  (clocks,ticks) <- MonadState.get clockTicks
+  let (pulses,newTicks) = runClocks (clocks,ticks) n
+  MonadState.modify clockTicks (\(a,b) -> (a,newTicks))
+  curInp <- MonadState.get input
+  MonadState.modify hw (snd . (run' pulses curInp))
+
+runWithClock :: Clock -> Int -> SimulatorSession i o ()
+runWithClock clk n = do
+  curInp <- MonadState.get input
+  MonadState.modify hw (snd . (run' (replicate n clk) curInp))
+  
+run' []         _ arch     = ([],arch)
+run' (clk:clks) i (C {..}) = let (c,f')   = exec clk i
+                                 (cs,f'') = run' clks i f'
+                             in (c:cs,f'')
+
+setInput :: i -> SimulatorSession i o ()
+setInput i = MonadState.set input i
+
+setAndRun :: i -> Int -> SimulatorSession i o ()
+setAndRun inp n = (setInput inp) >> (run n)
+
+getOutput :: SimulatorSession i o o
+getOutput = do
+  curInp <- MonadState.get input
+  arch <- MonadState.get hw
+  return $ head $ fst $ run' [ClockUp (-1)] curInp arch
+
+showOutput :: (Show o) => SimulatorSession i o ()
+showOutput = do
+  outp <- getOutput
+  Trans.lift $ putStrLn $ show outp
+  
+assert :: (o -> Bool) -> String -> SimulatorSession i o ()
+assert test msg = do
+  outp <- getOutput
+  if (test outp) then return () else Trans.lift $ putStrLn msg
+
+report :: String -> SimulatorSession i o ()
+report msg = Trans.lift $ putStrLn msg
+
+runClocks :: ([Clock], [Int]) -> Int -> ([Clock],[Int])
+runClocks (clocks, ticks) 0     = ([],ticks)
+runClocks (clocks, ticks) delta = ((concat curClocks) ++ nextClocks,nextTicks)
+  where
+    (curClocks,curTicks)   = unzip $ zipWith clockTick clocks ticks
+    (nextClocks,nextTicks) = runClocks (clocks,curTicks) (delta-1)
+
+clockTick (ClockUp   i) i' = if i == i' then ([ClockUp i]  ,1) else ([],i'+1)
+clockTick (ClockDown i) i' = if i == i' then ([ClockDown i],1) else ([],i'+1)
+
+
