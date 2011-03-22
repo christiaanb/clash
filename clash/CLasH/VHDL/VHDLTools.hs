@@ -526,7 +526,7 @@ mkVectorTy (VecType len elHType) = do
   elTyTmMaybe <- vhdlTyMaybe elHType
   case elTyTmMaybe of
     (Just elTyTm) -> do
-      let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId elTyTm) ++ "-0_to_" ++ (show len)
+      let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId elTyTm) ++ "-0_to_" ++ (show (len - 1))
       let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
       let existing_uvec_ty = fmap (fmap fst) $ Map.lookup (UVecType elHType) typesMap
       case existing_uvec_ty of
