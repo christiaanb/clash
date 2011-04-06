@@ -489,7 +489,7 @@ genTimes' (Left res) f [(arg1,_),(arg2,_)] = do {
       "Signed" -> MonadState.lift tsType $ tfp_to_int (sized_int_len_ty ty)
       "Unsigned" -> MonadState.lift tsType $ tfp_to_int (sized_word_len_ty ty)
       "Index" -> do {  ubound <- MonadState.lift tsType $ tfp_to_int (ranged_word_bound_ty ty)
-                         ;  let bitsize = floor (logBase 2 (fromInteger (toInteger ubound)))
+                         ;  let bitsize = ceiling (logBase 2 (fromInteger (toInteger ubound)))
                          ;  return bitsize
                          }
   ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId resizeId))
