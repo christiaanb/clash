@@ -1155,6 +1155,16 @@ genDrop' res f [(arg1,arg1Type),(arg2,arg2Type)] = do {
   ; let dropVal = AST.PrimName (AST.NSlice (AST.SliceName arg2name (AST.ToRange (AST.PrimLit $ show literal) (AST.PrimLit $ show (arg2len - 1)))))
   ; return dropVal
   }
+  
+genMaxIndex :: BuiltinBuilder
+genMaxIndex = genNoInsts $ genExprRes genMaxIndex'
+genMaxIndex' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genMaxIndex' res f [(arg1,arg1Type)] = do {
+  ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty arg1Type
+  ; let bitsize = floor (logBase 2 (fromInteger (toInteger len)))
+  ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toUnsignedId))
+          [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show $ len - 1)), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show bitsize))]
+  } 
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
@@ -1769,6 +1779,7 @@ globalNameTable = Map.fromList
   , (u2bvId           , (1, genI2bv                 ) )
   , (bv2uId           , (1, genBV2u                 ) )
   , (bv2sId           , (1, genBV2s                 ) )
+  , (maxIndexId       , (1, genMaxIndex             ) )
   --, (tfvecId          , (1, genTFVec                ) )
   , (minimumId        , (2, error "\nFunction name: \"minimum\" is used internally, use another name"))
   ]

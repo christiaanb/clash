@@ -16,7 +16,7 @@ builtinIds = [ exId, replaceId, headId, lastId, tailId, initId, takeId, dropId
              , negateId, minusId, fromSizedWordId, fromIntegerId, resizeWordId
              , resizeIntId, sizedIntId, smallIntegerId, fstId, sndId, blockRAMId
              , splitId, minimumId, fromRangedWordId, xorId, shiftLId , shiftRId
-             , u2bvId, s2bvId, bv2sId, bv2uId
+             , u2bvId, s2bvId, bv2sId, bv2uId, maxIndexId
              ]
 --------------
 -- Identifiers
@@ -27,6 +27,9 @@ u2bvId = "u2bv"
 s2bvId = "s2bv"
 bv2sId = "bv2s"
 bv2uId = "bv2u"
+
+maxIndexId :: String
+maxIndexId = "maxIndex"
 
 -- | reset and clock signal identifiers in String form
 resetStr, clockStr :: String

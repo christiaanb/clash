@@ -8,6 +8,7 @@ module Data.Param.Vector
   , unsafeVector
   , readVector
   , vlength
+  , maxIndex
   , vlengthT
   , fromVector
   , vnull
@@ -93,6 +94,9 @@ readVector = read
 -- =======================
 vlength :: forall s a . NaturalT s => Vector s a -> Int
 vlength _ = fromIntegerT (undefined :: s)
+
+maxIndex :: forall s a . PositiveT s => Vector s a -> Index s
+maxIndex _ = maxBound
 
 vlengthT :: NaturalT s => Vector s a -> s
 vlengthT = undefined
