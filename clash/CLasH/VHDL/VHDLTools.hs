@@ -25,6 +25,7 @@ import qualified DataCon
 import qualified CoreSubst
 import qualified Outputable
 import qualified Unique
+import qualified VarSet
 
 -- Local imports
 import CLasH.VHDL.VHDLTypes
@@ -407,9 +408,20 @@ mkTyConHType tycon args =
               "\nVHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n" 
               ++ (concat $ concat errors)
   where
-    name = (nameToString (TyCon.tyConName tycon))
-    tyvars = TyCon.tyConTyVars tycon
-    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
+    -- name = (nameToString (TyCon.tyConName tycon))    
+    --     tyvars = TyCon.tyConTyVars tycon
+    --     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
+    
+    name                    = (nameToString (TyCon.tyConName tycon))
+
+    tyvars                  = TyCon.tyConTyVars tycon
+    tyVarArgMap             = zip tyvars args
+    dataConTyVars           = (concatMap VarSet.varSetElems) $ (map Type.tyVarsOfType) $ (concatMap DataCon.dataConRepArgTys) $ TyCon.tyConDataCons tycon
+    dataConTyVarArg x       = (x, snd $ head $ filter (equalTyVarName x) tyVarArgMap)
+    equalTyVarName z (tv,_) = (Name.nameOccName $ Var.varName z) == (Name.nameOccName $ Var.varName tv)
+
+    subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst $ map dataConTyVarArg dataConTyVars
+    
     -- Label a field by taking the first available label and returning
     -- the rest.
     label_field :: [String] -> HType -> ([String], (String, HType))
