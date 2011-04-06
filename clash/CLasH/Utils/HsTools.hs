@@ -46,6 +46,8 @@ import qualified Id
 import qualified Type
 import qualified TyCon
 
+import CLasH.Utils.Pretty
+
 -- | Translate a HsExpr to a Core expression. This does renaming, type
 -- checking, simplification of class instances and desugaring. The result is
 -- a let expression that holds the given expression and a number of binds that
@@ -120,7 +122,7 @@ normalizeType env ty = do
        -- Normalize the type
        (_, nty) <- TcTyFuns.tcNormaliseFamInst ty
        return nty
-   let normalized_ty = Maybe.fromJust nty
+   let normalized_ty = Maybe.fromMaybe (error $ "HsTools.normalizeType: tcNormaliseFamInst failed for: " ++ pprString ty) nty
    return normalized_ty
 
 -- | Translate a core Type to an HsType. Far from complete so far.

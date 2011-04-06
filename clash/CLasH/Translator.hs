@@ -112,7 +112,7 @@ runTranslatorSession env session = do
   -- on the compiler dir of ghc suggests that 'z' is not used to generate
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
-  let init_typedecls = map (mktydecl . Maybe.fromJust . snd) $ Map.toList builtin_types
+  let init_typedecls = map (mktydecl . (Maybe.fromMaybe (error "Translator.runTranslatorSession: No builtin type found")) . snd) $ Map.toList builtin_types
   let init_typestate = TypeState builtin_types init_typedecls Map.empty Map.empty env
   let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty 0 Map.empty Map.empty
   return $ State.evalState session init_state

@@ -1213,7 +1213,7 @@ genApplication (dst, dsttype) f args = do
                           -- constructor used to the constructor field as
                           -- well.
                           Just dc_label ->
-                            let { dc_index = getConstructorIndex (snd $ Maybe.fromJust etype) (varToString f)
+                            let { dc_index = getConstructorIndex (snd $ Maybe.fromMaybe (error $ "Generate.genApplication: expecting constructor but found none for: " ++ show htype) etype) (varToString f)
                                 ; dc_expr = AST.PrimLit $ show dc_index 
                                 } in (dc_label:labels, dc_expr:arg_exprs)
                     return (zipWith mkassign final_labels final_exprs, [])

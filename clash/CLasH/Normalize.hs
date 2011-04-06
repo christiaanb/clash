@@ -176,7 +176,7 @@ inlinetoplevel c expr | not (null c) && is_letbinding_ctx (head c) && not (is_fu
           ((Var inlineF, inlineFargs), Just initState, Just clock) -> do
             -- Get the body belong to the applied function and clone it
             inlineFbody <- Trans.lift $ getGlobalBind inlineF
-            newInlineF <- Trans.lift $ mkFunction inlineF (Maybe.fromJust inlineFbody)
+            newInlineF <- Trans.lift $ mkFunction inlineF (Maybe.fromMaybe (error $ "Normalize.inlinetoplevel: no expr found for bndr: " ++ pprString inlineF) inlineFbody)
             -- Associate the initial state and clock with the cloned function
             Trans.lift $ MonadState.modify tsInitStates (\ismap -> Map.insert (newInlineF) initState ismap)
             Trans.lift $ MonadState.modify tsClocks (\clocksMap -> Map.insert (newInlineF) clock clocksMap)
