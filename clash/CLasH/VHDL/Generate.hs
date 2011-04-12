@@ -1070,13 +1070,13 @@ genSplit' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Eit
 genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty vecInType
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSplit': Invalid result type" (Var.varType res)
-  ; [argExpr] <- argsToVHDLExprs [vecIn]
+  ; [AST.PrimName argExpr] <- argsToVHDLExprs [vecIn]
   ; let { 
         ; labels    = getFieldLabels res_htype 0
         ; block_label = mkVHDLExtId ("split" ++ show argExpr)
         ; halflen   = round ((fromIntegral len) / 2)
-        ; rangeL    = vecSlice (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
-        ; rangeR    = vecSlice (AST.PrimLit $ show halflen) (AST.PrimLit $ show (len - 1))
+        ; rangeL    = vecSlice argExpr (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
+        ; rangeR    = vecSlice argExpr (AST.PrimLit $ show halflen) (AST.PrimLit $ show (len - 1))
         ; resname   = varToVHDLName res
         ; resnameL  = mkSelectedName resname (labels!!0)
         ; resnameR  = mkSelectedName resname (labels!!1)
@@ -1089,8 +1089,7 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   ; return [AST.CSBSm block]
   }
   where
-    vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res) 
-                            (AST.ToRange init last))
+    vecSlice n init last = AST.NSlice (AST.SliceName n (AST.ToRange init last))
                             
 genSll :: BuiltinBuilder
 genSll = genNoInsts $ genExprArgs $ genExprRes genSll'
