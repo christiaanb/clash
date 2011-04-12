@@ -1073,11 +1073,11 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   ; [AST.PrimName argExpr] <- argsToVHDLExprs [vecIn]
   ; let { 
         ; labels    = getFieldLabels res_htype 0
-        ; block_label = mkVHDLExtId ("split" ++ show argExpr)
         ; halflen   = round ((fromIntegral len) / 2)
         ; rangeL    = vecSlice argExpr (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
         ; rangeR    = vecSlice argExpr (AST.PrimLit $ show halflen) (AST.PrimLit $ show (len - 1))
         ; resname   = varToVHDLName res
+        ; block_label = mkVHDLExtId ("split" ++ (varToUniqString res))
         ; resnameL  = mkSelectedName resname (labels!!0)
         ; resnameR  = mkSelectedName resname (labels!!1)
         ; argexprL  = vhdlNameToVHDLExpr rangeL
