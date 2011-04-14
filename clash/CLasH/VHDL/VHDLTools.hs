@@ -426,7 +426,7 @@ mkTyConHType tycon args =
     -- the rest.
     label_field :: [String] -> HType -> ([String], (String, HType))
     label_field (l:ls) htype = (ls, (l, htype))
-    labels = map (:[]) ['A'..'Z']
+    labels = [ [a,b] | a <- ['A'..'Z'], b <- ['A'..'Z'] ] --map (:[]) ['A'..'Z']
 
 vhdlTy :: (TypedThing t, Outputable.Outputable t) => 
   String -> t -> TypeSession (Maybe AST.TypeMark)
@@ -654,7 +654,7 @@ mkTupleShow elemTMs tupleTM = AST.SubProgBody showSpec [] [showExpr]
             foldr1 (\e1 e2 -> e1 AST.:&: AST.PrimLit "','" AST.:&: e2) $
               map ((genExprFCall2 showId) . (\x -> (selectedName tupPar x, AST.PrimLit "false")))
                   (take tupSize recordlabels)
-    recordlabels = map (\c -> mkVHDLBasicId [c]) ['A'..'Z']
+    recordlabels = map (\c -> mkVHDLBasicId c) [ [a,b] | a <- ['A'..'Z'], b <- ['A'..'Z'] ] --  ['A'..'Z']
     tupSize = length elemTMs
     selectedName par = (AST.PrimName . AST.NSelected . (AST.NSimple par AST.:.:) . tupVHDLSuffix)
 
