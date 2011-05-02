@@ -419,9 +419,9 @@ mkTyConHType tycon args =
     dataConTyVars           = (concatMap VarSet.varSetElems) $ (map Type.tyVarsOfType) $ (concatMap DataCon.dataConRepArgTys) $ TyCon.tyConDataCons tycon
     dataConTyVarArg x       = (x, snd $ head $ filter (equalTyVarName x) tyVarArgMap)
     equalTyVarName z (tv,_) = (Name.nameOccName $ Var.varName z) == (Name.nameOccName $ Var.varName tv)
-    
+
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst $ map dataConTyVarArg dataConTyVars
-    
+
     -- Label a field by taking the first available label and returning
     -- the rest.
     label_field :: [String] -> HType -> ([String], (String, HType))
