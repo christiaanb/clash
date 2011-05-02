@@ -58,9 +58,9 @@ makeVHDL ::
 makeVHDL libdir filenames finder = do
   start <- Clock.getCurrentTime
   -- Load the modules
-  (cores, env, specs) <- loadModules libdir filenames (Just finder)
+  (cores, specs) <- loadModules libdir filenames (Just finder)
   -- Translate to VHDL
-  vhdl <- moduleToVHDL env cores specs
+  vhdl <- moduleToVHDL cores specs
   -- Write VHDL to file. Just use the first entity for the name
   let top_entity = head $ Maybe.catMaybes $ map (\(t, _, _) -> t) specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
@@ -72,12 +72,11 @@ makeVHDL libdir filenames finder = do
 
 -- | Translate the specified entities in the given modules to VHDL.
 moduleToVHDL ::
-  HscTypes.HscEnv             -- ^ The GHC Environment
-  -> [HscTypes.CoreModule]    -- ^ The Core Modules
+  [HscTypes.CoreModule]    -- ^ The Core Modules
   -> [EntitySpec]             -- ^ The entities to generate
   -> IO [(AST.VHDLId, AST.DesignFile)]
-moduleToVHDL env cores specs = do
-  (vhdl, count) <- runTranslatorSession env $ do
+moduleToVHDL cores specs = do
+  (vhdl, count) <- runTranslatorSession $ do
     let all_bindings = concatMap (\x -> CoreSyn.flattenBinds (HscTypes.cm_binds x)) cores
     -- Store the bindings we loaded
     tsBindings %= Map.fromList all_bindings
@@ -104,8 +103,8 @@ moduleToVHDL env cores specs = do
 
 -- Run the given translator session. Generates a new UniqSupply for that
 -- session.
-runTranslatorSession :: HscTypes.HscEnv -> TranslatorSession a -> IO a
-runTranslatorSession env session = do
+runTranslatorSession :: TranslatorSession a -> IO a
+runTranslatorSession session = do
   -- Generate a UniqSupply
   -- Running 
   --    egrep -r "(initTcRnIf|mkSplitUniqSupply)" .
@@ -113,7 +112,7 @@ runTranslatorSession env session = do
   -- a unique supply anywhere.
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'z'
   let init_typedecls = map (mktydecl . (Maybe.fromMaybe (error "Translator.runTranslatorSession: No builtin type found")) . snd) $ Map.toList builtin_types
-  let init_typestate = TypeState builtin_types init_typedecls Map.empty Map.empty env
+  let init_typestate = TypeState builtin_types init_typedecls Map.empty Map.empty
   let init_state = TranslatorState uniqSupply init_typestate Map.empty Map.empty 0 Map.empty Map.empty Map.empty 0 Map.empty Map.empty
   return $ State.evalState session init_state
 

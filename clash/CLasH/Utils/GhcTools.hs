@@ -35,7 +35,7 @@ indent = 5
 
 listBindings :: FilePath -> [FilePath] -> IO ()
 listBindings libdir filenames = do
-  (cores,_,_) <- loadModules libdir filenames Nothing
+  (cores,_) <- loadModules libdir filenames Nothing
   let binds = concatMap (CoreSyn.flattenBinds . HscTypes.cm_binds) cores
   mapM listBinding binds
   putStr "\n=========================\n"
@@ -69,7 +69,7 @@ listClass c = putStr $ Outputable.showSDoc $
 -- | Show the core structure of the given binds in the given file.
 listBind :: FilePath -> [FilePath] -> String -> IO ()
 listBind libdir filenames name = do
-  (cores,_,_) <- loadModules libdir filenames Nothing
+  (cores,_) <- loadModules libdir filenames Nothing
   bindings <- concatM $ mapM (findBinder (hasVarName name)) cores
   mapM_ listBinding bindings
   return ()
@@ -103,20 +103,18 @@ loadModules ::
   -> [String]   -- ^ The files that need to be loaded
   -> Maybe Finder -- ^ What entities to build?
   -> IO ( [HscTypes.CoreModule]
-        , HscTypes.HscEnv
         , [EntitySpec]
-        ) -- ^ ( The loaded modules, the resulting ghc environment, the entities to build)
+        ) -- ^ ( The loaded modules, the entities to build)
 loadModules libdir filenames finder =
   GHC.defaultErrorHandler DynFlags.defaultDynFlags $
     GHC.runGhc (Just libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags
       cores <- mapM GHC.compileToCoreModule filenames
-      env <- GHC.getSession
       specs <- case finder of
         Nothing -> return []
         Just f -> concatM $ mapM f cores
-      return (cores, env, specs)
+      return (cores, specs)
 
 findBinds ::
   Monad m =>
