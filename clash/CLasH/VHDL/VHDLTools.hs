@@ -361,6 +361,10 @@ mkHTypeEither' ty | ty_has_free_tyvars ty = return $ Left $ "\nVHDLTools.mkHType
                   return $ Right $ RangedWType (bound - 1)
                 "()" -> do
                   return $ Right UnitType
+                "Clock" -> do
+                  return $ Left "\nVHDLTools.mkHTypeEither': Clock type is not representable"
+                "Comp" -> do
+                  return $ Left "\nVHDLTools.mkHTypeEither': Comp type is not representable"
                 otherwise ->
                   mkTyConHType tycon args
     Nothing -> return $ Left $ "\nVHDLTools.mkHTypeEither': Do not know what to do with type: " ++ pprString ty
@@ -408,18 +412,14 @@ mkTyConHType tycon args =
               "\nVHDLTools.mkTyConHType: Can not construct type for: " ++ pprString tycon ++ "\n because no type can be construced for some of the arguments.\n" 
               ++ (concat $ concat errors)
   where
-    -- name = (nameToString (TyCon.tyConName tycon))    
-    --     tyvars = TyCon.tyConTyVars tycon
-    --     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst (zip tyvars args)
-    
     name                    = (nameToString (TyCon.tyConName tycon))
-
+    
     tyvars                  = TyCon.tyConTyVars tycon
     tyVarArgMap             = zip tyvars args
     dataConTyVars           = (concatMap VarSet.varSetElems) $ (map Type.tyVarsOfType) $ (concatMap DataCon.dataConRepArgTys) $ TyCon.tyConDataCons tycon
     dataConTyVarArg x       = (x, snd $ head $ filter (equalTyVarName x) tyVarArgMap)
     equalTyVarName z (tv,_) = (Name.nameOccName $ Var.varName z) == (Name.nameOccName $ Var.varName tv)
-
+    
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst $ map dataConTyVarArg dataConTyVars
     
     -- Label a field by taking the first available label and returning
