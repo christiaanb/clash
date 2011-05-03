@@ -1117,6 +1117,12 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) || isC
               case (Name.getOccString appliedFunBndr) of
                 "ClockUp" -> return (True,clockLit)
                 "ClockDown" -> return (False,clockLit)
+            (App _ _) -> do
+              let (Var appliedFunBndr, [litArg]) = collectArgs clock
+              clockLit <- Trans.lift $ getIntegerLiteral litArg
+              case (Name.getOccString appliedFunBndr) of
+                "ClockUp" -> return (True,clockLit)
+                "ClockDown" -> return (False,clockLit)
             otherwise -> do
               error $ "Normalize.arrowLiftSExtract: Do now know how to handle clock:" ++ show clock
       Trans.lift $ MonadState.modify tsClocks (Map.insert realfunBndr clockEdge)
