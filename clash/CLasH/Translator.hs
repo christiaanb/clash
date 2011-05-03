@@ -44,8 +44,6 @@ makeVHDLAnnotations libdir filenames =
   makeVHDL libdir filenames finder
     where
       finder = findSpec (hasCLasHAnnotation isTopEntity)
-                        (hasCLasHAnnotation isInitState)
-                        (isCLasHAnnotation isInitState)
                         (hasCLasHAnnotation isTestInput)
 
 -- | Turn Haskell to VHDL, using the given finder functions to find the Top
@@ -62,7 +60,7 @@ makeVHDL libdir filenames finder = do
   -- Translate to VHDL
   vhdl <- moduleToVHDL cores specs
   -- Write VHDL to file. Just use the first entity for the name
-  let top_entity = head $ Maybe.catMaybes $ map (\(t, _, _) -> t) specs
+  let top_entity = head $ Maybe.catMaybes $ map (\(t, _) -> t) specs
   let dir = "./vhdl/" ++ (show top_entity) ++ "/"
   prepareDir dir
   mapM_ (writeVHDL dir) vhdl
@@ -83,7 +81,7 @@ moduleToVHDL cores specs = do
     -- let all_initstates = concatMap (\x -> case x of (_, Nothing, _) -> []; (_, Just inits, _) -> inits) specs 
     tsInitStates %= Map.empty
     test_binds <- catMaybesM $ Monad.mapM mkTest specs
-    let topbinds = Maybe.catMaybes $ map (\(top, _, _) -> top) specs
+    let topbinds = Maybe.catMaybes $ map (\(top, _) -> top) specs
     vhdl <- case topbinds of
       []  -> error "Could not find top entity requested"
       tops -> createDesignFiles (tops ++ test_binds)
@@ -95,9 +93,9 @@ moduleToVHDL cores specs = do
   where
     mkTest :: EntitySpec -> TranslatorSession (Maybe CoreSyn.CoreBndr)
     -- Create a testbench for any entry that has test input
-    mkTest (_, _, Nothing) = return Nothing
-    mkTest (Nothing, _, _) = return Nothing
-    mkTest (Just top, _, Just input) = do
+    mkTest (_, Nothing) = return Nothing
+    mkTest (Nothing, _) = return Nothing
+    mkTest (Just top, Just input) = do
       bndr <- createTestbench Nothing cores input top
       return $ Just bndr
 

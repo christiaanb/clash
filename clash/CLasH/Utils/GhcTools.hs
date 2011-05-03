@@ -215,40 +215,12 @@ hasVarName ::
   -> m Bool     -- ^ Indicate if the binder has the name
 hasVarName lookfor bind = return $ lookfor == Name.occNameString (Name.nameOccName $ Name.getName bind)
 
-
-findInitStates ::
-  (Var.Var -> GHC.Ghc Bool) -> 
-  (Var.Var -> GHC.Ghc [CLasHAnn]) -> 
-  HscTypes.CoreModule -> 
-  GHC.Ghc (Maybe [(CoreSyn.CoreBndr, CoreSyn.CoreBndr)])
-findInitStates statec annsc mod = do
-  states <- findBinds statec mod
-  anns  <- findAnns annsc mod
-  let funs = Maybe.catMaybes (map extractInits anns)
-  exprs' <- mapM (\x -> findBind (hasVarName (TH.nameBase x)) mod) funs
-  let exprs = Maybe.catMaybes exprs'
-  let inits = zipMWith (\a b -> (a,b)) states exprs
-  return inits
-  where
-    extractInits :: CLasHAnn -> Maybe TH.Name
-    extractInits (InitState x)  = Just x
-    extractInits _              = Nothing
-    zipMWith :: (a -> b -> c) -> (Maybe [a]) -> [b] -> (Maybe [c])
-    zipMWith _ Nothing   _  = Nothing
-    zipMWith f (Just as) bs = Just $ zipWith f as bs
-
--- | Make a complete spec out of a three conditions
+-- | Make a complete spec out of a two conditions
 findSpec ::
-  (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc [CLasHAnn]) -> (Var.Var -> GHC.Ghc Bool)
+  (Var.Var -> GHC.Ghc Bool) -> (Var.Var -> GHC.Ghc Bool)
   -> Finder
 
-findSpec topc statec annsc testc mod = do
+findSpec topc testc mod = do
   top <- findBind topc mod
-  state <- findExprs statec mod
-  anns <- findAnns annsc mod
   test <- findExpr testc mod
-  inits <- findInitStates statec annsc mod
-  return [(top, inits, test)]
-  -- case top of
-  --   Just t -> return [(t, state, test)]
-  --   Nothing -> return error $ "Could not find top entity requested"
+  return [(top, test)]
