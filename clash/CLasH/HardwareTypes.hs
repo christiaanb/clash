@@ -9,7 +9,6 @@ module CLasH.HardwareTypes
   , module Data.Param.Unsigned
   , module Data.Bits
   , module Language.Haskell.TH.Lift
-  , module Control.Category
   , module Control.Arrow
   , module Control.Monad.Fix
   , module CLasH.Translator.Annotations
@@ -58,7 +57,7 @@ import Language.Haskell.TH.Lift
 import Data.Typeable
 
 import Control.Category (Category,(.),id)
-import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),second,returnA)
+import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),returnA)
 import Control.Monad.Fix (mfix)
 import qualified Prelude as P
 import Prelude hiding (id, (.))
