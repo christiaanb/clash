@@ -1057,16 +1057,25 @@ arrowLiftSExtract c expr@(App _ _) | isLift (appliedF, alreadyMappedArgs) || isC
       (realfunBndr, realfunBody) <- case realfun of
         (Var realfunBndr) -> do
           exprMaybe <- Trans.lift $ getGlobalBind realfunBndr
-          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract(Var): could not find lifted function: " ++ pprString realfun) exprMaybe
           -- Clone the lifted function
           realfun' <- Trans.lift $ mkFunction realfunBndr body
           return (realfun', Var realfun')
-        (App appliedFun appliedArgs) -> do
-          let (Var appliedFunBndr, _) = collectArgs realfun
+        (App _ _) -> do
+          let (Var appliedFunBndr, appliedArgs) = collectArgs realfun
           exprMaybe <- Trans.lift $ getGlobalBind appliedFunBndr
-          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract: could not find lifted function: " ++ pprString realfun) exprMaybe
+          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract(App): could not find lifted function: " ++ pprString realfun) exprMaybe
+          -- Clone the lifted function
           realfun' <- Trans.lift $ mkFunction appliedFunBndr body
-          return (realfun', App (Var realfun') appliedArgs)      
+          return (realfun', CoreSyn.mkApps (Var realfun') appliedArgs)
+        (Lam id1 (Lam id2 (Cast (App (App appliedFun lamArg1) lamArg2) ty))) -> do
+          let (Var appliedFunBndr, appliedArgs) = collectArgs appliedFun
+          exprMaybe <- Trans.lift $ getGlobalBind appliedFunBndr
+          let body = Maybe.fromMaybe (error $ "Normalize.arrowLiftSExtract(LamLamCastAppApp): could not find lifted function: " ++ pprString realfun) exprMaybe
+          -- Clone the lifted function
+          realfun' <- Trans.lift $ mkFunction appliedFunBndr body
+          return (realfun', Lam id1 (Lam id2 (Cast (App (App (CoreSyn.mkApps (Var realfun') appliedArgs) lamArg1) lamArg2) ty)))
+        otherwise -> error $ "Normalize.arrowLiftSExtract: Don't know how to lift: " ++ pprString realfun
       -- Create 2 new Vars that that will be applied to the lifted function
       let [arg1Ty,arg2Ty] = (fst . Type.splitFunTys . CoreUtils.exprType) realfun
       id1 <- Trans.lift $ mkInternalVar "param" arg1Ty
