@@ -162,7 +162,7 @@ infixr 5 <++>
 vmap :: (a -> b) -> Vector s a -> Vector s b
 vmap f = liftV (map f)
 
-vzipWith :: ((s :>=: s') ~ True) => (a -> b -> c) -> Vector s a -> Vector s' b -> Vector s' c
+vzipWith :: (a -> b -> c) -> Vector s a -> Vector s' b -> Vector (Min s s') c
 vzipWith f = liftV2 (zipWith f)
 
 vfoldl :: (a -> b -> a) -> a -> Vector s b -> a
