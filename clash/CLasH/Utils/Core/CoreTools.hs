@@ -175,7 +175,7 @@ tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon ty
       "Pow2" -> do
         let arg = head args
         int <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconName) $! arg
-        let len = int `seq` int * int
+        let len = int `seq` 2 ^ int
         return len
       "Mul2" -> do
         let arg = head args
