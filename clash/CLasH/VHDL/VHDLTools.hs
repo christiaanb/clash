@@ -246,7 +246,7 @@ mkVHDLBasicId s =
   AST.unsafeVHDLBasicId $ (strip_multiscore . strip_leading . strip_invalid) s
   where
     -- Strip invalid characters.
-    strip_invalid = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_.")
+    strip_invalid = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ "_")
     -- Strip leading numbers and underscores
     strip_leading = dropWhile (`elem` ['0'..'9'] ++ "_")
     -- Strip multiple adjacent underscores
