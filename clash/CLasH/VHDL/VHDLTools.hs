@@ -486,7 +486,8 @@ mkTyconTy htype =
           let reclabelss = map (map mkVHDLBasicId) labelss
           let elemss = zipWith (zipWith AST.ElementDec) reclabelss elem_tyss
           let elem_names = concatMap (concatMap prettyShow) elem_tyss
-          let ty_id = mkVHDLExtId $ name ++ elem_names
+          tyCnt <- MonadState.getAndModify tsTypeCnt (+1)
+          let ty_id = mkVHDLExtId $ name ++ "_" ++ (show tyCnt)-- elem_names
           -- Find out if we need to add an extra field at the start of
           -- the record type containing the constructor (only needed
           -- when there's more than one constructor).

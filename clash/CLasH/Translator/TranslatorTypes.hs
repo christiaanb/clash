@@ -81,8 +81,9 @@ data TypeState = TypeState {
   tsTypeDecls_  :: [Maybe AST.PackageDecItem],
   -- | A map of vector Core type -> VHDL type function
   tsTypeFuns_   :: TypeFunMap,
-  tsTfpInts_    :: TfpIntMap
+  tsTfpInts_    :: TfpIntMap,
   -- tsHscEnv_     :: HscTypes.HscEnv
+  tsTypeCnt_   :: Integer
 }
 
 -- Derive accessors
