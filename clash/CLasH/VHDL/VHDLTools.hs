@@ -409,7 +409,7 @@ mkTyConHType tycon args =
                   -- when there are multiple datacons
                   let enum_ty_part = case dcs of
                                       [dc] -> Nothing
-                                      _ -> Just ("constructor", enum_ty)
+                                      _ -> Just ("constructor", EnumType (name ++ "Con") (map (nameToString . DataCon.dataConName) dcs))
                   -- Create the AggrType HType
                   return $ Right $ AggrType name enum_ty_part fieldss
                 -- There were errors in element types
@@ -544,7 +544,7 @@ mkVectorTy (VecType len elHType) = do
   elTyTmMaybe <- vhdlTyMaybe elHType
   case elTyTmMaybe of
     (Just elTyTm) -> do
-      let ty_id = mkVHDLExtId $ "vector-"++ (AST.fromVHDLId elTyTm) ++ "-0_to_" ++ (show (len - 1))
+      let ty_id = mkVHDLExtId $ "vector_"++ (AST.fromVHDLId elTyTm) ++ "_0_to_" ++ (show (len - 1))
       let range = AST.ConstraintIndex $ AST.IndexConstraint [AST.ToRange (AST.PrimLit "0") (AST.PrimLit $ show (len - 1))]
       let existing_uvec_ty = fmap (fmap fst) $ Map.lookup (UVecType elHType) typesMap
       case existing_uvec_ty of
