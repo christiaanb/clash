@@ -96,7 +96,8 @@ createEntityAST vhdl_id clocks args res =
               ++ clkPorts
               ++ [resetn_port]
     -- TODO: Only add a clk ports if we have state
-    clkPorts = map ((\a -> AST.IfaceSigDec a AST.In std_logicTM) . AST.unsafeVHDLBasicId . ("clock" ++) . show . snd) clocks
+    clkPorts = map ((\a -> AST.IfaceSigDec a AST.In std_logicTM) . AST.unsafeVHDLBasicId . ("clock" ++) . show . snd) 
+        (if (null clocks) then [(undefined,1)] else clocks)
     resetn_port = AST.IfaceSigDec resetId AST.In std_logicTM
     res_port = fmap (mkIfaceSigDec AST.Out) res
 
