@@ -1278,7 +1278,8 @@ genApplication (dst, dsttype) f args = do
                     let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
                     let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
                     clocksMap <- MonadState.get tsClocks
-                    let clockDomains = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+                    let clockDomains' = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+                    let clockDomains  = if null clockDomains' then [1] else clockDomains'
                     return ([mkComponentInst label entity_id clockDomains portmaps], [f])
                   else
                     -- Not a top level binder, so this must be a local variable reference.
@@ -1319,7 +1320,8 @@ genApplication (dst, dsttype) f args = do
                let label = "comp_ins_" ++ (either (prettyShow . varToVHDLName) prettyShow) dst
                let portmaps = mkAssocElems args' ((either varToVHDLName id) dst) signature
                clocksMap <- MonadState.get tsClocks
-               let clockDomains = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+               let clockDomains' = ((map snd) . Set.toList . Set.fromList . Map.elems) clocksMap
+               let clockDomains  = if null clockDomains' then [1] else clockDomains'
                return ([mkComponentInst label entity_id clockDomains portmaps], [f])
             else
               -- Not a top level binder, so this must be a local variable reference.
