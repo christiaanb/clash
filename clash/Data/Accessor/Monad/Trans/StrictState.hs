@@ -14,6 +14,12 @@ get f = State.gets (Accessor.get f)
 modify :: Monad m => Accessor.T r a -> (a -> a) -> StateT r m ()
 modify f g = State.modify (Accessor.modify f g)
 
+getAndModify :: Monad m => Accessor.T r a -> (a -> a) -> StateT r m a
+getAndModify f g =
+   do x <- get f
+      modify f g
+      return x
+
 infix 1 %=, %:
 
 (%=) :: Monad m => Accessor.T r a -> a -> StateT r m ()
