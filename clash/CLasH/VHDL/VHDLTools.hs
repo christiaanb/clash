@@ -234,7 +234,12 @@ varToStringUniq = show . Unique.getKey . Var.varUnique
 
 -- Extracts the string version of the name
 nameToString :: Name.Name -> String
-nameToString = OccName.occNameString . Name.nameOccName
+nameToString name = name'
+  where
+    name'' = OccName.occNameString $ Name.nameOccName name
+    name'  = case (filter (`notElem` ",") name'') of
+      "()" -> "Tuple" ++ (show $ (+1) $ length $ filter (`elem` ",") name'')
+      n    -> name''
 
 -- Shortcut for Basic VHDL Ids.
 -- Can only contain alphanumerics and underscores. The supplied string must be
