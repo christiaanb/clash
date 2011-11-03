@@ -14,9 +14,9 @@ builtinIds = [ exId, replaceId, headId, lastId, tailId, initId, takeId, dropId
              , hwxorId, hwandId, hworId, hwnotId, equalityId, inEqualityId, ltId
              , lteqId, gtId, gteqId, boolOrId, boolAndId, plusId, timesId
              , negateId, minusId, fromSizedWordId, fromIntegerId, resizeWordId
-             , resizeIntId, sizedIntId, smallIntegerId, fstId, sndId, blockRAMId
-             , splitId, minimumId, fromRangedWordId, xorId, shiftLId , shiftRId
-             , u2bvId, s2bvId, bv2sId, bv2uId, maxIndexId
+             , resizeIntId, signedDcId, unsignedDcId, indexDcId, smallIntegerId
+             , fstId, sndId, blockRAMId, splitId, minimumId, fromRangedWordId
+             , xorId, shiftLId , shiftRId, u2bvId, s2bvId, bv2sId, bv2uId, maxIndexId
              ]
 --------------
 -- Identifiers
@@ -349,8 +349,14 @@ resizeIntId = "resizeSigned"
 smallIntegerId :: String
 smallIntegerId = "smallInteger"
 
-sizedIntId :: String
-sizedIntId = "Signed"
+signedDcId :: String
+signedDcId = "Signed"
+
+unsignedDcId :: String
+unsignedDcId = "Unsigned"
+
+indexDcId :: String
+indexDcId = "Index"
 
 tfvecId :: String
 tfvecId = "Vector"
