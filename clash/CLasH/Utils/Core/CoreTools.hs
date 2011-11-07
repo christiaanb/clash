@@ -95,6 +95,10 @@ tfp_to_int' msg ty@(TypeRep.TyConApp tycon args) = if (TyCon.isClosedSynTyCon ty
         let arg = head args
         len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! arg
         return len
+      "R:Mul'xDecNz" -> do
+        let arg = args!!1
+        len <- arg `seq` tfp_to_int' (msg ++ " > " ++ tyconNameString) $! arg
+        return len
       -- FIXME: substitution of type variables by type arguments is potentially
       -- wrong!! Check if there are cases when this is valid. If not, throw an
       -- Error if we do not know the syntycon name!
