@@ -34,7 +34,8 @@ Library
                     directory               >= 1.0     && < 1.1,
                     tfp                     >= 0.2     && < 0.4,
                     th-lift                 >= 0.5.4   && < 0.6,
-                    time                    >= 1.1.4   && < 1.2
+                    time                    >= 1.1.4   && < 1.2,
+                    utility-ht              < 0.0.7
 
   exposed-modules:  CLasH.HardwareTypes
                     CLasH.Translator
