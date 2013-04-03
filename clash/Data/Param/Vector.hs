@@ -138,8 +138,8 @@ vtake i = liftV $ take (fromIntegerT i)
 vdrop :: NaturalT i => i -> Vector s a -> Vector (s :-: (Min s i)) a
 vdrop i = liftV $ drop (fromIntegerT i)
 
-vselect :: (NaturalT f, NaturalT s, NaturalT n, (f :<: i) ~ True, 
-           (((s :*: n) :+: f) :<=: i) ~ True) => 
+vselect :: (NaturalT f, NaturalT s, NaturalT n, (f :<: i) ~ True,
+           (((s :*: (Pred n)) :+: f) :<=: i) ~ True) =>
            f -> s -> n -> Vector i a -> Vector n a
 vselect f s n = liftV (select' f' s' n')
   where (f', s', n') = (fromIntegerT f, fromIntegerT s, fromIntegerT n)

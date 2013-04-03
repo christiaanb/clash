@@ -438,6 +438,22 @@ genFCall' switch (Left res) f args = do
              map (\exp -> Nothing AST.:=>: AST.ADExpr exp) (map fst args)
 genFCall' _ (Right name) _ _ = error $ "\nGenerate.genFCall': Cannot generate builtin function call assigned to a VHDLName: " ++ show name
 
+genSel :: BuiltinBuilder
+genSel = genNoInsts $ genExprRes genSel'
+genSel' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
+genSel' _ f [(arg1,arg1Type),(arg2,arg2Type),(arg3,arg3Type),(arg4,arg4Type)] = do {
+  ; fLit <- fmap (AST.PrimLit . show ) $ MonadState.lift tsType $ tfp_to_int arg1Type
+  ; sLit <- fmap (AST.PrimLit . show ) $ MonadState.lift tsType $ tfp_to_int arg2Type
+  ; nLit <- fmap (AST.PrimLit . show ) $ MonadState.lift tsType $ tfp_to_int arg3Type
+  ; arg4expr <- argToVHDLExpr arg4
+  ; let (AST.PrimName arg4name) = Maybe.fromMaybe (error $ "Generate.genSel': Expected variable reference, but found:" ++ either pprString show arg4) arg4expr
+  ; let fname = varToString f
+  ; fId <- MonadState.lift tsType $ vectorFunId (tfvec_elem arg4Type) fname
+  ; let selVal = AST.PrimFCall $ AST.FCall (AST.NSimple fId) $
+                   map (\expr -> Nothing AST.:=>: AST.ADExpr expr) [fLit,sLit,nLit,AST.PrimName arg4name]
+  ; return selVal
+  }
+
 genFromSizedWord :: BuiltinBuilder
 genFromSizedWord = genNoInsts $ genExprArgs genFromSizedWord'
 genFromSizedWord' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
@@ -1720,7 +1736,7 @@ globalNameTable = Map.fromList
   , (initId           , (1, genFCall False          ) )
   , (takeId           , (2, genTake                 ) )
   , (dropId           , (2, genDrop                 ) )
-  , (selId            , (4, genFCall False          ) )
+  , (selId            , (4, genSel                  ) )
   , (plusgtId         , (2, genFCall False          ) )
   , (ltplusId         , (2, genFCall False          ) )
   , (plusplusId       , (2, genFCall False          ) )
