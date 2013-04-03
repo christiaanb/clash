@@ -43,7 +43,7 @@ module Data.Param.Vector
   , vcopyn
   , vsplit
   ) where
-    
+
 import Types
 import Types.Data.Num
 import Types.Data.Num.Decimal.Literals.TH
@@ -61,7 +61,7 @@ newtype (NaturalT s) => Vector s a = Vector {unVec :: [a]}
 -- ==========================
 -- = Constructing functions =
 -- ==========================
-                                                  
+
 empty :: Vector D0 a
 empty = Vector []
 
@@ -88,7 +88,7 @@ unsafeVector l xs
 
 readVector :: (Read a, NaturalT s) => String -> Vector s a
 readVector = read
-        
+
 -- =======================
 -- = Observing functions =
 -- =======================
@@ -119,7 +119,7 @@ vreplace (Vector xs) i y = Vector $ replace' xs (toInteger i) y
   where replace' []     _ _ = []
         replace' (_:xs) 0 y = (y:xs)
         replace' (x:xs) n y = x : (replace' xs (n-1) y)
-  
+
 vhead :: PositiveT s => Vector s a -> a
 vhead = head . unVec
 
@@ -177,26 +177,26 @@ vzip = liftV2 zip
 vunzip :: Vector s (a, b) -> (Vector s a, Vector s b)
 vunzip (Vector xs) = let (a,b) = unzip xs in (Vector a, Vector b)
 
-(+>>) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
+(+>>) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) =>
               a -> Vector s a -> Vector s a
 x +>> xs = x +> vinit xs
 
-(<<+) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) => 
+(<<+) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) =>
               Vector s a -> a -> Vector s a
 xs <<+ x = vtail xs <+ x
-  
+
 vrotl :: forall s a . NaturalT s => Vector s a -> Vector s a
 vrotl = liftV rotl'
   where vlen = fromIntegerT (undefined :: s)
         rotl' [] = []
         rotl' xs = let (i,[l]) = splitAt (vlen - 1) xs
-                   in l : i 
+                   in l : i
 
 vrotr :: NaturalT s => Vector s a -> Vector s a
 vrotr = liftV rotr'
   where
     rotr' [] = []
-    rotr' (x:xs) = xs ++ [x] 
+    rotr' (x:xs) = xs ++ [x]
 
 vconcat :: Vector s1 (Vector s2 a) -> Vector (s1 :*: s2) a
 vconcat = liftV (foldr ((++).unVec) [])
@@ -244,20 +244,20 @@ instance (Read a, NaturalT nT) => Read (Vector nT a) where
   readsPrec _ str
     | all fitsLength possibilities = map toReadS possibilities
     | otherwise = error (fName ++ ": string/dynamic length mismatch")
-    where 
+    where
       fName = "Data.Param.TFVec.read"
       expectedL = fromIntegerT (undefined :: nT)
       possibilities = readVectorList str
       fitsLength (_, l, _) = l == expectedL
       toReadS (xs, _, rest) = (Vector xs, rest)
-      
+
 instance NaturalT s => DF.Foldable (Vector s) where
  foldr = vfoldr
- 
+
 instance NaturalT s => Functor (Vector s) where
  fmap = vmap
 
-instance NaturalT s => DT.Traversable (Vector s) where 
+instance NaturalT s => DT.Traversable (Vector s) where
   traverse f = (fmap Vector).(DT.traverse f).unVec
 
 instance (Lift a, NaturalT nT) => Lift (Vector nT a) where
@@ -309,4 +309,4 @@ lexVector :: ReadS String
 lexVector ('>':rest) = [(">",rest)]
 lexVector ('<':rest) = [("<",rest)]
 lexVector str = lex str
-                                           
+

@@ -50,7 +50,7 @@ getEntity fname = makeCached fname tsEntities $ do
       args' <- catMaybesM $ mapM mkMap args
       -- TODO: Handle Nothing
       res' <- mkMap res
-      count <- MonadState.get tsEntityCounter 
+      count <- MonadState.get tsEntityCounter
       let vhdl_id = mkVHDLBasicId $ varToString fname ++ "Component_" ++ show count
       MonadState.set tsEntityCounter (count + 1)
       clocks <- MonadState.get tsClocks
@@ -60,8 +60,8 @@ getEntity fname = makeCached fname tsEntities $ do
       return signature
   where
     mkMap ::
-      --[(SignalId, SignalInfo)] 
-      CoreSyn.CoreBndr 
+      --[(SignalId, SignalInfo)]
+      CoreSyn.CoreBndr
       -> TranslatorSession (Maybe Port)
     mkMap = (\bndr ->
       let
@@ -71,10 +71,10 @@ getEntity fname = makeCached fname tsEntities $ do
         --  Assume the bndr has a valid VHDL id already
         id = varToVHDLId bndr
         ty = Var.varType bndr
-        error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr 
+        error_msg = "\nVHDL.createEntity.mkMap: Can not create entity: " ++ pprString fname ++ "\nbecause no type can be created for port: " ++ pprString bndr
       in do
         type_mark_maybe <- MonadState.lift tsType $ vhdlTy error_msg ty
-        case type_mark_maybe of 
+        case type_mark_maybe of
           Just type_mark -> return $ Just (id, type_mark)
           Nothing -> return Nothing
      )
@@ -96,7 +96,7 @@ createEntityAST vhdl_id clocks args res =
               ++ clkPorts
               ++ [resetn_port]
     -- TODO: Only add a clk ports if we have state
-    clkPorts = map ((\a -> AST.IfaceSigDec a AST.In std_logicTM) . AST.unsafeVHDLBasicId . ("clock" ++) . show . snd) 
+    clkPorts = map ((\a -> AST.IfaceSigDec a AST.In std_logicTM) . AST.unsafeVHDLBasicId . ("clock" ++) . show . snd)
         (if (null clocks) then [(undefined,1)] else clocks)
     resetn_port = AST.IfaceSigDec resetId AST.In std_logicTM
     res_port = fmap (mkIfaceSigDec AST.Out) res
@@ -119,7 +119,7 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   expr <- Normalize.getNormalized False fname
   -- Split the normalized expression
   let (args, binds, res) = Normalize.splitNormalized expr
-  
+
   -- Get the entity for this function
   signature <- getEntity fname
   let entity_id = ent_id signature
@@ -142,15 +142,15 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
   let clockEdge = Map.lookup fname clocksMap
   -- Create a state proc, if needed
   (state_proc, resbndr) <- case (Maybe.catMaybes in_state_maybes, Maybe.catMaybes out_state_maybes, init_state) of
-        ([in_state], [out_state], Nothing) -> do 
+        ([in_state], [out_state], Nothing) -> do
           nonEmpty <- hasNonEmptyType "\n Generate.getArchitecture (in_state)" in_state
-          if nonEmpty 
+          if nonEmpty
             then error ("Generate.getArchitecture: No initial state defined for: " ++ show fname)
             else return ([],[])
         ([in_state], [out_state], Just resetval) -> do
           nonEmpty <- hasNonEmptyType "" in_state
-          if nonEmpty 
-            then mkStateProcSm (in_state, out_state, resetval, Maybe.fromMaybe (error $ "Generate.getArchitecture: No clock found for: " ++ show fname ++ ", listed clocks: " ++ show clocksMap) clockEdge)            
+          if nonEmpty
+            then mkStateProcSm (in_state, out_state, resetval, Maybe.fromMaybe (error $ "Generate.getArchitecture: No clock found for: " ++ show fname ++ ", listed clocks: " ++ show clocksMap) clockEdge)
             else do
               nonEmptyReset <- hasNonEmptyType "" resetval
               if nonEmptyReset
@@ -170,15 +170,15 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
               -> TranslatorSession ((Maybe CoreSyn.CoreBndr, Maybe CoreSyn.CoreBndr), ([AST.ConcSm], [CoreSyn.CoreBndr]))
               -- ^ ((Input state variable, output state variable), (statements, used entities))
     -- newtype unpacking is just a cast
-    dobind (bndr, unpacked@(CoreSyn.Cast packed coercion)) 
+    dobind (bndr, unpacked@(CoreSyn.Cast packed coercion))
       | hasStateType packed && not (hasStateType unpacked)
       = return ((Just bndr, Nothing), ([], []))
     -- With simplCore, newtype packing is just a cast
-    dobind (bndr, packed@(CoreSyn.Cast unpacked@(CoreSyn.Var state) coercion)) 
+    dobind (bndr, packed@(CoreSyn.Cast unpacked@(CoreSyn.Var state) coercion))
       | hasStateType packed && not (hasStateType unpacked)
       = return ((Nothing, Just state), ([], []))
     -- Without simplCore, newtype packing uses a data constructor
-    dobind (bndr, (CoreSyn.App (CoreSyn.App (CoreSyn.Var con) (CoreSyn.Type _)) (CoreSyn.Var state))) 
+    dobind (bndr, (CoreSyn.App (CoreSyn.App (CoreSyn.Var con) (CoreSyn.Type _)) (CoreSyn.Var state)))
       | isStateCon con
       = return ((Nothing, Just state), ([], []))
     -- Anything else is handled by mkConcSm
@@ -186,23 +186,23 @@ getArchitecture fname = makeCached fname tsArchitectures $ do
       sms <- mkConcSm bind
       return ((Nothing, Nothing), sms)
 
-mkStateProcSm :: 
+mkStateProcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreBndr, CoreSyn.CoreBndr, (Bool, Integer)) -- ^ The current state, new state, reset variables, and clock domain
   -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) -- ^ The resulting statements
 mkStateProcSm (old, new, res, (edge, period)) = do
-  let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res 
+  let error_msg = "\nVHDL.mkSigDec: Can not make signal declaration for type: \n" ++ pprString res
   type_mark_old_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType old)
-  let type_mark_old = Maybe.fromMaybe 
+  let type_mark_old = Maybe.fromMaybe
                         (error $ "\nGenerate.mkStateProcSm: empty type for state? Type: " ++ pprString (Var.varType old))
                         type_mark_old_maybe
   type_mark_res_maybe <- MonadState.lift tsType $ vhdlTy error_msg (Var.varType res)
-  let type_mark_res' = Maybe.fromMaybe 
+  let type_mark_res' = Maybe.fromMaybe
                         (error $ "\nGenerate.mkStateProcSm: empty type for initial state? Type: " ++ pprString (Var.varType res))
                         type_mark_res_maybe
   let type_mark_res = if type_mark_old == type_mark_res' then
                         type_mark_res'
-                      else 
-                        error $ "Initial state has different type than state type, state type: " ++ show type_mark_old ++ ", init type: "  ++ show type_mark_res'    
+                      else
+                        error $ "Initial state has different type than state type, state type: " ++ show type_mark_old ++ ", init type: "  ++ show type_mark_res'
   let resvalid  = mkVHDLExtId $ varToString res ++ "val"
   let resvaldec = AST.BDISD $ AST.SigDec resvalid type_mark_res Nothing
   let reswform  = AST.Wform [AST.WformElem (AST.PrimName $ AST.NSimple resvalid) Nothing]
@@ -232,7 +232,7 @@ mkStateProcSm (old, new, res, (edge, period)) = do
 -- | Transforms a core binding into a VHDL concurrent statement
 mkConcSm ::
   (CoreSyn.CoreBndr, CoreSyn.CoreExpr) -- ^ The binding to process
-  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
+  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
 
@@ -258,14 +258,14 @@ mkConcSm (bndr, app@(CoreSyn.App _ _))= do
 -- A single alt case must be a selector. This means the scrutinee is a simple
 -- variable, the alternative is a dataalt with a single non-wild binder that
 -- is also returned.
-mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt])) 
+mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
                 -- Don't generate VHDL for substate extraction
                 | hasStateType bndr = return ([], [])
                 | otherwise =
   case alt of
     (CoreSyn.DataAlt dc, bndrs, (CoreSyn.Var sel_bndr)) -> do
-      nonemptysel <- hasNonEmptyType "\n Generate.mkConcSm (nonemptysel)" sel_bndr 
-      if nonemptysel 
+      nonemptysel <- hasNonEmptyType "\n Generate.mkConcSm (nonemptysel)" sel_bndr
+      if nonemptysel
         then do
           bndrs' <- Monad.filterM (hasNonEmptyType ("\n Generate.mkConcSm (bndr'): " ++ show bndrs)) bndrs
           case List.elemIndex sel_bndr bndrs' of
@@ -294,7 +294,7 @@ mkConcSm (bndr, expr@(CoreSyn.Case (CoreSyn.Var scrut) b ty [alt]))
           else
             -- A selector case that selects a state value, ignore it.
             return ([], [])
-      
+
     _ -> error $ "\nVHDL.mkConcSM: Not in normal form: Not a selector case:\n" ++ (pprString expr)
 
 -- Multiple case alt become conditional assignments and have only wild
@@ -387,7 +387,7 @@ genCoreArgs ::
 genCoreArgs wrap dst func args = wrap dst func args'
   where
     -- Check (rather crudely) that all arguments are CoreExprs
-    args' = case Either.partitionEithers (map fst args) of 
+    args' = case Either.partitionEithers (map fst args) of
       (exprargs, []) -> exprargs
       (exprsargs, rest) -> error $ "\nGenerate.genCoreArgs: expect core expression arguments but found ast exprs:" ++ (show rest)
 
@@ -402,19 +402,19 @@ genExprRes wrap dst func args = do
 
 -- | Generate a binary operator application. The first argument should be a
 -- constructor from the AST.Expr type, e.g. AST.And.
-genOperator2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> BuiltinBuilder 
+genOperator2 :: (AST.Expr -> AST.Expr -> AST.Expr) -> BuiltinBuilder
 genOperator2 op = genNoInsts $ genExprArgs $ genExprRes (genOperator2' op)
 genOperator2' :: (AST.Expr -> AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genOperator2' op _ f [(arg1,_), (arg2,_)] = return $ op arg1 arg2
 
 -- | Generate a unary operator application
-genOperator1 :: (AST.Expr -> AST.Expr) -> BuiltinBuilder 
+genOperator1 :: (AST.Expr -> AST.Expr) -> BuiltinBuilder
 genOperator1 op = genNoInsts $ genExprArgs $ genExprRes (genOperator1' op)
 genOperator1' :: (AST.Expr -> AST.Expr) -> dst -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genOperator1' op _ f [(arg,_)] = return $ op arg
 
 -- | Generate a unary operator application
-genNegation :: BuiltinBuilder 
+genNegation :: BuiltinBuilder
 genNegation = genNoInsts $ genExprRes genNegation'
 genNegation' :: dst -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genNegation' _ f [(arg,argType)] = do
@@ -423,11 +423,11 @@ genNegation' _ f [(arg,argType)] = do
   let name = Name.getOccString (TyCon.tyConName tycon)
   case name of
     "Signed" -> return $ AST.Neg arg1
-    otherwise -> error $ "\nGenerate.genNegation': Negation not allowed for type: " ++ show name 
+    otherwise -> error $ "\nGenerate.genNegation': Negation not allowed for type: " ++ show name
 
 -- | Generate a function call from the destination binder, function name and a
 -- list of expressions (its arguments)
-genFCall :: Bool -> BuiltinBuilder 
+genFCall :: Bool -> BuiltinBuilder
 genFCall switch = genNoInsts $ genExprArgs $ genExprRes (genFCall' switch)
 genFCall' :: Bool -> Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genFCall' switch (Left res) f args = do
@@ -581,9 +581,9 @@ genTFVec (Left res) f [Left (CoreSyn.Let (CoreSyn.Rec letBinders) letRes)] = do 
 genTFVec (Left res) f [Left app@(CoreSyn.App _ _)] = do {
   ; let { elems = reduceCoreListToHsList app
   -- Make signal names for all the binders
-        ; binders = map (\expr -> case expr of 
+        ; binders = map (\expr -> case expr of
                           (CoreSyn.Var b) -> b
-                          otherwise -> error $ "\nGenerate.genTFVec: Cannot generate TFVec: " 
+                          otherwise -> error $ "\nGenerate.genTFVec: Cannot generate TFVec: "
                             ++ show res ++ ", with elems:\n" ++ show elems ++ "\n" ++ pprString elems) elems
         } ;
   ; sigs <- mapM (\x -> MonadState.lift tsType $ varToVHDLExpr x) binders
@@ -597,7 +597,7 @@ genTFVec (Left res) f [Left app@(CoreSyn.App _ _)] = do {
   -- Return the block statement coressponding to the TFVec literal
   ; return $ [AST.CSBSm block]
   }
-  
+
 genTFVec (Left name) _ [Left xs] = error $ "\nGenerate.genTFVec: Cannot generate TFVec: " ++ show name ++ ", with elems:\n" ++ show xs ++ "\n" ++ pprString xs
 
 genTFVec (Right name) _ _ = error $ "\nGenerate.genTFVec: Cannot generate TFVec assigned to VHDLName: " ++ show name
@@ -624,14 +624,14 @@ genMap (Left res) f [(Left mapped_f, _), (Left (CoreSyn.Var arg), _)] = do {
         ; argexpr     = vhdlNameToVHDLExpr $ mkIndexedName (varToVHDLName arg) n_expr
         ; (CoreSyn.Var real_f, already_mapped_args) = CoreSyn.collectArgs mapped_f
         ; valargs     = get_val_args (Var.varType real_f) already_mapped_args
-        } ;   
+        } ;
   ; (app_concsms, used) <- genApplication (Right resname,res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr, (tfvec_elem . Var.varType) arg)])
     -- Return the generate statement
   ; return ([AST.CSGSm $ AST.GenerateSm label genScheme [] app_concsms], used)
   }
 
 genMap' (Right name) _ _ = error $ "\nGenerate.genMap': Cannot generate map function call assigned to a VHDLName: " ++ show name
-    
+
 genZipWith :: BuiltinBuilder
 genZipWith (Left res) f args@[(Left zipped_f, _), (Left (CoreSyn.Var arg1), _), (Left (CoreSyn.Var arg2), _)] = do {
   -- Setup the generate scheme
@@ -672,7 +672,7 @@ genFold' :: Int -> Bool -> BuiltinBuilder
 genFold' len left (Left res) _ [_, (start, _), vec] | len == 0 = do
   [arg] <- argsToVHDLExprs [start]
   return ([mkUncondAssign (Left res) arg], [])
-    
+
 genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecType)] = do
   [vecExpr] <- argsToVHDLExprs [vec]
   -- The vector length
@@ -684,7 +684,7 @@ genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecTy
   -- Put the type of the start value in nvec, this will be the type of our
   -- temporary vector
   let tmp_ty = Type.mkAppTy nvec startType
-  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
+  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty
   -- TODO: Handle Nothing
   Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
@@ -702,7 +702,7 @@ genFold' len left (Left res) f [(Left folded_f,_), (start,startType), (vec,vecTy
   -- Assign tmp[len-1] or tmp[0] to res
   let out_assign = mkUncondAssign (Left res) $ vhdlNameToVHDLExpr (if left then
                     (mkIndexedName tmp_name (AST.PrimLit $ show (len-1))) else
-                    (mkIndexedName tmp_name (AST.PrimLit "0")))      
+                    (mkIndexedName tmp_name (AST.PrimLit "0")))
   let block = AST.BlockSm block_label [] (AST.PMapAspect []) [tmp_dec] [AST.CSGSm gen_sm, out_assign]
   return ([AST.CSBSm block], concat useds)
   where
@@ -773,7 +773,7 @@ genZip' (Left res) f args@[(arg1,_), (arg2,_)] = do {
     -- Setup the generate scheme
   ; len <- MonadState.lift tsType $ tfp_to_int $ (tfvec_len_ty . Var.varType) res
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genZip: Invalid result type" (tfvec_elem (Var.varType res))
-  ; [AST.PrimName argName1, AST.PrimName argName2] <- argsToVHDLExprs [arg1,arg2] 
+  ; [AST.PrimName argName1, AST.PrimName argName2] <- argsToVHDLExprs [arg1,arg2]
           -- TODO: Use something better than varToString
   ; let { label           = mkVHDLExtId ("zipVector" ++ (varToUniqString res))
         ; n_id            = mkVHDLBasicId "n"
@@ -793,15 +793,15 @@ genZip' (Left res) f args@[(arg1,_), (arg2,_)] = do {
     -- Return the generate functions
   ; return [AST.CSGSm $ AST.GenerateSm label genScheme [] [resA_assign,resB_assign]]
   }
-  
+
 -- | Generate a generate statement for the builtin function "fst"
 genFst :: BuiltinBuilder
 genFst = genNoInsts genFst'
 genFst' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
 genFst' res f args@[(arg,argType)] = do {
   ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genFst: Invalid argument type" argType
-  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg] 
-  ; let { 
+  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg]
+  ; let {
         ; labels      = getFieldLabels arg_htype 0
         ; argexprA    = vhdlNameToVHDLExpr $ mkSelectedName argExpr (labels!!0)
         ; assign      = mkUncondAssign res argexprA
@@ -809,15 +809,15 @@ genFst' res f args@[(arg,argType)] = do {
     -- Return the generate functions
   ; return [assign]
   }
-  
+
 -- | Generate a generate statement for the builtin function "snd"
 genSnd :: BuiltinBuilder
 genSnd = genNoInsts genSnd'
 genSnd' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
 genSnd' res f args@[(arg,argType)] = do {
   ; arg_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSnd: Invalid argument type" argType
-  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg] 
-  ; let { 
+  ; [AST.PrimName argExpr] <- argsToVHDLExprs [arg]
+  ; let {
         ; labels      = getFieldLabels arg_htype 0
         ; argexprB    = vhdlNameToVHDLExpr $ mkSelectedName argExpr (labels!!1)
         ; assign      = mkUncondAssign res argexprB
@@ -825,7 +825,7 @@ genSnd' res f args@[(arg,argType)] = do {
     -- Return the generate functions
   ; return [assign]
   }
-    
+
 -- | Generate a generate statement for the builtin function "unzip"
 genUnzip :: BuiltinBuilder
 genUnzip = genNoInsts genUnzip'
@@ -877,7 +877,7 @@ genUnzip' (Left res) f args@[(arg,argType)] = do
       return [mkUncondAssign (Left res) argexpr]
     _ -> error $ "Unzipping a value that is not a vector? Value: " ++ show arg ++ "\nType: " ++ pprString argType ++ "\nhtype: " ++ show htype
 
-genCopy :: BuiltinBuilder 
+genCopy :: BuiltinBuilder
 genCopy = genNoInsts genCopy'
 genCopy' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
 genCopy' (Left res) f [(arg,argType)] = do {
@@ -888,7 +888,7 @@ genCopy' (Left res) f [(arg,argType)] = do {
   ; return [out_assign]
   }
 
-genCopyn :: BuiltinBuilder 
+genCopyn :: BuiltinBuilder
 genCopyn = genNoInsts genCopyn'
 genCopyn' :: (Either CoreSyn.CoreBndr AST.VHDLName ) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
 genCopyn' (Left res) f [arg0,(arg,argType)] = do {
@@ -898,7 +898,7 @@ genCopyn' (Left res) f [arg0,(arg,argType)] = do {
         }
   ; return [out_assign]
   }
-    
+
 genConcat :: BuiltinBuilder
 genConcat = genNoInsts genConcat'
 genConcat' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession [AST.ConcSm]
@@ -926,7 +926,7 @@ genConcat' (Left res) f args@[(arg,argType)] = do {
   ; return [AST.CSGSm $ AST.GenerateSm label genScheme [] [out_assign]]
   }
   where
-    vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res) 
+    vecSlice init last =  AST.NSlice (AST.SliceName (varToVHDLName res)
                             (AST.ToRange init last))
 
 genIteraten :: BuiltinBuilder
@@ -960,7 +960,7 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
   -- -- Put the type of the start value in nvec, this will be the type of our
   -- -- temporary vector
   let tmp_ty = Var.varType res
-  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty 
+  let error_msg = "\nGenerate.genFold': Can not construct temp vector for element type: " ++ pprString tmp_ty
   -- TODO: Handle Nothing
   Just tmp_vhdl_ty <- MonadState.lift tsType $ vhdlTy error_msg tmp_ty
   -- Setup the generate scheme
@@ -976,7 +976,7 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
   let (cells, useds) = unzip cells'
   let gen_sm = AST.GenerateSm gen_label gen_scheme [] (map AST.CSGSm cells)
   -- Assign tmp[len-1] or tmp[0] to res
-  let out_assign = mkUncondAssign (Left res) $ vhdlNameToVHDLExpr tmp_name    
+  let out_assign = mkUncondAssign (Left res) $ vhdlNameToVHDLExpr tmp_name
   let block = AST.BlockSm block_label [] (AST.PMapAspect []) [tmp_dec] [AST.CSGSm gen_sm, out_assign]
   return ([AST.CSBSm block], concat useds)
   where
@@ -1004,9 +1004,9 @@ genIterateOrGenerate' len iter (Left res) f [(Left app_f,_), (start,startType)] 
       let valargs     = get_val_args (Var.varType real_f) already_mapped_args
       (app_concsms, used) <- genApplication (Right resname, res_type) real_f ((zip (map Left valargs) (map CoreUtils.exprType valargs)) ++ [(Right argexpr, startType)])
       -- Return the conditional generate part
-      let gensm = AST.GenerateSm cond_label cond_scheme [] (if iter then 
+      let gensm = AST.GenerateSm cond_label cond_scheme [] (if iter then
                                                           [startassign]
-                                                         else 
+                                                         else
                                                           app_concsms
                                                         )
       return (gensm, used)
@@ -1063,7 +1063,7 @@ genBlockRAM' (Left res) f args@[data_in,rdaddr,wraddr,wrenable] = do
         ramassign      = AST.SigAssign ramloc wform
         rising_edge_clk = genExprFCall rising_edge (AST.PrimName $ AST.NSimple clockId)
         statement   = AST.IfSm (AST.And rising_edge_clk $ fst wrenable) [ramassign] [] Nothing
-        
+
 genSplit :: BuiltinBuilder
 genSplit = genNoInsts genSplit'
 
@@ -1072,7 +1072,7 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   ; len <- MonadState.lift tsType $ tfp_to_int $ tfvec_len_ty vecInType
   ; res_htype <- MonadState.lift tsType $ mkHType "\nGenerate.genSplit': Invalid result type" (Var.varType res)
   ; [AST.PrimName argExpr] <- argsToVHDLExprs [vecIn]
-  ; let { 
+  ; let {
         ; labels    = getFieldLabels res_htype 0
         ; halflen   = round ((fromIntegral len) / 2)
         ; rangeL    = vecSlice argExpr (AST.PrimLit "0") (AST.PrimLit $ show (halflen - 1))
@@ -1091,7 +1091,7 @@ genSplit' (Left res) f args@[(vecIn,vecInType)] = do {
   }
   where
     vecSlice n init last = AST.NSlice (AST.SliceName n (AST.ToRange init last))
-                            
+
 genSll :: BuiltinBuilder
 genSll = genNoInsts $ genExprArgs $ genExprRes genSll'
 genSll' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
@@ -1111,7 +1111,7 @@ genI2bv = genNoInsts $ genExprArgs $ genExprRes genI2bv'
 genI2bv' :: Either CoreSyn.CoreBndr AST.VHDLName -> CoreSyn.CoreBndr -> [(AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
 genI2bv' (Left res) f [(arg1,_)] = do {
   ; let resTy = Var.varType res
-  ; let errorMsg = "\nGenerate.genS2bv': Can not construct vector type: " ++ pprString resTy 
+  ; let errorMsg = "\nGenerate.genS2bv': Can not construct vector type: " ++ pprString resTy
   -- TODO: Handle Nothing
   ; Just tmpVhdlTy <- MonadState.lift tsType $ vhdlTy errorMsg resTy
   ; return $ (genExprFCall (mkVHDLBasicId $ AST.fromVHDLId tmpVhdlTy) arg1)
@@ -1155,7 +1155,7 @@ genDrop' res f [(arg1,arg1Type),(arg2,arg2Type)] = do {
   ; let dropVal = AST.PrimName (AST.NSlice (AST.SliceName arg2name (AST.ToRange (AST.PrimLit $ show literal) (AST.PrimLit $ show (arg2len - 1)))))
   ; return dropVal
   }
-  
+
 genMaxIndex :: BuiltinBuilder
 genMaxIndex = genNoInsts $ genExprRes genMaxIndex'
 genMaxIndex' :: (Either CoreSyn.CoreBndr AST.VHDLName) -> CoreSyn.CoreBndr -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -> TranslatorSession AST.Expr
@@ -1164,7 +1164,7 @@ genMaxIndex' res f [(arg1,arg1Type)] = do {
   ; let bitsize = floor (logBase 2 (fromInteger (toInteger len)))
   ; return $ AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLBasicId toUnsignedId))
           [Nothing AST.:=>: AST.ADExpr (AST.PrimLit (show $ len - 1)), Nothing AST.:=>: AST.ADExpr( AST.PrimLit (show bitsize))]
-  } 
+  }
 
 -----------------------------------------------------------------------------
 -- Function to generate VHDL for applications
@@ -1173,12 +1173,12 @@ genApplication ::
   (Either CoreSyn.CoreBndr AST.VHDLName, Type.Type) -- ^ Where to store the result?
   -> CoreSyn.CoreBndr -- ^ The function to apply
   -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -- ^ The arguments to apply
-  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
+  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
 genApplication (dst, dsttype) f args = do
   nonemptydst <- case dst of
-    Left bndr -> hasNonEmptyType "\nGenerate.genApplication: " bndr 
+    Left bndr -> hasNonEmptyType "\nGenerate.genApplication: " bndr
     Right _ -> return True
   if nonemptydst
     then
@@ -1189,7 +1189,7 @@ genApplication (dst, dsttype) f args = do
             --Left bndr -> do
               -- We have the bndr, so we can get at the type
               htype_either <- MonadState.lift tsType $ mkHTypeEither dsttype
-              let argsNoState = filter (\(x,y) -> not (either hasStateType (\x -> False) x)) args   
+              let argsNoState = filter (\(x,y) -> not (either hasStateType (\x -> False) x)) args
               argsTransatable <- MonadState.lift tsType $ Monad.filterM (\(x,y) -> canTypeToVHDLType y) argsNoState
               let dcs = datacons_for dsttype
               case (dcs, map fst argsTransatable) of
@@ -1207,14 +1207,14 @@ genApplication (dst, dsttype) f args = do
                     arg_exprs <- argsToVHDLExprs (map fst argsNoState)
                     let (final_labels, final_exprs) = case getConstructorFieldLabel htype of
                           -- Only a single constructor
-                          Nothing -> 
+                          Nothing ->
                             (labels, arg_exprs)
                           -- Multiple constructors, so assign the
                           -- constructor used to the constructor field as
                           -- well.
                           Just dc_label ->
                             let { dc_index = getConstructorIndex (snd $ Maybe.fromMaybe (error $ "Generate.genApplication: expecting constructor but found none for: " ++ show htype) etype) (varToString f)
-                                ; dc_expr = AST.PrimLit $ show dc_index 
+                                ; dc_expr = AST.PrimLit $ show dc_index
                                 } in (dc_label:labels, dc_expr:arg_exprs)
                     return (zipWith mkassign final_labels final_exprs, [])
                     where
@@ -1237,7 +1237,7 @@ genApplication (dst, dsttype) f args = do
                     simple_assign = do
                       expr <- MonadState.lift tsType $ dataconToVHDLExpr dc
                       return ([mkUncondAssign dst expr], [])
-            -- 
+            --
             -- Right _ -> do
             --   let dcs = datacons_for dsttype
             --   error $ "\nGenerate.genApplication(DataConWorkId): Can't generate dataconstructor application without an original binder" ++ show dcs
@@ -1289,12 +1289,12 @@ genApplication (dst, dsttype) f args = do
                     -- FIXME : I DONT KNOW IF THE ABOVE COMMENT HOLDS HERE, SO FOR NOW JUST ERROR!
                     -- f' <- MonadState.lift tsType $ varToVHDLExpr f
                     --                   return $ ([mkUncondAssign dst f'], [])
-                  do errtype <- case dst of 
-                        Left bndr -> do 
+                  do errtype <- case dst of
+                        Left bndr -> do
                           htype <- MonadState.lift tsType $ mkHTypeEither (Var.varType bndr)
                           return (show htype)
                         Right vhd -> return $ show vhd
-                     error ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype) 
+                     error ("\nGenerate.genApplication(VanillaId): Using function from another module that is not a known builtin: " ++ (pprString f) ++ "::" ++ errtype)
           IdInfo.ClassOpId cls ->
             -- FIXME: Not looking for what instance this class op is called for
             -- Is quite stupid of course.
@@ -1332,13 +1332,13 @@ genApplication (dst, dsttype) f args = do
                return ([mkUncondAssign dst f'], [])
     else -- Destination has empty type, don't generate anything
       return ([], [])
-      
+
 canTypeToVHDLType :: Type.Type -> TypeSession Bool
 canTypeToVHDLType ty = do
   a <- vhdlTy "Generate.canTypeToVHDLType" ty
   let b = case a of Nothing -> False ; Just _ -> True
-  return b   
-      
+  return b
+
 -----------------------------------------------------------------------------
 -- Functions to generate functions dealing with vectors.
 -----------------------------------------------------------------------------
@@ -1376,7 +1376,7 @@ vectorFunId el_ty fname = do
 genUnconsVectorFuns :: AST.TypeMark -- ^ type of the vector elements
                     -> AST.TypeMark -- ^ type of the vector
                     -> [(String, (AST.SubProgBody, [String]))]
-genUnconsVectorFuns elemTM vectorTM  = 
+genUnconsVectorFuns elemTM vectorTM  =
   [ (exId, (AST.SubProgBody exSpec      []                  [exExpr],[]))
   , (replaceId, (AST.SubProgBody replaceSpec [AST.SPVD replaceVar] [replaceExpr1,replaceExpr2,replaceRet],[]))
   , (lastId, (AST.SubProgBody lastSpec    []                  [lastExpr],[]))
@@ -1386,7 +1386,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (emptyId, (AST.SubProgBody emptySpec   [AST.SPVD emptyVar] [emptyExpr],[]))
   , (singletonId, (AST.SubProgBody singletonSpec [AST.SPVD singletonVar] [singletonRet],[]))
   , (selId, (AST.SubProgBody selSpec  [AST.SPVD selVar] [selFor, selRet],[]))
-  , (ltplusId, (AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet],[]))  
+  , (ltplusId, (AST.SubProgBody ltplusSpec [AST.SPVD ltplusVar] [ltplusExpr, ltplusRet],[]))
   , (plusplusId, (AST.SubProgBody plusplusSpec [AST.SPVD plusplusVar] [plusplusExpr, plusplusRet],[]))
   , (lengthTId, (AST.SubProgBody lengthTSpec [] [lengthTExpr],[]))
   , (shiftIntoLId, (AST.SubProgBody shiftlSpec [AST.SPVD shiftlVar] [shiftlExpr, shiftlRet], [initId]))
@@ -1396,7 +1396,7 @@ genUnconsVectorFuns elemTM vectorTM  =
   , (rotrId, (AST.SubProgBody rotrSpec [AST.SPVD rotrVar] [rotrExpr, rotrRet], [nullId, tailId, headId]))
   , (reverseId, (AST.SubProgBody reverseSpec [AST.SPVD reverseVar] [reverseFor, reverseRet], []))
   ]
-  where 
+  where
     ixPar   = AST.unsafeVHDLBasicId "ix"
     vecPar  = AST.unsafeVHDLBasicId "vec"
     vec1Par = AST.unsafeVHDLBasicId "vec1"
@@ -1409,22 +1409,22 @@ genUnconsVectorFuns elemTM vectorTM  =
     aPar    = AST.unsafeVHDLBasicId "a"
     fPar = AST.unsafeVHDLBasicId "f"
     sPar = AST.unsafeVHDLBasicId "s"
-    resId   = AST.unsafeVHDLBasicId "res"    
+    resId   = AST.unsafeVHDLBasicId "res"
     exSpec = AST.Function (mkVHDLExtId exId) [AST.IfaceVarDec vecPar vectorTM,
                                AST.IfaceVarDec ixPar  unsignedTM] elemTM
-    exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed 
+    exExpr = AST.ReturnSm (Just $ AST.PrimName $ AST.NIndexed
               (AST.IndexedName (AST.NSimple vecPar) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple ixPar)]))
     replaceSpec = AST.Function (mkVHDLExtId replaceId)  [ AST.IfaceVarDec vecPar vectorTM
                                           , AST.IfaceVarDec iPar   unsignedTM
                                           , AST.IfaceVarDec aPar   elemTM
-                                          ] vectorTM 
+                                          ] vectorTM
        -- variable res : fsvec_x (0 to vec'length-1);
     replaceVar =
-         AST.VarDec resId 
+         AST.VarDec resId
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                    [AST.ToRange (AST.PrimLit "0")
-                            (AST.PrimName (AST.NAttribute $ 
+                            (AST.PrimName (AST.NAttribute $
                               AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "1"))   ]))
                 Nothing
@@ -1432,33 +1432,33 @@ genUnconsVectorFuns elemTM vectorTM  =
     replaceExpr1 = AST.NSimple resId AST.:= AST.PrimName (AST.NSimple vecPar)
     replaceExpr2 = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [genExprFCall (mkVHDLBasicId toIntegerId) (AST.PrimName $ AST.NSimple iPar)]) AST.:= AST.PrimName (AST.NSimple aPar)
     replaceRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
-    vecSlice init last =  AST.PrimName (AST.NSlice 
-                                        (AST.SliceName 
-                                              (AST.NSimple vecPar) 
+    vecSlice init last =  AST.PrimName (AST.NSlice
+                                        (AST.SliceName
+                                              (AST.NSimple vecPar)
                                               (AST.ToRange init last)))
     lastSpec = AST.Function (mkVHDLExtId lastId) [AST.IfaceVarDec vecPar vectorTM] elemTM
        -- return vec(vec'length-1);
-    lastExpr = AST.ReturnSm (Just (AST.PrimName $ AST.NIndexed (AST.IndexedName 
-                    (AST.NSimple vecPar) 
-                    [AST.PrimName (AST.NAttribute $ 
-                                AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
+    lastExpr = AST.ReturnSm (Just (AST.PrimName $ AST.NIndexed (AST.IndexedName
+                    (AST.NSimple vecPar)
+                    [AST.PrimName (AST.NAttribute $
+                                AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing)
                                                              AST.:-: AST.PrimLit "1"])))
-    initSpec = AST.Function (mkVHDLExtId initId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    initSpec = AST.Function (mkVHDLExtId initId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
        -- variable res : fsvec_x (0 to vec'length-2);
-    initVar = 
-         AST.VarDec resId 
+    initVar =
+         AST.VarDec resId
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                    [AST.ToRange (AST.PrimLit "0")
-                            (AST.PrimName (AST.NAttribute $ 
+                            (AST.PrimName (AST.NAttribute $
                               AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                                 (AST.PrimLit "2"))   ]))
                 Nothing
        -- resAST.:= vec(0 to vec'length-2)
-    initExpr = AST.NSimple resId AST.:= (vecSlice 
-                               (AST.PrimLit "0") 
-                               (AST.PrimName (AST.NAttribute $ 
-                                  AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) 
+    initExpr = AST.NSimple resId AST.:= (vecSlice
+                               (AST.PrimLit "0")
+                               (AST.PrimName (AST.NAttribute $
+                                  AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing)
                                                              AST.:-: AST.PrimLit "2"))
     initRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     minimumSpec = AST.Function (mkVHDLExtId minimumId) [AST.IfaceVarDec leftPar   naturalTM,
@@ -1469,43 +1469,43 @@ genUnconsVectorFuns elemTM vectorTM  =
                         (Just $ AST.Else [minimumExprRet])
       where minimumExprRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple rightPar)
        -- variable res : fsvec_x (0 to (minimum (n,vec'length))-1);
-    minLength = AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId minimumId))  
+    minLength = AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId minimumId))
                               [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple nPar)
-                              ,Nothing AST.:=>: AST.ADExpr (AST.PrimName (AST.NAttribute $ 
+                              ,Nothing AST.:=>: AST.ADExpr (AST.PrimName (AST.NAttribute $
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))]
 
     plusgtSpec = AST.Function (mkVHDLExtId plusgtId) [AST.IfaceVarDec aPar   elemTM,
-                                       AST.IfaceVarDec vecPar vectorTM] vectorTM 
+                                       AST.IfaceVarDec vecPar vectorTM] vectorTM
     -- variable res : fsvec_x (0 to vec'length);
-    plusgtVar = 
-      AST.VarDec resId 
+    plusgtVar =
+      AST.VarDec resId
              (AST.SubtypeIn vectorTM
-               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                 [AST.ToRange (AST.PrimLit "0")
-                        (AST.PrimName (AST.NAttribute $ 
+                        (AST.PrimName (AST.NAttribute $
                           AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))]))
              Nothing
-    plusgtExpr = AST.NSimple resId AST.:= 
-                   ((AST.PrimName $ AST.NSimple aPar) AST.:&: 
+    plusgtExpr = AST.NSimple resId AST.:=
+                   ((AST.PrimName $ AST.NSimple aPar) AST.:&:
                     (AST.PrimName $ AST.NSimple vecPar))
     plusgtRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     emptySpec = AST.Function (mkVHDLExtId emptyId) [] vectorTM
-    emptyVar = 
+    emptyVar =
           AST.VarDec resId
             (AST.SubtypeIn vectorTM
-              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                 [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "-1")]))
              Nothing
     emptyExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
-    singletonSpec = AST.Function (mkVHDLExtId singletonId) [AST.IfaceVarDec aPar elemTM ] 
+    singletonSpec = AST.Function (mkVHDLExtId singletonId) [AST.IfaceVarDec aPar elemTM ]
                                          vectorTM
     -- variable res : fsvec_x (0 to 0) := (others => a);
-    singletonVar = 
-      AST.VarDec resId 
+    singletonVar =
+      AST.VarDec resId
              (AST.SubtypeIn vectorTM
-               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                 [AST.ToRange (AST.PrimLit "0") (AST.PrimLit "0")]))
-             (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others) 
+             (Just $ AST.Aggregate [AST.ElemAssoc (Just AST.Others)
                                           (AST.PrimName $ AST.NSimple aPar)])
     singletonRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
 
@@ -1514,10 +1514,10 @@ genUnconsVectorFuns elemTM vectorTM  =
                                AST.IfaceVarDec nPar   naturalTM,
                                AST.IfaceVarDec vecPar vectorTM ] vectorTM
     -- variable res : fsvec_x (0 to n-1);
-    selVar = 
-      AST.VarDec resId 
+    selVar =
+      AST.VarDec resId
                 (AST.SubtypeIn vectorTM
-                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+                  (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                     [AST.ToRange (AST.PrimLit "0")
                       ((AST.PrimName (AST.NSimple nPar)) AST.:-:
                       (AST.PrimLit "1"))   ])
@@ -1528,183 +1528,183 @@ genUnconsVectorFuns elemTM vectorTM  =
     -- end loop;
     selFor = AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple rangeId) Nothing) [selAssign]
     -- res(i) := vec(f+i*s);
-    selAssign = let origExp = AST.PrimName (AST.NSimple fPar) AST.:+: 
-                                (AST.PrimName (AST.NSimple iId) AST.:*: 
+    selAssign = let origExp = AST.PrimName (AST.NSimple fPar) AST.:+:
+                                (AST.PrimName (AST.NSimple iId) AST.:*:
                                   AST.PrimName (AST.NSimple sPar)) in
                                   AST.NIndexed (AST.IndexedName (AST.NSimple resId) [AST.PrimName (AST.NSimple iId)]) AST.:=
                                     (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) [origExp]))
     -- return res;
     selRet =  AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
     ltplusSpec = AST.Function (mkVHDLExtId ltplusId) [AST.IfaceVarDec vecPar vectorTM,
-                                        AST.IfaceVarDec aPar   elemTM] vectorTM 
+                                        AST.IfaceVarDec aPar   elemTM] vectorTM
      -- variable res : fsvec_x (0 to vec'length);
-    ltplusVar = 
-      AST.VarDec resId 
+    ltplusVar =
+      AST.VarDec resId
         (AST.SubtypeIn vectorTM
-          (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+          (Just $ AST.ConstraintIndex $ AST.IndexConstraint
             [AST.ToRange (AST.PrimLit "0")
-              (AST.PrimName (AST.NAttribute $ 
+              (AST.PrimName (AST.NAttribute $
                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))]))
         Nothing
-    ltplusExpr = AST.NSimple resId AST.:= 
-                     ((AST.PrimName $ AST.NSimple vecPar) AST.:&: 
+    ltplusExpr = AST.NSimple resId AST.:=
+                     ((AST.PrimName $ AST.NSimple vecPar) AST.:&:
                       (AST.PrimName $ AST.NSimple aPar))
     ltplusRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     plusplusSpec = AST.Function (mkVHDLExtId plusplusId) [AST.IfaceVarDec vec1Par vectorTM,
-                                             AST.IfaceVarDec vec2Par vectorTM] 
-                                             vectorTM 
+                                             AST.IfaceVarDec vec2Par vectorTM]
+                                             vectorTM
     -- variable res : fsvec_x (0 to vec1'length + vec2'length -1);
-    plusplusVar = 
-      AST.VarDec resId 
+    plusplusVar =
+      AST.VarDec resId
         (AST.SubtypeIn vectorTM
-          (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+          (Just $ AST.ConstraintIndex $ AST.IndexConstraint
             [AST.ToRange (AST.PrimLit "0")
-              (AST.PrimName (AST.NAttribute $ 
+              (AST.PrimName (AST.NAttribute $
                 AST.AttribName (AST.NSimple vec1Par) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:+:
-                  AST.PrimName (AST.NAttribute $ 
+                  AST.PrimName (AST.NAttribute $
                 AST.AttribName (AST.NSimple vec2Par) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                   AST.PrimLit "1")]))
        Nothing
-    plusplusExpr = AST.NSimple resId AST.:= 
-                     ((AST.PrimName $ AST.NSimple vec1Par) AST.:&: 
+    plusplusExpr = AST.NSimple resId AST.:=
+                     ((AST.PrimName $ AST.NSimple vec1Par) AST.:&:
                       (AST.PrimName $ AST.NSimple vec2Par))
     plusplusRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     lengthTSpec = AST.Function (mkVHDLExtId lengthTId) [AST.IfaceVarDec vecPar vectorTM] naturalTM
-    lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $ 
+    lengthTExpr = AST.ReturnSm (Just $ AST.PrimName (AST.NAttribute $
                                 AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing))
     shiftlSpec = AST.Function (mkVHDLExtId shiftIntoLId) [AST.IfaceVarDec aPar elemTM,
-                                     AST.IfaceVarDec vecPar vectorTM] vectorTM 
+                                     AST.IfaceVarDec vecPar vectorTM] vectorTM
     -- variable res : fsvec_x (0 to vec'length-1);
-    shiftlVar = 
-     AST.VarDec resId 
+    shiftlVar =
+     AST.VarDec resId
             (AST.SubtypeIn vectorTM
-              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                [AST.ToRange (AST.PrimLit "0")
-                        (AST.PrimName (AST.NAttribute $ 
+                        (AST.PrimName (AST.NAttribute $
                           AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                            (AST.PrimLit "1")) ]))
             Nothing
     -- res := a & init(vec)
     shiftlExpr = AST.NSimple resId AST.:=
                     (AST.PrimName (AST.NSimple aPar) AST.:&:
-                     (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))  
+                     (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))
                        [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
-    shiftlRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)       
+    shiftlRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     shiftrSpec = AST.Function (mkVHDLExtId shiftIntoRId) [AST.IfaceVarDec vecPar vectorTM,
-                                       AST.IfaceVarDec aPar   elemTM  ] vectorTM 
+                                       AST.IfaceVarDec aPar   elemTM  ] vectorTM
     -- variable res : fsvec_x (0 to vec'length-1);
-    shiftrVar = 
-     AST.VarDec resId 
+    shiftrVar =
+     AST.VarDec resId
             (AST.SubtypeIn vectorTM
-              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                [AST.ToRange (AST.PrimLit "0")
-                        (AST.PrimName (AST.NAttribute $ 
+                        (AST.PrimName (AST.NAttribute $
                           AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                            (AST.PrimLit "1")) ]))
             Nothing
     -- res := tail(vec) & a
     shiftrExpr = AST.NSimple resId AST.:=
-                  ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))  
+                  ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))
                     [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
                   (AST.PrimName (AST.NSimple aPar)))
-                
-    shiftrRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)      
+
+    shiftrRet = AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     nullSpec = AST.Function (mkVHDLExtId nullId) [AST.IfaceVarDec vecPar vectorTM] booleanTM
     -- return vec'length = 0
-    nullExpr = AST.ReturnSm (Just $ 
-                AST.PrimName (AST.NAttribute $ 
+    nullExpr = AST.ReturnSm (Just $
+                AST.PrimName (AST.NAttribute $
                   AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:=:
                     AST.PrimLit "0")
-    rotlSpec = AST.Function (mkVHDLExtId rotlId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    rotlSpec = AST.Function (mkVHDLExtId rotlId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
     -- variable res : fsvec_x (0 to vec'length-1);
-    rotlVar = 
-     AST.VarDec resId 
+    rotlVar =
+     AST.VarDec resId
             (AST.SubtypeIn vectorTM
-              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                [AST.ToRange (AST.PrimLit "0")
-                        (AST.PrimName (AST.NAttribute $ 
+                        (AST.PrimName (AST.NAttribute $
                           AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                            (AST.PrimLit "1")) ]))
             Nothing
     -- if null(vec) then res := vec else res := last(vec) & init(vec)
-    rotlExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))  
+    rotlExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))
                           [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)])
                         [AST.NSimple resId AST.:= (AST.PrimName $ AST.NSimple vecPar)]
                         []
                         (Just $ AST.Else [rotlExprRet])
-      where rotlExprRet = 
-                AST.NSimple resId AST.:= 
-                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId lastId))  
+      where rotlExprRet =
+                AST.NSimple resId AST.:=
+                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId lastId))
                         [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
-                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))  
+                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId initId))
                         [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
-    rotlRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)       
-    rotrSpec = AST.Function (mkVHDLExtId rotrId) [AST.IfaceVarDec vecPar vectorTM] vectorTM 
+    rotlRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
+    rotrSpec = AST.Function (mkVHDLExtId rotrId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
     -- variable res : fsvec_x (0 to vec'length-1);
-    rotrVar = 
-     AST.VarDec resId 
+    rotrVar =
+     AST.VarDec resId
             (AST.SubtypeIn vectorTM
-              (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+              (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                [AST.ToRange (AST.PrimLit "0")
-                        (AST.PrimName (AST.NAttribute $ 
+                        (AST.PrimName (AST.NAttribute $
                           AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                            (AST.PrimLit "1")) ]))
             Nothing
     -- if null(vec) then res := vec else res := tail(vec) & head(vec)
-    rotrExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))  
+    rotrExpr = AST.IfSm (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId nullId))
                           [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)])
                         [AST.NSimple resId AST.:= (AST.PrimName $ AST.NSimple vecPar)]
                         []
                         (Just $ AST.Else [rotrExprRet])
-      where rotrExprRet = 
-                AST.NSimple resId AST.:= 
-                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))  
+      where rotrExprRet =
+                AST.NSimple resId AST.:=
+                      ((AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId tailId))
                         [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]) AST.:&:
-                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId headId))  
+                      (AST.PrimFCall $ AST.FCall (AST.NSimple (mkVHDLExtId headId))
                         [Nothing AST.:=>: AST.ADExpr (AST.PrimName $ AST.NSimple vecPar)]))
     rotrRet =  AST.ReturnSm (Just $ AST.PrimName $ AST.NSimple resId)
     reverseSpec = AST.Function (mkVHDLExtId reverseId) [AST.IfaceVarDec vecPar vectorTM] vectorTM
-    reverseVar = 
-      AST.VarDec resId 
+    reverseVar =
+      AST.VarDec resId
              (AST.SubtypeIn vectorTM
-               (Just $ AST.ConstraintIndex $ AST.IndexConstraint 
+               (Just $ AST.ConstraintIndex $ AST.IndexConstraint
                 [AST.ToRange (AST.PrimLit "0")
-                         (AST.PrimName (AST.NAttribute $ 
+                         (AST.PrimName (AST.NAttribute $
                            AST.AttribName (AST.NSimple vecPar) (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
                             (AST.PrimLit "1")) ]))
              Nothing
     -- for i in 0 to res'range loop
     --   res(vec'length-i-1) := vec(i);
     -- end loop;
-    reverseFor = 
+    reverseFor =
        AST.ForSM iId (AST.AttribRange $ AST.AttribName (AST.NSimple resId) (AST.NSimple rangeId) Nothing) [reverseAssign]
     -- res(vec'length-i-1) := vec(i);
     reverseAssign = AST.NIndexed (AST.IndexedName (AST.NSimple resId) [destExp]) AST.:=
-      (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar) 
+      (AST.PrimName $ AST.NIndexed (AST.IndexedName (AST.NSimple vecPar)
                            [AST.PrimName $ AST.NSimple iId]))
-        where destExp = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple vecPar) 
-                                   (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-: 
-                        AST.PrimName (AST.NSimple iId) AST.:-: 
-                        (AST.PrimLit "1") 
+        where destExp = AST.PrimName (AST.NAttribute $ AST.AttribName (AST.NSimple vecPar)
+                                   (AST.NSimple $ mkVHDLBasicId lengthId) Nothing) AST.:-:
+                        AST.PrimName (AST.NSimple iId) AST.:-:
+                        (AST.PrimLit "1")
     -- return res;
     reverseRet = AST.ReturnSm (Just $ AST.PrimName (AST.NSimple resId))
 
-    
+
 -----------------------------------------------------------------------------
 -- A table of builtin functions
 -----------------------------------------------------------------------------
 
 -- A function that generates VHDL for a builtin function
-type BuiltinBuilder = 
+type BuiltinBuilder =
   (Either CoreSyn.CoreBndr AST.VHDLName) -- ^ The destination signal and it's original type
   -> CoreSyn.CoreBndr -- ^ The function called
   -> [(Either CoreSyn.CoreExpr AST.Expr, Type.Type)] -- ^ The value arguments passed (excluding type and
                     --   dictionary arguments).
-  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr]) 
+  -> TranslatorSession ([AST.ConcSm], [CoreSyn.CoreBndr])
   -- ^ The corresponding VHDL concurrent statements and entities
   --   instantiated.
 
--- A map of a builtin function to VHDL function builder 
+-- A map of a builtin function to VHDL function builder
 type NameTable = Map.Map String (Int, BuiltinBuilder )
 
 -- | The builtin functions we support. Maps a name to an argument count and a
